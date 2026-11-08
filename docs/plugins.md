@@ -245,6 +245,11 @@ ScriptAPI(OWNER).set_environment(env)
 
 # Schedule + run, through the real RunBackend + scheduler:
 ScheduleAPI(OWNER).sync(script, mode="daily", time_str="02:00", tz="UTC")
+# Lists, like the editor's schedule form: several times, weekdays (0=Mon) or month days.
+# A bad value raises ValueError and saves nothing (rules: docs/scheduling.md):
+ScheduleAPI(OWNER).sync(script, mode="daily", times=["09:00", "18:00"], tz="UTC")
+ScheduleAPI(OWNER).sync(script, mode="weekly", weekdays=[0, 2, 4], times=["07:30"])
+ScheduleAPI(OWNER).sync(script, mode="monthly", month_days=[1, 15], times=["08:00"])
 # ...or any 5-field cron expression, written in ``tz`` (converted to UTC for you):
 ScheduleAPI(OWNER).sync(script, mode="cron", cron="0 9 * * 1-5", tz="Asia/Tokyo")
 # Annual schedules use one calendar date; 29 February runs only in leap years.

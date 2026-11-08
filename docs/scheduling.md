@@ -319,29 +319,55 @@ themselves are regenerated from the stored configuration after import, so
 ## Scheduling from a plugin (SDK)
 
 Plugins can schedule the scripts they provision via `ScheduleAPI.sync()` in
-`core.plugins.api`:
+`core.plugins.api`. It takes the same choices as the schedule form in the
+script editor and saves the same schedule, so a plugin can do anything the
+form can, including several times a day:
 
 ```python
 from core.plugins.api import ScheduleAPI
-from core.models import ScriptSchedule
 
+api = ScheduleAPI("my-plugin")
 # `script` is a Script the plugin created via ScriptAPI.upsert(...)
-ScheduleAPI("my-plugin").sync(
-    script,
-    mode=ScriptSchedule.RunMode.CRON,
-    cron="0 9 * * 1-5",   # weekday mornings
-)
-```
 
-An invalid `cron` value raises `ValueError` with the validation reason. The
-other modes are unchanged:
-
-```python
 # interval
-ScheduleAPI("my-plugin").sync(script, mode=ScriptSchedule.RunMode.INTERVAL, interval_minutes=60)
-# daily
-ScheduleAPI("my-plugin").sync(script, mode=ScriptSchedule.RunMode.DAILY, time_str="09:00")
+api.sync(script, mode="interval", interval_minutes=60)
+# daily, 9am and 6pm in one call
+api.sync(script, mode="daily", times=["09:00", "18:00"], tz="Europe/Berlin")
+# weekly: Monday, Wednesday and Friday (0 = Monday ... 6 = Sunday)
+api.sync(script, mode="weekly", weekdays=[0, 2, 4], times=["07:30"])
+# monthly: the 1st and the 15th, morning and evening
+api.sync(script, mode="monthly", month_days=[1, 15], times=["08:00", "20:00"])
+# yearly: one date, one time
+api.sync(script, mode="yearly", month=6, day=15, times=["02:00"])
+# cron: any 5-field expression, written in tz
+api.sync(script, mode="cron", cron="0 9 * * 1-5", tz="Asia/Tokyo")
+# off
+api.sync(script, mode="manual")
 ```
+
+Times are `HH:MM`, 24-hour, in `tz` (default `UTC`), and are stored as
+`HH:MM` (`"9:05"` becomes `"09:05"`) in the order you give them. Days are
+stored sorted. A month day the month doesn't have (31 in April) is skipped
+that month, as in the form.
+
+The single-value arguments from before still work: `time_str="09:00"` is
+`times=["09:00"]` and `weekday=0` is `weekdays=[0]`. Passing both forms of one
+of them is an error.
+
+`sync` raises `ValueError`, and saves nothing, when:
+
+- the mode is unknown, or a mode's required argument is missing;
+- a list is empty, isn't a list or tuple, repeats a value, or holds a time or
+  day that isn't valid (the message names it, e.g. `times[1] '25:00' is not a
+  valid time`);
+- a list doesn't apply to the mode (`month_days` with `mode="weekly"`, or any
+  list with `mode="manual"`);
+- yearly mode gets more than one time;
+- the `cron` expression is invalid (the message gives the reason);
+- the script has a required input with no default (see
+  [Scripts with inputs](#scripts-with-inputs)).
+
+An existing schedule is left as it was when a call is refused.
 
 ---
 

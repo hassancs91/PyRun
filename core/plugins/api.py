@@ -1575,6 +1575,61 @@ class BrainAPI:
 # Schedules
 # --------------------------------------------------------------------------- #
 
+_TIME_HINT = "use HH:MM, 24-hour, e.g. '09:00'"
+
+
+def _schedule_time(value, label):
+    """One run time, normalized the way the console's schedule form does it
+    ('9:5' -> '09:05'). Anything else is a ValueError naming ``label``."""
+    parts = value.strip().split(":") if isinstance(value, str) else []
+    try:
+        hour, minute = int(parts[0]), int(parts[1])
+        valid = len(parts) == 2 and 0 <= hour <= 23 and 0 <= minute <= 59
+    except (IndexError, ValueError):
+        valid = False
+    if not valid:
+        raise ValueError(f"{label} {value!r} is not a valid time; {_TIME_HINT}")
+    return f"{hour:02d}:{minute:02d}"
+
+
+def _schedule_day(lo, hi, hint):
+    """A parser for one weekday (0-6) or day of the month (1-31): an int, or a
+    string holding one ("3"), as the single ``weekday`` kwarg always took."""
+
+    def parse(value, label):
+        number = value
+        if isinstance(value, str):
+            try:
+                number = int(value.strip())
+            except ValueError:
+                pass  # still a str: refused just below, with the message
+        if isinstance(number, bool) or not isinstance(number, int) or not lo <= number <= hi:
+            raise ValueError(f"{label} {value!r} is not {hint}")
+        return number
+
+    return parse
+
+
+_weekday = _schedule_day(0, 6, "a weekday; use 0 (Monday) to 6 (Sunday)")
+_month_day = _schedule_day(1, 31, "a day of the month; use 1 to 31")
+
+
+def _schedule_list(name, values, parse):
+    """Check one of ``ScheduleAPI.sync``'s list kwargs: a non-empty list or
+    tuple, each item normalized by ``parse``, no value given twice."""
+    if not isinstance(values, (list, tuple)):
+        raise ValueError(f"{name} must be a list, got {type(values).__name__}")
+    if not values:
+        raise ValueError(f"{name} is empty; give at least one value")
+    out = []
+    for i, item in enumerate(values):
+        value = parse(item, f"{name}[{i}]")
+        if value in out:
+            raise ValueError(f"{name} lists {value!r} twice")
+        out.append(value)
+    return out
+
+
 class ScheduleAPI:
     """Wraps ScriptSchedule + ScheduleService so a plugin schedules a run without
     touching django-q directly (and the global-pause rules still apply)."""
@@ -1595,14 +1650,30 @@ class ScheduleAPI:
         interval_minutes=None,
         cron=None,
         tz="UTC",
+        times=None,
+        weekdays=None,
+        month_days=None,
     ):
         """Create/update the script's schedule and push it to django-q2.
 
         ``mode`` is a ``ScriptSchedule.RunMode`` value ('manual'/'interval'/'daily'
-        /'weekly'/'monthly'/'yearly'/'cron'). Mirrors the hand-rolled qdrant
-        sync_schedule, generalized. Yearly mode takes ``month``, ``day`` and one
-        ``time_str`` in HH:MM format; ``cron`` mode takes a raw 5-field expression
-        via ``cron``. Both are written in ``tz``.
+        /'weekly'/'monthly'/'yearly'/'cron'). Every time and day is written in
+        ``tz``. Per mode:
+
+        - interval: ``interval_minutes``.
+        - daily: ``times`` (a list of HH:MM, e.g. ``["09:00", "18:00"]``).
+        - weekly: ``weekdays`` (0=Monday … 6=Sunday) and ``times``.
+        - monthly: ``month_days`` (1-31) and ``times``.
+        - yearly: ``month``, ``day`` and one time.
+        - cron: a raw 5-field expression via ``cron``.
+
+        The single-value kwargs still work: ``time_str="09:00"`` is
+        ``times=["09:00"]`` and ``weekday=0`` is ``weekdays=[0]``; passing both
+        forms of one is an error. The result is the row the console's schedule
+        form saves for the same choices: times normalized to HH:MM and kept in
+        the order given, days sorted. A list kwarg the mode doesn't use, an
+        empty list, a repeated value or an unknown mode is a ValueError, and
+        nothing is saved.
 
         Any mode but manual is refused (ValueError, nothing saved) while the
         script declares a required input with no default: a scheduled run has
@@ -1612,7 +1683,89 @@ class ScheduleAPI:
         from core.services.schedule_service import ScheduleService
         from core.services.script_inputs import schedule_conflict
 
-        if mode != ScriptSchedule.RunMode.MANUAL:
+        Mode = ScriptSchedule.RunMode
+        if mode not in Mode.values:
+            raise ValueError(f"Unknown mode {mode!r}; use one of: {', '.join(Mode.values)}")
+        mode = Mode(mode)
+
+        list_modes = {
+            "times": (Mode.DAILY, Mode.WEEKLY, Mode.MONTHLY, Mode.YEARLY),
+            "weekdays": (Mode.WEEKLY,),
+            "month_days": (Mode.MONTHLY,),
+        }
+        given = {"times": times, "weekdays": weekdays, "month_days": month_days}
+        for name, value in given.items():
+            if value is not None and mode not in list_modes[name]:
+                raise ValueError(f"{name} doesn't apply to {mode.value} mode")
+        if time_str and times is not None:
+            raise ValueError("pass time_str or times, not both")
+        if weekday is not None and weekdays is not None:
+            raise ValueError("pass weekday or weekdays, not both")
+
+        def run_times():
+            if times is not None:
+                return _schedule_list("times", times, _schedule_time)
+            if time_str:
+                return [_schedule_time(time_str, "time_str")]
+            raise ValueError(
+                f"{mode.value} mode requires times=['HH:MM', ...] (or time_str='HH:MM')"
+            )
+
+        # Only the chosen mode's fields; every other mode's is cleared below.
+        fields = {}
+        if mode == Mode.INTERVAL:
+            if not interval_minutes:
+                raise ValueError("interval mode requires interval_minutes")
+            # Same bounds as the form; django-q2 stores minutes in a small int,
+            # so an out-of-range value would otherwise fail later at sync time.
+            try:
+                minutes = int(interval_minutes)
+            except (TypeError, ValueError):
+                raise ValueError("interval_minutes must be a whole number of minutes")
+            lo, hi = ScriptSchedule.INTERVAL_MIN_MINUTES, ScriptSchedule.INTERVAL_MAX_MINUTES
+            if not lo <= minutes <= hi:
+                raise ValueError(f"interval_minutes must be between {lo} and {hi}")
+            fields["interval_minutes"] = minutes
+        elif mode == Mode.DAILY:
+            fields["daily_times"] = run_times()
+        elif mode == Mode.WEEKLY:
+            if weekdays is not None:
+                days = _schedule_list("weekdays", weekdays, _weekday)
+            elif weekday is not None:
+                days = [_weekday(weekday, "weekday")]
+            else:
+                raise ValueError(
+                    "weekly mode requires weekdays=[...] (0=Mon … 6=Sun) or weekday"
+                )
+            fields["weekly_days"] = sorted(days)
+            fields["weekly_times"] = run_times()
+        elif mode == Mode.MONTHLY:
+            if month_days is None:
+                raise ValueError("monthly mode requires month_days=[...] (1-31)")
+            fields["monthly_days"] = sorted(_schedule_list("month_days", month_days, _month_day))
+            fields["monthly_times"] = run_times()
+        elif mode == Mode.CRON:
+            is_valid, error = ScheduleService.validate_cron_expression(cron, tz or "UTC")
+            if not is_valid:
+                raise ValueError(f"Invalid cron expression: {error}")
+            fields["cron_expression"] = (cron or "").strip()
+        elif mode == Mode.YEARLY:
+            if month is None or day is None:
+                raise ValueError("yearly mode requires month and day")
+            run_at = run_times()
+            if len(run_at) != 1:
+                raise ValueError("yearly mode runs once a year; give one time")
+            from calendar import monthrange
+
+            try:
+                month, day = int(month), int(day)
+                if not 1 <= month <= 12 or not 1 <= day <= monthrange(2024, month)[1]:
+                    raise ValueError
+            except (TypeError, ValueError):
+                raise ValueError("yearly mode requires a valid month and day")
+            fields.update(yearly_month=month, yearly_day=day, yearly_time=run_at[0])
+
+        if mode != Mode.MANUAL:
             # The stored schema, not the caller's copy, which may be stale.
             schema = (
                 Script.objects.filter(pk=script.pk)
@@ -1626,7 +1779,7 @@ class ScheduleAPI:
         sched, _ = ScriptSchedule.objects.get_or_create(
             script=script, defaults={"workspace_id": script.workspace_id}
         )
-        sched.run_mode = mode
+        sched.run_mode = mode.value
         sched.timezone = tz or "UTC"
         sched.interval_minutes = None
         sched.daily_times = []
@@ -1638,58 +1791,10 @@ class ScheduleAPI:
         sched.yearly_month = None
         sched.yearly_day = None
         sched.yearly_time = ""
+        for name, value in fields.items():
+            setattr(sched, name, value)
 
-        if mode == ScriptSchedule.RunMode.INTERVAL:
-            if not interval_minutes:
-                raise ValueError("interval mode requires interval_minutes")
-            # Same bounds as the form; django-q2 stores minutes in a small int,
-            # so an out-of-range value would otherwise fail later at sync time.
-            try:
-                minutes = int(interval_minutes)
-            except (TypeError, ValueError):
-                raise ValueError("interval_minutes must be a whole number of minutes")
-            lo, hi = ScriptSchedule.INTERVAL_MIN_MINUTES, ScriptSchedule.INTERVAL_MAX_MINUTES
-            if not lo <= minutes <= hi:
-                raise ValueError(f"interval_minutes must be between {lo} and {hi}")
-            sched.interval_minutes = minutes
-        elif mode == ScriptSchedule.RunMode.DAILY:
-            if not time_str:
-                raise ValueError("daily mode requires time_str (HH:MM)")
-            sched.daily_times = [time_str]
-        elif mode == ScriptSchedule.RunMode.WEEKLY:
-            if weekday is None:
-                raise ValueError("weekly mode requires weekday (0=Mon … 6=Sun)")
-            if not time_str:
-                raise ValueError("weekly mode requires time_str (HH:MM)")
-            sched.weekly_days = [int(weekday)]
-            sched.weekly_times = [time_str]
-        elif mode == ScriptSchedule.RunMode.CRON:
-            is_valid, error = ScheduleService.validate_cron_expression(cron, sched.timezone)
-            if not is_valid:
-                raise ValueError(f"Invalid cron expression: {error}")
-            sched.cron_expression = (cron or "").strip()
-        elif mode == ScriptSchedule.RunMode.YEARLY:
-            if month is None or day is None:
-                raise ValueError("yearly mode requires month and day")
-            if not time_str:
-                raise ValueError("yearly mode requires time_str (HH:MM)")
-            from calendar import monthrange
-
-            try:
-                month, day = int(month), int(day)
-                if not 1 <= month <= 12 or not 1 <= day <= monthrange(2024, month)[1]:
-                    raise ValueError
-                hour, minute = map(int, time_str.split(":"))
-                if not (0 <= hour <= 23 and 0 <= minute <= 59):
-                    raise ValueError
-                time_str = f"{hour:02d}:{minute:02d}"
-            except (TypeError, ValueError):
-                raise ValueError("yearly mode requires a valid month, day, and time_str (HH:MM)")
-            sched.yearly_month = month
-            sched.yearly_day = day
-            sched.yearly_time = time_str
-
-        sched.is_active = mode != ScriptSchedule.RunMode.MANUAL
+        sched.is_active = mode != Mode.MANUAL
         sched.save()
         ScheduleService.sync_schedule(sched)
         return sched

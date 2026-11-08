@@ -127,6 +127,15 @@ begins tracking at the current release; earlier history is in the git log.
   other names secrets can't use; nothing starting with `PYRUNNER_`). The
   script page lists the names. Forks and backups include them. Guide: "Script
   env vars" in `docs/run-context.md`.
+- **Plugin schedules with several times, and monthly.** The plugin SDK's
+  `ScheduleAPI.sync` now takes the same choices as the editor's schedule form:
+  `times=["09:00", "18:00"]` for several runs a day, `weekdays=[0, 2, 4]` in
+  weekly mode, and monthly mode with `month_days=[1, 15]` (before, a plugin's
+  monthly schedule had no days or times and never ran). It saves the same
+  schedule the form saves. `time_str` and `weekday` still work and are now
+  checked too. A bad value (an invalid time or day, a repeat, a list the mode
+  doesn't use, an unknown mode) raises `ValueError` naming it, and nothing is
+  saved. Guide: "Scheduling from a plugin" in `docs/scheduling.md`.
 
 ## [2.0.0] — October 23, 2026
 
