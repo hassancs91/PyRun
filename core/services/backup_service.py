@@ -155,6 +155,10 @@ class BackupService:
     # ``maintenance_windows`` (global ones with no workspace). A backup with
     # the section replaces the instance's windows; an older one without it
     # leaves them as they are.
+    # ``stop_grace_seconds`` on scripts (older backups: 10, the model default)
+    # and ``stop_requested_at`` on runs (older backups: NULL). Like
+    # ``queued_behind``, ``stop_requested_at`` is restored only on finished
+    # runs: an unfinished one never comes back half-stopped.
     BACKUP_VERSION = "1.13.0"
     MAX_BACKUP_SIZE_MB = 100
     # Default cap on a gzip backup's expanded size (F92, zip-bomb guard);
@@ -438,6 +442,7 @@ class BackupService:
                 "injection_mode": script.injection_mode,
                 "isolation_mode": script.isolation_mode,
                 "timeout_seconds": script.timeout_seconds,
+                "stop_grace_seconds": script.stop_grace_seconds,
                 "retry_max_attempts": script.retry_max_attempts,
                 "retry_delay_seconds": script.retry_delay_seconds,
                 "retry_backoff_multiplier": script.retry_backoff_multiplier,
@@ -731,6 +736,8 @@ class BackupService:
                 "attempt": run.attempt,
                 "retry_of": str(run.retry_of_id) if run.retry_of_id else None,
                 "next_attempt_at": cls._serialize_datetime(run.next_attempt_at),
+                # Graceful stop: when someone stopped the run.
+                "stop_requested_at": cls._serialize_datetime(run.stop_requested_at),
                 "trigger_type": run.trigger_type,
                 "triggered_by_email": run.triggered_by.email if run.triggered_by else None,
                 "created_at": cls._serialize_datetime(run.created_at),
@@ -1801,6 +1808,7 @@ class BackupService:
                 injection_mode=script_data.get("injection_mode", "all"),
                 isolation_mode=script_data.get("isolation_mode", Script.IsolationMode.INHERIT),
                 timeout_seconds=script_data.get("timeout_seconds", 300),
+                stop_grace_seconds=script_data.get("stop_grace_seconds", 10),
                 retry_max_attempts=script_data.get("retry_max_attempts", 0),
                 retry_delay_seconds=script_data.get("retry_delay_seconds", 60),
                 retry_backoff_multiplier=script_data.get("retry_backoff_multiplier", 1.0),
@@ -2013,6 +2021,11 @@ class BackupService:
                 # without its due time, so the heartbeat never starts it.
                 next_attempt_at=(
                     cls._deserialize_datetime(run_data.get("next_attempt_at"))
+                    if finished
+                    else None
+                ),
+                stop_requested_at=(
+                    cls._deserialize_datetime(run_data.get("stop_requested_at"))
                     if finished
                     else None
                 ),

@@ -16,6 +16,10 @@ Usage:
     pyrunner_run.progress(10, "Fetching pages")
     ...
     pyrunner_run.set_result({"pages": 12, "ok": True})
+
+    @pyrunner_run.on_stop                      # Stop button, SDK cancel or timeout
+    def save_work():
+        flush_buffers()
 """
 
 import atexit
@@ -23,13 +27,15 @@ import http.client
 import json
 import math
 import os
+import signal
 import sys
 import threading
 import time
+import traceback
 import urllib.error
 import urllib.request
 
-__all__ = ["RunError", "event", "inputs", "progress", "run_id", "set_result"]
+__all__ = ["RunError", "event", "inputs", "on_stop", "progress", "run_id", "set_result"]
 
 # Same limits PyRun enforces (core/services/run_reports.py); checked here too so
 # a mistake fails in the script with a clear message instead of a refused request.
@@ -166,7 +172,9 @@ def set_result(result: dict) -> None:
 # Progress: throttled, best effort
 # --------------------------------------------------------------------------- #
 
-_progress_lock = threading.Lock()
+# Re-entrant: an on_stop() callback runs in the main thread wherever the
+# stop signal caught it, possibly inside progress() itself.
+_progress_lock = threading.RLock()
 _progress_sent_at = None  # time.monotonic() of the last send; None = nothing sent yet
 _progress_pending = None  # fields merged from calls not sent yet
 _progress_timer = None
@@ -252,3 +260,65 @@ def _flush_progress_at_exit() -> None:
             _progress_timer.cancel()
             _progress_timer = None
         _send_pending_progress()
+
+
+# --------------------------------------------------------------------------- #
+# Graceful stop
+# --------------------------------------------------------------------------- #
+
+_stop_callbacks = []
+_stop_handler_installed = False
+_stopping = False
+
+
+def _stop_signals() -> list:
+    """SIGTERM, plus SIGBREAK on Windows (where PyRun sends CTRL_BREAK_EVENT)."""
+    signals = [signal.SIGTERM]
+    if hasattr(signal, "SIGBREAK"):
+        signals.append(signal.SIGBREAK)
+    return signals
+
+
+def on_stop(callback):
+    """Run ``callback()`` when PyRun stops this run, before it is killed.
+
+    PyRun stops a run when someone presses Stop, when a plugin cancels it and
+    when it times out. It sends SIGTERM (CTRL_BREAK on Windows), then gives the
+    script its stop grace period (a script setting, 10 seconds by default) to
+    exit before it kills it. Use the callback to save work, close
+    connections or report a partial result with ``set_result()``.
+
+    The callbacks run once, in the order they were added, in the main thread.
+    An exception in one is printed to stderr and the next still runs. When they
+    are done the script exits (``SystemExit`` with code 128 + the signal
+    number), so ``finally`` blocks and atexit handlers still run; a callback
+    can call ``sys.exit()`` itself to choose the code. Returns ``callback``, so
+    it also works as a decorator. Call it from the main thread. It replaces a
+    SIGTERM (and SIGBREAK) handler the script installed itself.
+    """
+    global _stop_handler_installed
+    if not callable(callback):
+        raise TypeError(f"on_stop() needs a callable, not {type(callback).__name__}")
+    if not _stop_handler_installed:
+        try:
+            for sig in _stop_signals():
+                signal.signal(sig, _handle_stop)
+        except ValueError as e:
+            raise RunError("on_stop() must be called from the main thread.") from e
+        _stop_handler_installed = True
+    _stop_callbacks.append(callback)
+    return callback
+
+
+def _handle_stop(signum, frame) -> None:
+    global _stopping
+    if _stopping:  # already shutting down: a second signal changes nothing
+        return
+    _stopping = True
+    for callback in list(_stop_callbacks):
+        try:
+            callback()
+        except Exception:
+            sys.stderr.write(f"pyrunner_run: on_stop callback {callback!r} failed:\n")
+            traceback.print_exc()
+    sys.exit(128 + signum)

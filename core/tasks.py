@@ -179,7 +179,8 @@ def enqueue_run(run: Run, webhook_data: dict | None = None) -> str:
         str(run.id),
         webhook_data,
         task_name=f"run-{run.id}",
-        timeout=run.script.timeout_seconds + 60,
+        # Timeout + the grace period a timed-out run gets + a cushion.
+        timeout=run.script.max_run_seconds + 60,
     )
 
     run.task_id = task_id

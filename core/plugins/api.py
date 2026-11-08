@@ -374,6 +374,8 @@ class RunView:
     script's Skip concurrency policy didn't start, ``"maintenance"`` on one a
     maintenance window didn't start, "" otherwise. ``is_held``
     is True while a Queue-policy run waits for the runs ahead of it.
+    ``stop_requested_at`` is when someone stopped the run: while it is set
+    and the run is still RUNNING, its script is shutting down.
     """
 
     id: str
@@ -393,6 +395,7 @@ class RunView:
     progress: Optional[dict] = None
     cancel_reason: str = ""
     is_held: bool = False
+    stop_requested_at: Optional[datetime] = None
 
     @classmethod
     def _from_run(cls, run, masks=None):
@@ -420,6 +423,7 @@ class RunView:
             progress=run.progress,
             cancel_reason=run.cancel_reason or "",
             is_held=run.is_held,
+            stop_requested_at=run.stop_requested_at,
         )
 
     def as_dict(self) -> dict:
@@ -446,6 +450,7 @@ class RunView:
             "progress": self.progress,
             "cancel_reason": self.cancel_reason,
             "is_held": self.is_held,
+            "stop_requested_at": _iso(self.stop_requested_at),
         }
 
 
@@ -730,11 +735,15 @@ class ScriptAPI:
         """Cancel the latest pending/running run of the owned script ``key``.
 
         Reuses the shared force-stop path (``TaskService.force_stop_run``) — the
-        SAME code the tasks Stop button calls — so a RUNNING run's process tree is
-        killed and a PENDING run is dequeued, both flipped to CANCELLED. Returns
-        True if a run was cancelled, False when nothing was cancellable (no run in
-        a pending/running state, or no such owned script). Drives a plugin's
-        "Stop" button without importing core.models.
+        SAME code the tasks Stop button calls. A PENDING run is dequeued and
+        flipped to CANCELLED at once. A RUNNING run is stopped gracefully: its
+        script gets SIGTERM and its stop grace period to shut down, and the run
+        turns CANCELLED once the process has ended (``RunView.stop_requested_at``
+        is set meanwhile). Calling this again while it is shutting down kills
+        it at once. Returns True if a run was cancelled or asked to stop, False
+        when nothing was cancellable (no run in a pending/running state, or no
+        such owned script). Drives a plugin's "Stop" button without importing
+        core.models.
         """
         from core.models import Run
         from core.services.task_service import TaskService

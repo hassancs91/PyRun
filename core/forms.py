@@ -139,6 +139,7 @@ class ScriptForm(forms.ModelForm):
             "environment",
             "tags",
             "timeout_seconds",
+            "stop_grace_seconds",
             "concurrency_policy",
             "retry_max_attempts",
             "retry_delay_seconds",
@@ -175,6 +176,9 @@ class ScriptForm(forms.ModelForm):
             "tags": forms.CheckboxSelectMultiple(attrs={"class": "tag-checkbox"}),
             "timeout_seconds": forms.NumberInput(
                 attrs={"class": INPUT_CLASS, "min": 1, "max": 86400}
+            ),
+            "stop_grace_seconds": forms.NumberInput(
+                attrs={"class": INPUT_CLASS, "min": 0, "max": Script.MAX_STOP_GRACE_SECONDS}
             ),
             "concurrency_policy": forms.Select(attrs={"class": INPUT_CLASS}),
             "retry_max_attempts": forms.NumberInput(
@@ -218,6 +222,7 @@ class ScriptForm(forms.ModelForm):
             "environment": "Environment",
             "tags": "Tags",
             "timeout_seconds": "Timeout (seconds)",
+            "stop_grace_seconds": "Stop grace period (seconds)",
             "concurrency_policy": "If it's already running",
             "retry_max_attempts": "Retries on failure",
             "retry_delay_seconds": "Delay before a retry (seconds)",
@@ -234,6 +239,9 @@ class ScriptForm(forms.ModelForm):
         }
         help_texts = {
             "timeout_seconds": "Maximum execution time (1 second to 24 hours)",
+            "stop_grace_seconds": "When the run is stopped or times out, the script "
+            "gets SIGTERM and this long to shut down before it is killed "
+            "(0 = kill at once, up to 60). See pyrunner_run.on_stop().",
             "concurrency_policy": "What a new trigger does while a run is still going. "
             "Allow starts another run alongside it. Skip doesn't start it and lists "
             "it as skipped. Queue starts it when the current run ends, one at a time, "
@@ -274,8 +282,14 @@ class ScriptForm(forms.ModelForm):
         self.fields["injection_mode"].required = False
         # Same for the concurrency policy, which then keeps its saved value.
         self.fields["concurrency_policy"].required = False
-        # And for the retry numbers (the checkbox posts nothing when off).
-        for name in ("retry_max_attempts", "retry_delay_seconds", "retry_backoff_multiplier"):
+        # And for the retry numbers (the checkbox posts nothing when off) and
+        # the stop grace period.
+        for name in (
+            "retry_max_attempts",
+            "retry_delay_seconds",
+            "retry_backoff_multiplier",
+            "stop_grace_seconds",
+        ):
             self.fields[name].required = False
         # Scope the notify-channels picker to the active workspace (tenancy);
         # None ⇒ empty so a channel never leaks across workspaces in the picker.
@@ -313,6 +327,9 @@ class ScriptForm(forms.ModelForm):
 
     def clean_retry_backoff_multiplier(self):
         return self._saved_if_blank("retry_backoff_multiplier")
+
+    def clean_stop_grace_seconds(self):
+        return self._saved_if_blank("stop_grace_seconds")
 
     def clean_code(self):
         code = self.cleaned_data.get("code", "").strip()

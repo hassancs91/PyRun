@@ -100,6 +100,23 @@ begins tracking at the current release; earlier history is in the git log.
   ...** while a window is on. Plugins: `queue_run` returns such a run with
   `cancel_reason == "maintenance"`. Backups include the windows. Guide: the
   "Maintenance windows" section of `docs/scheduling.md`.
+- **Graceful stop before kill.** Stopping a run (the Stop button, a plugin's
+  `cancel_latest_run`) and a timeout no longer kill the script straight away.
+  It first gets SIGTERM (CTRL_BREAK on Windows) and the script's new **Stop
+  grace period** (Execution box, 10 seconds by default, 0 to 60) to shut down,
+  then whatever is still running is killed. Only the script's own processes
+  are signalled, never PyRun's worker. Scripts can register cleanup with
+  `pyrunner_run.on_stop(callback)`: save work, report a partial result, then
+  exit. A stopped run stays running with a **stopping** chip until the
+  script has ended, then turns cancelled and keeps what the script printed
+  (before, a stopped run's output was lost); its stderr ends with
+  `[Stopped by user after graceful shutdown]` or `[Killed by user after the
+  10 s grace period]`, and a timeout adds the same kind of line under its
+  TIMEOUT message. **Kill now** on a stopping run kills it at once. The run
+  records when the stop was asked for (`stop_requested_at`, also on the
+  plugin SDK's `RunView`). A grace period of 0 keeps the old behaviour. The
+  setting is forked and backed up. Guide: "Stopping a run" in
+  `docs/run-context.md`.
 
 ## [2.0.0] — October 23, 2026
 

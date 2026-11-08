@@ -21,6 +21,12 @@
                 {% include "cpanel/_field_errors.html" with field=form.timeout_seconds %}
             </div>
             <div>
+                <label for="id_stop_grace_seconds" class="block text-[13px] font-medium text-text mb-1.5">{{ form.stop_grace_seconds.label }}</label>
+                {{ form.stop_grace_seconds }}
+                {% if form.stop_grace_seconds.help_text %}<p class="mt-1.5 text-xs text-faint">{{ form.stop_grace_seconds.help_text }}</p>{% endif %}
+                {% include "cpanel/_field_errors.html" with field=form.stop_grace_seconds %}
+            </div>
+            <div>
                 <label for="id_concurrency_policy" class="block text-[13px] font-medium text-text mb-1.5">{{ form.concurrency_policy.label }}</label>
                 {{ form.concurrency_policy }}
                 {% if form.concurrency_policy.help_text %}<p class="mt-1.5 text-xs text-faint">{{ form.concurrency_policy.help_text }}</p>{% endif %}

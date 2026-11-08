@@ -362,6 +362,12 @@ class ReleaseTests(_Fixture, TestCase):
 
     def test_stopping_the_running_run_starts_the_next(self):
         with _tasks() as task, mock.patch("core.executor._kill_process_tree"):
+            # A graceful stop: the run is still shutting down, so the next
+            # one waits (the worker releases it when the process has ended).
+            changed, _ = TaskService.force_stop_run(Run.objects.get(pk=self.running.pk))
+            self.assertTrue(changed)
+            task.assert_not_called()
+            # Stopping it again kills it now, and the next run starts.
             changed, _ = TaskService.force_stop_run(Run.objects.get(pk=self.running.pk))
         self.assertTrue(changed)
         self.assertEqual(task.call_args.args[1], str(self.held.pk))

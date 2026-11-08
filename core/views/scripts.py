@@ -233,13 +233,15 @@ def _warn_if_timeout_outruns_workers(request, script) -> None:
         or 0
     )
     # +60 = the per-task cushion queue_script_run adds; the task is always
-    # acknowledged within timeout_seconds + 60, so only a timeout beyond
-    # window - 60 can still be in flight when re-delivery fires.
-    if script.timeout_seconds + 60 > window:
+    # acknowledged within max_run_seconds (timeout + stop grace) + 60, so
+    # only a run longer than window - 60 can still be in flight when
+    # re-delivery fires.
+    if script.max_run_seconds + 60 > window:
         messages.warning(
             request,
-            f'"{script.name}" allows {script.timeout_seconds}s but the running '
-            f"workers' task-recovery window is {window}s. Restart workers "
+            f'"{script.name}" can run for {script.max_run_seconds}s (its timeout '
+            f"plus its stop grace period) but the running workers' task-recovery "
+            f"window is {window}s. Restart workers "
             "(Settings → Workers) so long runs are fully covered.",
         )
 

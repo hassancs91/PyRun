@@ -295,17 +295,21 @@ trips the doctor's `sdk-usage` warn). Three owner+workspace-scoped methods on
 |---|---|---|
 | `latest_run(key)` | `RunView \| None` | the most recent run of your script `key` |
 | `runs(key, *, limit=20)` | `list[RunView]` | recent history, newest first |
-| `cancel_latest_run(key)` | `bool` | cancel the latest pending/running run; `True` if one was cancelled |
+| `cancel_latest_run(key)` | `bool` | cancel the latest pending/running run; `True` if one was cancelled or asked to stop |
 
 `cancel_latest_run` reuses the **same** force-stop path as the tasks Stop button
-(`TaskService.force_stop_run`): a *running* run has its process tree killed, a
-*pending* run is dequeued, both flipped to `cancelled`. It returns `False` when
-nothing is cancellable.
+(`TaskService.force_stop_run`). A *pending* run is dequeued and flipped to
+`cancelled` at once. A *running* run is stopped gracefully (2.5): its script
+gets SIGTERM and its stop grace period to shut down (see
+[stopping a run](run-context.md#stopping-a-run)), and the run stays `running`
+with `stop_requested_at` set until the process has ended, then turns
+`cancelled`. Calling it again while the script shuts down kills it at once. It
+returns `False` when nothing is cancellable.
 
 A **`RunView`** is an immutable, ORM-free snapshot — no live `Run` leaks past the
 SDK. Fields: `id, status, trigger_type, created_at, started_at, ended_at,
 duration, exit_code, pid, task_id, is_finished, is_running, inputs, result,
-progress, cancel_reason, is_held`. Its `.as_dict()` returns JSON-serializable values (datetimes → ISO
+progress, cancel_reason, is_held, stop_requested_at`. Its `.as_dict()` returns JSON-serializable values (datetimes → ISO
 8601), so a status endpoint can return it directly:
 
 ```python

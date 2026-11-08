@@ -198,8 +198,16 @@ class RunLifecycleAPITests(TestCase):
 
     def test_cancel_latest_run_cancels_running(self):
         self._make_run(status=Run.Status.RUNNING, offset=0, pid=None, task_id="t-run")
+        # First call: a graceful stop. The run keeps RUNNING while its script
+        # shuts down (the worker records CANCELLED when the process ends).
         self.assertTrue(self.api.cancel_latest_run("backup"))
         run = Run.objects.get(task_id="t-run")
+        self.assertEqual(run.status, Run.Status.RUNNING)
+        self.assertIsNotNone(run.stop_requested_at)
+        self.assertIsNotNone(self.api.latest_run("backup").stop_requested_at)
+        # Second call while it is shutting down: killed and CANCELLED at once.
+        self.assertTrue(self.api.cancel_latest_run("backup"))
+        run.refresh_from_db()
         self.assertEqual(run.status, Run.Status.CANCELLED)
         self.assertIsNotNone(run.ended_at)
 
@@ -225,7 +233,7 @@ class RunLifecycleAPITests(TestCase):
         self._make_run(status=Run.Status.SUCCESS, offset=0)  # newest overall, terminal
         self.assertTrue(self.api.cancel_latest_run("backup"))
         running.refresh_from_db()
-        self.assertEqual(running.status, Run.Status.CANCELLED)
+        self.assertTrue(running.is_stopping)
 
     def test_cancel_latest_run_owner_scoped(self):
         # owner A cannot cancel owner B's run.

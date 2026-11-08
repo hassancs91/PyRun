@@ -486,15 +486,24 @@ class TaskService:
 
     @classmethod
     def force_stop_run(cls, run) -> tuple[bool, str]:
-        """Force-stop a single Run — the shared, run-level kill path.
+        """Stop a single Run — the shared, run-level stop path.
 
-        This is the ONE place the process kill + terminal-status flip lives, so
-        the tasks force-stop view (via ``force_stop_task``) and the plugin SDK
+        This is the ONE place the stop request, the process kill and the
+        terminal-status flip live, so the tasks force-stop view (via
+        ``force_stop_task``) and the plugin SDK
         (``core.plugins.api.ScriptAPI.cancel_latest_run``) never duplicate the
-        process-killing logic. A RUNNING run has its script's OS process tree
-        killed (the job only — the long-lived django-q worker keeps running) and
-        is marked CANCELLED; a PENDING run is marked CANCELLED. Any queue entry
-        for the run's task is removed either way.
+        process-handling logic. Signals only ever reach the script's own
+        process tree, never the long-lived django-q worker.
+
+        A RUNNING run is stopped gracefully (2.5): ``stop_requested_at`` is
+        stamped and its script gets the stop signal (SIGTERM, CTRL_BREAK on
+        Windows); the run stays RUNNING while the script shuts down. The worker
+        kills it once the script's ``stop_grace_seconds`` are up and records it
+        CANCELLED when it has ended, with what it printed on its way out. With
+        no grace period the script is killed at once. Stopping a run that is
+        already stopping kills it now (the "Kill now" button), for a script
+        that hangs on its way out or a worker that is gone. A PENDING run is
+        marked CANCELLED. Any queue entry for the run's task is removed.
 
         Workspace scoping is NOT enforced here — the caller must scope first (the
         view via ``_task_in_workspace``; the SDK via its owner+workspace
@@ -502,6 +511,7 @@ class TaskService:
         ``run`` is None or already in a terminal (non-cancellable) state.
         """
         from core.executor import _kill_process_tree
+        from core.executor_backends.local import signal_process_tree
         from core.models import Run
 
         if run is None:
@@ -511,16 +521,47 @@ class TaskService:
         if run.task_id:
             cls._delete_queued(run.task_id)
 
+        if run.status == Run.Status.RUNNING and run.stop_requested_at is None:
+            now = timezone.now()
+            stamped = Run.objects.filter(
+                pk=run.pk, status=Run.Status.RUNNING, stop_requested_at__isnull=True
+            ).update(stop_requested_at=now)
+            if stamped:
+                run.stop_requested_at = now
+                grace = run.script.stop_grace_seconds
+                # Read the pid AFTER the stamp: a pid recorded later belongs to
+                # a worker that checks for the stamp itself (core.executor).
+                pid = Run.objects.filter(pk=run.pk).values_list("pid", flat=True).first()
+                if pid:
+                    if grace:
+                        signal_process_tree(pid)
+                    else:
+                        _kill_process_tree(pid)
+                if not grace:
+                    return True, "Run stopped — the script process was killed."
+                return True, (
+                    f"Stopping the run: the script has {grace} s to shut down, "
+                    "then it is killed."
+                )
+            # Someone else stamped it first, or it has just finished.
+            run.refresh_from_db()
+
         if run.status == Run.Status.RUNNING:
-            # Belt-and-suspenders: only kill while still RUNNING (avoids killing
-            # an unrelated, reused PID if the job just finished).
+            # Already stopping: kill it now. Belt-and-suspenders: only kill
+            # while still RUNNING (avoids killing an unrelated, reused PID if
+            # the job just finished), and flip it in one conditional UPDATE so
+            # a worker finalizing at the same moment keeps its own outcome.
             if run.pid:
                 _kill_process_tree(run.pid)
-            run.status = Run.Status.CANCELLED
-            run.ended_at = timezone.now()
-            run.stderr = (run.stderr or "") + "\n[Killed by user]"
-            run.pid = None
-            run.save(update_fields=["status", "ended_at", "stderr", "pid"])
+            flipped = Run.objects.filter(pk=run.pk, status=Run.Status.RUNNING).update(
+                status=Run.Status.CANCELLED,
+                ended_at=timezone.now(),
+                stderr=(run.stderr or "") + "\n[Killed by user]",
+                pid=None,
+            )
+            if not flipped:
+                return False, "The run has already finished."
+            run.refresh_from_db()
             cls._release_queue(run)
             return True, "Run stopped — the script process was killed."
 

@@ -131,6 +131,7 @@ during an upgrade, its script gets just `kind` (from its trigger) and
 | `run_id()` | The run's id (same as `PYRUNNER_RUN_ID`). |
 | `set_result(result)` | Stores `result`, a dict, as the run's result. Calling it again replaces it. |
 | `progress(pct=None, message=None)` | Shows how far the run is, live on its run page. |
+| `on_stop(callback)` | Runs `callback()` when PyRun stops the run, before it is killed (see [Stopping a run](#stopping-a-run)). |
 
 **`set_result`** takes a dict that `json.dumps` can encode, without NaN or
 Infinity, at most **256 KB** as JSON. Large data belongs in a DataStore or in
@@ -150,6 +151,65 @@ stderr and the script carries on. Wrong arguments still raise straight away.
 Both only work while the run is running. Outside a PyRun run, `inputs()`,
 `event()`, `run_id()` and `set_result()` raise `RunError`, and `progress()`
 writes its usual warning to stderr.
+
+### Stopping a run
+
+PyRun stops a run when someone presses **Stop** on its run page or the tasks
+page, when a plugin cancels it (`ScriptAPI.cancel_latest_run`), and when it
+hits its timeout. It doesn't kill the script straight away. It first sends the
+script's process group SIGTERM (CTRL_BREAK on Windows), then waits the script's
+**Stop grace period** (a setting in the editor's Execution box: 10 seconds by
+default, 0 to 60) and only then kills whatever is still running. The signal
+and the kill reach the script and the processes it started, never PyRun's
+worker.
+
+`on_stop` lets the script use that time:
+
+```python
+import pyrunner_run
+
+rows = []
+
+@pyrunner_run.on_stop
+def save_what_we_have():
+    write_rows(rows)                              # flush buffers, close files
+    pyrunner_run.set_result({"rows": len(rows), "complete": False})
+
+for row in fetch_rows():
+    rows.append(row)
+```
+
+- The callbacks run once, in the order they were added, in the script's main
+  thread. An exception in one is printed to stderr and the next one still runs.
+- When they are done the script exits (`SystemExit` with code 128 + the signal
+  number), so `finally` blocks and atexit handlers still run, and a pending
+  `progress()` update is still sent. A callback can call `sys.exit()` itself to
+  choose the exit code.
+- The run is still running while the callbacks work, so `set_result()` and
+  `progress()` work there too.
+- Call `on_stop` from the main thread; elsewhere it raises `RunError`. It
+  replaces a SIGTERM (and on Windows SIGBREAK) handler the script set itself.
+- Finish within the grace period: whatever is still running then is killed.
+  A bare `except:` that catches the `SystemExit`, or a non-daemon thread that
+  keeps going, keeps the script alive until the kill.
+- On Windows a signal handler only runs while the main thread is running
+  Python code, so a long `time.sleep()` delays it; sleep in short steps.
+
+A script without `on_stop` simply ends on the signal (Python's default for
+SIGTERM). How the run ended shows at the end of its stderr:
+
+| Stopped by | Ended within the grace period | Still running when it was up |
+|---|---|---|
+| Stop button / plugin | `[Stopped by user after graceful shutdown]` | `[Killed by user after the 10 s grace period]` |
+| Timeout | `[Stopped after graceful shutdown]` | `[Killed after the 10 s grace period]` |
+
+A stopped run stays **running**, with a **stopping** chip, until the script has
+ended, then turns **cancelled** and keeps what the script printed. Its run page
+then offers **Kill now**: stopping a run that is already stopping kills it at
+once (also the way out when its worker is gone). With a grace period of 0 the
+script is killed at once, as before 2.5: the note is `[Killed by user]`, and a
+timeout shows only its TIMEOUT line. The run records when the stop was asked
+for (`stop_requested_at`, also on the plugin SDK's `RunView`).
 
 ---
 

@@ -219,6 +219,16 @@ class Run(models.Model):
         help_text="On a retry waiting for its delay: when it starts.",
     )
 
+    # Graceful stop (2.5, T08). Set when someone stops a RUNNING run (Stop
+    # button, SDK). The run stays RUNNING while its script shuts down; the
+    # worker kills it once the script's stop_grace_seconds are up and records
+    # the run as CANCELLED when the process has ended.
+    stop_requested_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When a stop was requested for this run.",
+    )
+
     # Who triggered the run
     triggered_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -560,6 +570,20 @@ class Run(models.Model):
             and not self.task_id
             and self.queued_behind is None
             and self.next_attempt_at is not None
+        )
+
+    @property
+    def is_stopping(self) -> bool:
+        """A stop was requested and the script is still shutting down."""
+        return self.status == self.Status.RUNNING and self.stop_requested_at is not None
+
+    @property
+    def stop_deadline(self):
+        """When a stopping run is killed if its script hasn't exited (or None)."""
+        if not self.is_stopping:
+            return None
+        return self.stop_requested_at + datetime.timedelta(
+            seconds=self.script.stop_grace_seconds
         )
 
     @property

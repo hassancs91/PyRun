@@ -235,7 +235,9 @@ class ControlPlaneGuardTests(_Fixture):
         ok, _msg = TaskService.force_stop_task("task-a", workspace=self.ws_a)
         self.assertTrue(ok)
         self.run_a.refresh_from_db()
-        self.assertEqual(self.run_a.status, Run.Status.CANCELLED)
+        # A graceful stop: requested, and the run shuts down (still RUNNING).
+        self.assertIsNotNone(self.run_a.stop_requested_at)
+        self.assertEqual(self.run_a.status, Run.Status.RUNNING)
 
     def test_force_stop_cross_workspace_denied_view(self):
         self.run_b.status = Run.Status.RUNNING

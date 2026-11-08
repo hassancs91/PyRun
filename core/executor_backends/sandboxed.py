@@ -30,6 +30,7 @@ ordinary outbound calls keep working; strict egress filtering is intentionally
 out of scope (automation scripts need outbound).
 """
 
+import dataclasses
 import logging
 import os
 import shutil
@@ -216,10 +217,5 @@ class SandboxedSubprocessBackend(LocalSubprocessBackend):
         else:
             cmd = build_bwrap_argv(tool_path, spec)
 
-        return RunSpec(
-            cmd=cmd,
-            env=env,
-            cwd=spec.cwd,
-            timeout=spec.timeout,
-            limits=spec.limits,
-        )
+        # Everything else (timeout, limits, the stop settings) carries over.
+        return dataclasses.replace(spec, cmd=cmd, env=env)

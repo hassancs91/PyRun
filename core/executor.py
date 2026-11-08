@@ -20,6 +20,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from core.executor_backends import RunSpec, get_run_backend
+from core.executor_backends.base import STOP_GRACEFUL
 
 # Re-exported so ``from core.executor import _kill_process_tree`` keeps working
 # (TaskService.force_stop_task imports it). The implementation now lives with
@@ -796,6 +797,71 @@ def _kill_abandoned_process(backend, handle, run_id) -> None:
         logger.exception("Run %s: failed to kill abandoned process tree", run_id)
 
 
+def _stop_requested_at(run_pk):
+    """When a stop was requested for the run (None: never, or unreadable).
+
+    Never raises: the callers are deciding how a run ended, and a failed read
+    just means the run is treated as not stopped.
+    """
+    try:
+        return (
+            Run.objects.filter(pk=run_pk)
+            .values_list("stop_requested_at", flat=True)
+            .first()
+        )
+    except Exception:
+        logger.warning("Run %s: could not check for a stop request", run_pk, exc_info=True)
+        return None
+
+
+def _stop_poll(run_pk):
+    """``RunSpec.stop_requested`` for one run: has someone stopped it?
+
+    Asked every couple of seconds while the script runs, so a failing read
+    (the database is down) is logged once per run, not every time.
+    """
+    warned = False
+
+    def poll() -> bool:
+        nonlocal warned
+        try:
+            return Run.objects.filter(pk=run_pk, stop_requested_at__isnull=False).exists()
+        except Exception:
+            if not warned:
+                warned = True
+                logger.warning(
+                    "Run %s: could not check for a stop request", run_pk, exc_info=True
+                )
+            return False
+
+    return poll
+
+
+def stop_note(outcome: str, grace: int, *, by_user: bool) -> str:
+    """The stderr line that says how a stopped run ended.
+
+    ``outcome`` is the backend's ``RunResult.stop``. A timeout with no grace
+    period gets no extra line (its TIMEOUT line says it all, as before 2.5).
+    """
+    if by_user:
+        if not grace:
+            return "[Killed by user]"
+        if outcome == STOP_GRACEFUL:
+            return "[Stopped by user after graceful shutdown]"
+        return f"[Killed by user after the {grace} s grace period]"
+    if not grace:
+        return ""
+    if outcome == STOP_GRACEFUL:
+        return "[Stopped after graceful shutdown]"
+    return f"[Killed after the {grace} s grace period]"
+
+
+def _append_note(text: str, note: str) -> str:
+    if not note:
+        return text
+    return f"{text}\n\n{note}" if text else note
+
+
 # Seconds to wait between attempts to save a finished run when the database
 # connection fails. A PostgreSQL restart while a script runs kills the worker's
 # persistent connection, so the final save hit that dead connection and the run's
@@ -1058,15 +1124,35 @@ def execute_run(run: Run, webhook_data: dict | None = None) -> None:
                 cwd=str(workdir),
                 timeout=run.script.timeout_seconds,
                 limits=_resolve_run_limits(),
+                # Graceful stop: a timeout, or a stop requested from the web
+                # (TaskService.force_stop_run), gets the stop signal first and
+                # the script's grace period before the kill.
+                stop_grace=run.script.stop_grace_seconds,
+                stop_requested=_stop_poll(run.pk),
             )
             handle = backend.start(spec)
 
             # Record the PID so the web process can kill this exact job tree.
             run.pid = handle.pid
             run.save(update_fields=["pid"])
+            # A stop requested before the pid was recorded found nothing to
+            # signal: send it now.
+            if _stop_requested_at(run.pk) is not None:
+                if spec.stop_grace:
+                    backend.signal_stop(handle)
+                else:
+                    backend.kill(handle)
 
             result = backend.wait(handle, spec.timeout)
             wait_completed = True
+            finished_at = timezone.now()
+
+            # Stopped from the web: either the backend saw the request while
+            # waiting, or the script exited on the stop signal before it looked.
+            stopped_by_user = bool(result.stop) and not result.timed_out
+            if not result.timed_out and not stopped_by_user:
+                stop_at = _stop_requested_at(run.pk)
+                stopped_by_user = stop_at is not None and stop_at <= finished_at
 
             if result.timed_out:
                 run.status = Run.Status.TIMEOUT
@@ -1082,10 +1168,30 @@ def execute_run(run: Run, webhook_data: dict | None = None) -> None:
                     run.stderr = (
                         f"[TIMEOUT: Script exceeded {run.script.timeout_seconds} seconds]"
                     )
+                # How it ended, on the line under the TIMEOUT one.
+                note = stop_note(result.stop, spec.stop_grace, by_user=False)
+                if note:
+                    run.stderr += f"\n{note}"
                 run.exit_code = -1
                 logger.warning(
                     f"Run {run.id} timed out after {run.script.timeout_seconds}s"
                 )
+            elif stopped_by_user:
+                # Stopped from the console or the SDK: CANCELLED, with what the
+                # script printed on its way out.
+                run.status = Run.Status.CANCELLED
+                run.stdout = _truncate_output(
+                    _mask_secrets_in_output(result.stdout or "", secrets)
+                )
+                run.stderr = _append_note(
+                    _truncate_output(_mask_secrets_in_output(result.stderr or "", secrets)),
+                    stop_note(
+                        result.stop or STOP_GRACEFUL, spec.stop_grace, by_user=True
+                    ),
+                )
+                run.exit_code = result.exit_code
+                run.ended_at = finished_at
+                logger.info(f"Run {run.id} stopped by user ({result.stop or STOP_GRACEFUL})")
             else:
                 # Process results - mask secrets in output
                 run.stdout = _truncate_output(_mask_secrets_in_output(result.stdout, secrets))
@@ -1095,8 +1201,7 @@ def execute_run(run: Run, webhook_data: dict | None = None) -> None:
                     Run.Status.SUCCESS if result.exit_code == 0 else Run.Status.FAILED
                 )
                 hint = limit_hint(result.exit_code, run.stderr, spec.limits)
-                if hint:
-                    run.stderr = f"{run.stderr}\n\n{hint}" if run.stderr else hint
+                run.stderr = _append_note(run.stderr, hint)
 
         except subprocess.SubprocessError as e:
             # Handle other subprocess errors

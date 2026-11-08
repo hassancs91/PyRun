@@ -394,13 +394,14 @@ class ApplyDbWorkerSettingsTests(TestCase):
 
         config = apply_db_worker_settings()
 
-        # timeout 0 → retry pushed to 86400, then floored by the 90000s script;
-        # identical on every platform (0 stays 0 under the NT forcing too).
+        # timeout 0 → retry pushed to 86400, then floored by the 90000s script
+        # plus its 10 s stop grace period; identical on every platform (0 stays
+        # 0 under the NT forcing too).
         self.assertEqual(Conf.WORKERS, 4)
         self.assertEqual(Conf.TIMEOUT, 0)
-        self.assertEqual(Conf.RETRY, 90000 + 120)
+        self.assertEqual(Conf.RETRY, 90000 + 10 + 120)
         self.assertEqual(Conf.QUEUE_LIMIT, 30)
-        self.assertEqual(config["retry"], 90000 + 120)
+        self.assertEqual(config["retry"], 90000 + 10 + 120)
 
     def test_wrapper_command_is_registered(self):
         from django.core.management import get_commands

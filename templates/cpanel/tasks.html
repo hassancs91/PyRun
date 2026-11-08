@@ -229,7 +229,7 @@ function cancelTask(taskId) {
 }
 
 function forceStopTask(taskId) {
-    if (!confirm('Force stop this task? The running script process will be killed.')) return;
+    if (!confirm('Force stop this task? The script gets its stop grace period to shut down, then it is killed. Stopping it again kills it at once.')) return;
     fetch(`{% url 'cpanel:tasks' %}${taskId}/force-stop/`, {
         method: 'POST',
         headers: { 'X-CSRFToken': '{{ csrf_token }}', 'Content-Type': 'application/json' },

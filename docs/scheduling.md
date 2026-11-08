@@ -205,6 +205,12 @@ in the meantime is picked up.
 heartbeat. A retry therefore starts up to about a minute after its delay ends,
 and delays under a minute act like about a minute.
 
+**Timeouts and the stop grace period.** A run that hits its timeout first
+gets SIGTERM and the script's **Stop grace period** (10 seconds by default) to
+shut down, then it is killed: the same graceful stop as the Stop button (see
+[stopping a run](run-context.md#stopping-a-run)). A run can therefore take its
+timeout plus the grace period before its process is gone.
+
 **What never retries:** a successful run, a run you stopped, a run the
 concurrency policy skipped, a run the platform marked failed because its
 worker died, and a timeout unless **Retry timeouts too** is on. When the

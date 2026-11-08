@@ -293,5 +293,123 @@ class ProgressTests(_HelperTest):
         self.assertIn("Not inside a PyRun run", err.getvalue())
 
 
+class OnStopTests(unittest.TestCase):
+    """pyrunner_run.on_stop(): the graceful-stop callback (2.5, T08)."""
+
+    def setUp(self):
+        # Never install real handlers in the test process: record them instead.
+        self.installed = {}
+        patcher = mock.patch.object(
+            pyrunner_run.signal, "signal", side_effect=lambda sig, h: self.installed.__setitem__(sig, h)
+        )
+        patcher.start()
+        self.signal_patcher = patcher
+        self.addCleanup(patcher.stop)
+        saved = (list(pyrunner_run._stop_callbacks), pyrunner_run._stop_handler_installed, pyrunner_run._stopping)
+
+        def restore():
+            pyrunner_run._stop_callbacks[:] = saved[0]
+            pyrunner_run._stop_handler_installed, pyrunner_run._stopping = saved[1], saved[2]
+
+        self.addCleanup(restore)
+        pyrunner_run._stop_callbacks.clear()
+        pyrunner_run._stop_handler_installed = False
+        pyrunner_run._stopping = False
+
+    def test_installs_the_handler_for_the_stop_signals_once(self):
+        pyrunner_run.on_stop(lambda: None)
+        pyrunner_run.on_stop(lambda: None)
+        expected = {pyrunner_run.signal.SIGTERM}
+        if hasattr(pyrunner_run.signal, "SIGBREAK"):
+            expected.add(pyrunner_run.signal.SIGBREAK)
+        self.assertEqual(set(self.installed), expected)
+        self.assertEqual(pyrunner_run.signal.signal.call_count, len(expected))
+
+    def test_works_as_a_decorator(self):
+        @pyrunner_run.on_stop
+        def save():
+            return "saved"
+
+        self.assertEqual(save(), "saved")
+        self.assertEqual(pyrunner_run._stop_callbacks, [save])
+
+    def test_refuses_a_non_callable(self):
+        with self.assertRaises(TypeError):
+            pyrunner_run.on_stop("not a function")
+        self.assertEqual(self.installed, {})
+
+    def test_callbacks_run_in_order_then_the_script_exits(self):
+        calls = []
+        pyrunner_run.on_stop(lambda: calls.append("first"))
+
+        def broken():
+            raise RuntimeError("disk full")
+
+        pyrunner_run.on_stop(broken)
+        pyrunner_run.on_stop(lambda: calls.append("third"))
+        err = io.StringIO()
+        with redirect_stderr(err), self.assertRaises(SystemExit) as stop:
+            pyrunner_run._handle_stop(15, None)
+        self.assertEqual(stop.exception.code, 128 + 15)
+        self.assertEqual(calls, ["first", "third"])  # a failing callback doesn't stop the rest
+        self.assertIn("disk full", err.getvalue())
+
+    def test_a_second_signal_changes_nothing(self):
+        calls = []
+        pyrunner_run.on_stop(lambda: calls.append(1))
+        with self.assertRaises(SystemExit):
+            pyrunner_run._handle_stop(15, None)
+        self.assertIsNone(pyrunner_run._handle_stop(15, None))
+        self.assertEqual(calls, [1])
+
+    def test_a_callback_can_choose_the_exit_code(self):
+        pyrunner_run.on_stop(lambda: sys.exit(0))
+        with self.assertRaises(SystemExit) as stop:
+            pyrunner_run._handle_stop(15, None)
+        self.assertEqual(stop.exception.code, 0)
+
+    def test_outside_the_main_thread_it_says_so(self):
+        self.signal_patcher.stop()  # the real signal.signal refuses other threads
+        caught = []
+
+        def register():
+            try:
+                pyrunner_run.on_stop(lambda: None)
+            except pyrunner_run.RunError as e:
+                caught.append(str(e))
+
+        worker = threading.Thread(target=register)
+        worker.start()
+        worker.join(10)
+        self.assertEqual(caught, ["on_stop() must be called from the main thread."])
+        self.assertEqual(pyrunner_run._stop_callbacks, [])
+
+    @unittest.skipIf(os.name == "nt", "posix signals (Windows: core.test_graceful_stop)")
+    def test_a_real_sigterm_runs_the_callback_and_finally_blocks(self):
+        code = (
+            "import sys, time, pyrunner_run\n"
+            "pyrunner_run.on_stop(lambda: print('saved partial work', flush=True))\n"
+            "print('ready', flush=True)\n"
+            "try:\n"
+            "    while True:\n"
+            "        time.sleep(0.05)\n"
+            "finally:\n"
+            "    print('finally ran', flush=True)\n"
+        )
+        proc = subprocess.Popen(
+            [sys.executable, "-c", code],
+            env={**os.environ, "PYTHONPATH": str(HELPERS)},
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        self.addCleanup(proc.kill)
+        self.assertEqual(proc.stdout.readline().strip(), "ready")
+        proc.terminate()  # SIGTERM
+        out, err = proc.communicate(timeout=30)
+        self.assertEqual(proc.returncode, 128 + 15, err)
+        self.assertEqual(out.split(), ["saved", "partial", "work", "finally", "ran"])
+
+
 if __name__ == "__main__":
     unittest.main()

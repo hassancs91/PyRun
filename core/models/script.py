@@ -132,6 +132,18 @@ class Script(models.Model):
         help_text="Maximum execution time in seconds (default: 1 hour, max: 24 hours)",
     )
 
+    # Graceful stop (2.5, T08). Stopping a run (Stop button, SDK, timeout)
+    # first sends SIGTERM (CTRL_BREAK on Windows) to the script's process
+    # group, waits this long, then kills it. 0 = kill straight away.
+    MAX_STOP_GRACE_SECONDS = 60
+
+    stop_grace_seconds = models.PositiveSmallIntegerField(
+        default=10,
+        validators=[MaxValueValidator(MAX_STOP_GRACE_SECONDS)],
+        help_text="Seconds a stopped or timed-out run gets to shut down before "
+        "it is killed (0 = kill at once, max 60).",
+    )
+
     # What a trigger does while the script already has a run in flight (2.5,
     # T05). Enforced in core.tasks.queue_script_run, the funnel every trigger
     # goes through (core.services.run_concurrency holds the rules).
@@ -306,6 +318,12 @@ class Script(models.Model):
     def can_run(self) -> bool:
         """Check if this script can be executed (enabled and not archived)."""
         return self.is_enabled and not self.is_archived
+
+    @property
+    def max_run_seconds(self) -> int:
+        """The longest a run's script can be alive: its timeout plus the grace
+        period a timed-out run gets to shut down before the kill."""
+        return self.timeout_seconds + self.stop_grace_seconds
 
     @property
     def last_run(self):

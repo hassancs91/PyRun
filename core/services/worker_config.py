@@ -17,7 +17,7 @@ the DB overrides only ever affected cosmetics on NT.)
 import logging
 
 from django.conf import settings as django_settings
-from django.db.models import Max
+from django.db.models import F, Max
 from django_q.conf import Conf
 
 from pyrunner.qconfig import compute_effective_q_config
@@ -42,7 +42,10 @@ def apply_db_worker_settings() -> dict:
     # also outlast the longest pip task (bulk install) or the broker hands a
     # still-running install to a second worker in the same venv.
     max_script_timeout = max(
-        Script.objects.aggregate(m=Max("timeout_seconds"))["m"] or 0,
+        # Script.max_run_seconds: a timed-out run keeps its worker for its
+        # stop grace period too.
+        Script.objects.aggregate(m=Max(F("timeout_seconds") + F("stop_grace_seconds")))["m"]
+        or 0,
         EnvironmentService.max_task_timeout(),
     )
     config = compute_effective_q_config(

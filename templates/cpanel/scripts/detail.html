@@ -115,6 +115,10 @@
                     <dd class="font-mono tnum text-text">{{ script.timeout_seconds }}s</dd>
                 </div>
                 <div class="flex items-center justify-between gap-3">
+                    <dt class="text-muted">Stop grace period</dt>
+                    <dd class="text-text">{% if script.stop_grace_seconds %}<span class="font-mono tnum">{{ script.stop_grace_seconds }}s</span>{% else %}None, killed at once{% endif %}</dd>
+                </div>
+                <div class="flex items-center justify-between gap-3">
                     <dt class="text-muted">If already running</dt>
                     <dd class="text-text">{% if script.concurrency_policy == 'skip' %}Skip{% elif script.concurrency_policy == 'queue' %}Queue{% else %}Allow{% endif %}</dd>
                 </div>
