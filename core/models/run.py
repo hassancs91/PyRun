@@ -35,6 +35,11 @@ class Run(models.Model):
         SCHEDULED = "scheduled", "Scheduled"
         API = "api", "API"
 
+    # Why a CANCELLED run was cancelled, when the platform did it rather than
+    # someone pressing Stop. Blank = an ordinary cancel.
+    class CancelReason(models.TextChoices):
+        CONCURRENCY_SKIP = "concurrency_skip", "Skipped: already running"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     script = models.ForeignKey(
         Script,
@@ -154,6 +159,36 @@ class Run(models.Model):
         blank=True,
         default=None,
         help_text="What started the run: {kind, received_at, ...} (see core.services.run_events).",
+    )
+
+    # Concurrency policy (2.5, T05; core.services.run_concurrency).
+    # ``cancel_reason``: set with CANCELLED when the platform cancelled the run
+    # (a Skip-policy script that was already running).
+    # ``queued_behind``: on a Queue-policy script, the run this one waited
+    # behind. Set while the row is held (PENDING, no task yet) and kept after
+    # it starts, as history. A plain id, not a foreign key: deleting the run
+    # ahead must not clear the marker that says this one is waiting.
+    # ``queued_payload``: the task's request data (webhook body, chat message)
+    # as JSON text while the run is held, cleared when it starts. Text, not
+    # JSON, so the WEBHOOK_* values come out byte for byte (PostgreSQL's jsonb
+    # would reorder keys).
+    cancel_reason = models.CharField(
+        max_length=32,
+        choices=CancelReason.choices,
+        blank=True,
+        default="",
+        help_text="Why the platform cancelled the run (blank = an ordinary cancel).",
+    )
+    queued_behind = models.UUIDField(
+        null=True,
+        blank=True,
+        default=None,
+        help_text="The run this one waited behind (Queue concurrency policy).",
+    )
+    queued_payload = models.TextField(
+        blank=True,
+        default="",
+        help_text="Request data for a run waiting its turn (cleared when it starts).",
     )
 
     # Who triggered the run
@@ -300,12 +335,17 @@ class Run(models.Model):
         # PENDING: only reconciled while workers are alive — with the cluster
         # down, "queued" is still the truth and these runs will execute when it
         # returns.
+        # A run held by the Queue concurrency policy has no task yet by
+        # design: it is waiting its turn, not lost, however long the runs ahead
+        # of it take (they are reconciled on their own; that releases it).
         if GlobalSettings.get_settings().worker_is_alive():
             stale_pending = list(
                 cls.objects.filter(
                     status=cls.Status.PENDING,
                     created_at__lt=now - cls.RECONCILE_PENDING_AFTER,
-                ).values_list("pk", flat=True)
+                )
+                .exclude(task_id="", queued_behind__isnull=False)
+                .values_list("pk", flat=True)
             )
             flipped = cls.objects.filter(
                 pk__in=stale_pending, status=cls.Status.PENDING
@@ -329,6 +369,7 @@ class Run(models.Model):
                 )
 
         cls._notify_reconciled(notify_pks)
+        cls._release_queues(notify_pks)
         return reconciled
 
     @classmethod
@@ -402,7 +443,26 @@ class Run(models.Model):
                 notify_pks.append(run.pk)
 
         cls._notify_reconciled(notify_pks)
+        cls._release_queues(notify_pks)
         return reconciled
+
+    @classmethod
+    def _release_queues(cls, pks) -> None:
+        """Start the next waiting run of each script whose run was reconciled.
+
+        A reconciled run ends without passing through the executor's finalize,
+        which is where a Queue-policy script normally starts its next run. The
+        heartbeat would catch it within a minute; this does it right away.
+        Best effort, like the notifications.
+        """
+        if not pks:
+            return
+        from core.services.run_concurrency import try_release
+
+        for script_id in set(
+            cls.objects.filter(pk__in=pks).values_list("script_id", flat=True)
+        ):
+            try_release(script_id)
 
     @classmethod
     def _notify_reconciled(cls, pks) -> None:
@@ -447,6 +507,20 @@ class Run(models.Model):
             self.Status.TIMEOUT,
             self.Status.CANCELLED,
         ]
+
+    @property
+    def is_held(self) -> bool:
+        """Waiting for the runs ahead of it (Queue concurrency policy)."""
+        return (
+            self.status == self.Status.PENDING
+            and not self.task_id
+            and self.queued_behind is not None
+        )
+
+    @property
+    def is_skipped(self) -> bool:
+        """Not started: the script was already running (Skip concurrency policy)."""
+        return self.cancel_reason == self.CancelReason.CONCURRENCY_SKIP
 
     @property
     def is_successful(self) -> bool:

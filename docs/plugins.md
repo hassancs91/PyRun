@@ -305,7 +305,7 @@ nothing is cancellable.
 A **`RunView`** is an immutable, ORM-free snapshot — no live `Run` leaks past the
 SDK. Fields: `id, status, trigger_type, created_at, started_at, ended_at,
 duration, exit_code, pid, task_id, is_finished, is_running, inputs, result,
-progress`. Its `.as_dict()` returns JSON-serializable values (datetimes → ISO
+progress, cancel_reason, is_held`. Its `.as_dict()` returns JSON-serializable values (datetimes → ISO
 8601), so a status endpoint can return it directly:
 
 ```python
@@ -338,6 +338,36 @@ and `progress` the latest `{"pct", "message", "updated_at"}` from
 `pyrunner_run.progress()`. Both are None until the script sets them. A worker
 script that calls `pyrunner_run.progress()` gets a progress bar on its run page
 for free; a plugin can show the same thing from `RunView.progress`.
+
+### One run at a time (PyRun 2.5)
+
+A script that must never run twice at once doesn't need its own "is a run
+already going?" check. Give it a concurrency policy when you provision it:
+
+```python
+script = ScriptAPI(OWNER).upsert(key="sync", ..., concurrency_policy="skip")
+
+run = ScriptAPI(OWNER).queue_run("sync")
+if run.cancel_reason == "concurrency_skip":
+    messages.info(request, "A sync is already running.")
+```
+
+| `concurrency_policy` | While the script has a run in flight, a new run is... |
+|---|---|
+| `"allow"` (default) | started alongside it, as before 2.5 |
+| `"skip"` | created already `cancelled`, with `cancel_reason == "concurrency_skip"`, and never executed |
+| `"queue"` | held `pending` (`is_held`) and started when the runs ahead of it end, one at a time, oldest first |
+
+It applies to every way the script starts: `queue_run`, its schedule, its
+webhook, a chat channel and the console's Run now. That is the point: a
+check in the plugin only ever covered the plugin's own button. `None` leaves
+the policy as it is; an unknown value raises `ValueError`. Users can change
+it in the script editor (**If it's already running**).
+
+`latest_run(key)` passes over skipped runs, so a status badge keeps showing
+the run that is actually going; `runs(key)` lists them, with `cancel_reason`
+set. See [scheduling.md](scheduling.md#when-the-script-is-still-running) for
+how queued runs are released.
 
 ### Inputs and results (PyRun 2.5)
 

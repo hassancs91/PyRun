@@ -1179,6 +1179,13 @@ def execute_run(run: Run, webhook_data: dict | None = None) -> None:
             f"(exit_code={run.exit_code})"
         )
 
+        # The run has ended: a Queue-policy script starts its next waiting run
+        # now. try_release never raises, so this can't turn a finished run into
+        # an executor error; the worker heartbeat retries anything it misses.
+        from core.services.run_concurrency import try_release
+
+        try_release(run.script_id)
+
 
 def run_in_environment(
     environment,

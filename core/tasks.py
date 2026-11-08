@@ -12,6 +12,7 @@ from django.utils import timezone
 from django_q.tasks import async_task
 
 from core.models import Run, Script, ScriptSchedule, GlobalSettings, PackageOperation
+from core.services import run_concurrency
 from core.services.library_service import resync_dev_libraries, stamp_library_versions
 from core.services.run_events import default_event, schedule_event
 from core.services.script_inputs import ScriptInputsError, prepare_inputs
@@ -91,8 +92,14 @@ def queue_script_run(run: Run, webhook_data: dict | None = None) -> str:
         run: The Run model instance to execute
         webhook_data: Optional webhook data to inject as environment variables
 
+    The script's concurrency policy is applied here too, once the run is
+    stamped (``core.services.run_concurrency.admit``): a Skip-policy script
+    that is already running gets the run marked CANCELLED (skipped), and a
+    Queue-policy one keeps it PENDING with no task until the runs ahead of it
+    end. Callers read the outcome from ``run.status`` / ``run.is_held``.
+
     Returns:
-        str: The django-q2 task ID
+        str: The django-q2 task ID, or "" when the run was skipped or held
 
     Raises:
         ValueError: If the run is not in PENDING status
@@ -142,6 +149,20 @@ def queue_script_run(run: Run, webhook_data: dict | None = None) -> str:
     # stamping at execute would let an edit in between change what the run imports.
     stamp_library_versions(run)
 
+    # Last, so a held run waits with the same inputs and library versions it
+    # would have started with now.
+    if run_concurrency.admit(run, webhook_data) != run_concurrency.DISPATCH:
+        return run.task_id or ""
+
+    return enqueue_run(run, webhook_data)
+
+
+def enqueue_run(run: Run, webhook_data: dict | None = None) -> str:
+    """Queue the worker task for a stamped, admitted run; store its task id.
+
+    Only ``queue_script_run`` and ``run_concurrency.release`` (a held run's
+    turn) call this. Everything else goes through ``queue_script_run``.
+    """
     task_id = async_task(
         "core.tasks.execute_run_task",
         str(run.id),
@@ -231,19 +252,23 @@ def execute_scheduled_run(script_id: str) -> dict:
     schedule.last_scheduled_run = fired_at
     schedule.save(update_fields=["last_scheduled_run"])
 
-    # Queue for execution
+    # Queue for execution (the script's concurrency policy may skip or hold it)
     queue_script_run(run)
 
     # Update next_run cache
     schedule.next_run = ScheduleService.calculate_next_run(schedule)
     schedule.save(update_fields=["next_run"])
 
-    logger.info(f"Scheduled run {run.id} created for script {script.name}")
+    if run.is_skipped:
+        logger.info(f"Scheduled run {run.id} of script {script.name} skipped - already running")
+    else:
+        logger.info(f"Scheduled run {run.id} created for script {script.name}")
 
     return {
         "success": True,
         "run_id": str(run.id),
         "script_id": script_id,
+        "status": run.status,
     }
 
 
@@ -556,6 +581,17 @@ def worker_heartbeat_task() -> dict:
                 )
         except Exception:
             logger.exception("Stale-run reconciliation failed")
+
+        # Backstop for the Queue concurrency policy: a held run normally
+        # starts when the run ahead of it ends (executor finalize, Stop, the
+        # reconciler above). Anything those missed starts here, within a
+        # minute. Never fails the heartbeat.
+        try:
+            released = run_concurrency.release_all()
+            if released:
+                logger.info(f"Started {released} queued run(s) whose turn had come")
+        except Exception:
+            logger.exception("Releasing queued runs failed")
 
         # Same for package operations: the packages page used to be the only
         # reconciler, so an install whose worker died stayed "running" (and the

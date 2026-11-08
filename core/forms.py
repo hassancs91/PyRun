@@ -139,6 +139,7 @@ class ScriptForm(forms.ModelForm):
             "environment",
             "tags",
             "timeout_seconds",
+            "concurrency_policy",
             "is_enabled",
             "isolation_mode",
             "injection_mode",
@@ -171,6 +172,7 @@ class ScriptForm(forms.ModelForm):
             "timeout_seconds": forms.NumberInput(
                 attrs={"class": INPUT_CLASS, "min": 1, "max": 86400}
             ),
+            "concurrency_policy": forms.Select(attrs={"class": INPUT_CLASS}),
             "is_enabled": forms.CheckboxInput(attrs={"class": CHECK_CLASS}),
             "isolation_mode": forms.Select(attrs={"class": INPUT_CLASS}),
             "injection_mode": forms.Select(attrs={"class": INPUT_CLASS}),
@@ -197,6 +199,7 @@ class ScriptForm(forms.ModelForm):
             "environment": "Environment",
             "tags": "Tags",
             "timeout_seconds": "Timeout (seconds)",
+            "concurrency_policy": "If it's already running",
             "is_enabled": "Enabled",
             "isolation_mode": "Execution Isolation",
             "injection_mode": "Secret injection",
@@ -208,6 +211,10 @@ class ScriptForm(forms.ModelForm):
         }
         help_texts = {
             "timeout_seconds": "Maximum execution time (1 second to 24 hours)",
+            "concurrency_policy": "What a new trigger does while a run is still going. "
+            "Allow starts another run alongside it. Skip doesn't start it and lists "
+            "it as skipped. Queue starts it when the current run ends, one at a time, "
+            "in order. Applies to Run now, schedules, webhooks, chat and plugins.",
             "isolation_mode": "Run sandboxed. Effective only when the workspace policy is 'optional' (a 'required' workspace always sandboxes).",
             "injection_mode": "All = every workspace secret (default). Selected = only the secrets you attach below.",
             "notify_email": "Leave empty to use global default",
@@ -236,6 +243,8 @@ class ScriptForm(forms.ModelForm):
         # Optional: a form submitted without it (or legacy callers) defaults to
         # 'all' in clean_injection_mode, matching the model default.
         self.fields["injection_mode"].required = False
+        # Same for the concurrency policy, which then keeps its saved value.
+        self.fields["concurrency_policy"].required = False
         # Scope the notify-channels picker to the active workspace (tenancy);
         # None ⇒ empty so a channel never leaks across workspaces in the picker.
         from core.models import Channel
@@ -249,6 +258,13 @@ class ScriptForm(forms.ModelForm):
 
     def clean_injection_mode(self):
         return self.cleaned_data.get("injection_mode") or Script.InjectionMode.ALL
+
+    def clean_concurrency_policy(self):
+        return (
+            self.cleaned_data.get("concurrency_policy")
+            or self.instance.concurrency_policy
+            or Script.ConcurrencyPolicy.ALLOW
+        )
 
     def clean_code(self):
         code = self.cleaned_data.get("code", "").strip()

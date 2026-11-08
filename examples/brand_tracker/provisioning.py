@@ -283,6 +283,8 @@ def provision(data, *, created_by=None):
             )
 
     # 4) Managed Script (selected-mode injection; only granted secrets reach it).
+    #    Single-run by design (weekly cadence): the Skip concurrency policy
+    #    turns away a Run now, or a schedule tick, while a run is in flight.
     script = ScriptAPI(OWNER).upsert(
         key=SCRIPT_KEY,
         name=SCRIPT_NAME,
@@ -295,6 +297,7 @@ def provision(data, *, created_by=None):
         notify_on=data.get("notify_on") or "failure",
         notify_email=data.get("notify_email") or "",
         created_by=created_by,
+        concurrency_policy="skip",
     )
 
     # 5) Grant the owner secrets that exist to the managed script.
@@ -312,18 +315,21 @@ def provision(data, *, created_by=None):
 def queue_run(triggered_by=None):
     """Queue a tracked Run of the managed tracker script (via the RunBackend seam).
 
-    Returns ``(run, error_message)``; ``run`` is None when not runnable. Skips if a
-    run is already in flight (the tracker is single-run by design — weekly cadence).
+    Returns ``(run, error_message)``; ``run`` is None when not runnable, or when
+    the script's Skip concurrency policy turned it away because a run is
+    already in flight (the tracker is single-run by design: weekly cadence).
     """
     script = get_script()
     if script is None:
         return None, "Not configured yet — save the settings below first."
     if not script.can_run:
         return None, "The tracker script is disabled or archived."
-    latest = ScriptAPI(OWNER).latest_run(SCRIPT_KEY)
-    if latest and latest.status in ("pending", "running"):
-        return None, "A run is already in progress."
+    if script.concurrency_policy != "skip":
+        # Provisioned before the policy existed: set it now, on first use.
+        ScriptAPI(OWNER).upsert(key=SCRIPT_KEY, concurrency_policy="skip")
     run = ScriptAPI(OWNER).queue_run(SCRIPT_KEY, triggered_by=triggered_by)
+    if run.cancel_reason:
+        return None, "A run is already in progress."
     return run, None
 
 

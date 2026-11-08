@@ -429,7 +429,20 @@ def _start_manual_run(request: HttpRequest, script, inputs, rerun_of=None) -> Ht
     # Queue for async execution via django-q2
     try:
         queue_script_run(run)
-        messages.info(request, f'Script "{script.name}" has been queued for execution.')
+        if run.is_skipped:
+            messages.warning(
+                request,
+                f'Not started: "{script.name}" is already running, and its '
+                "concurrency policy is Skip.",
+            )
+        elif run.is_held:
+            messages.info(
+                request,
+                f'Script "{script.name}" is already running. This run is queued '
+                "and starts when the run ahead of it ends.",
+            )
+        else:
+            messages.info(request, f'Script "{script.name}" has been queued for execution.')
     except ScriptInputsError as e:
         # The schema changed after validation; queue_script_run deleted the
         # row, so there is no run to show (and none to save back as failed).

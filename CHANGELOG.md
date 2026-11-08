@@ -54,6 +54,22 @@ begins tracking at the current release; earlier history is in the git log.
   such a schema while the script has an active schedule. The SDK Showcase
   example gains a **Run with inputs** card that queues a run with inputs and
   shows its live progress and result from `RunView`.
+- **What happens when a script is already running.** A new **If it's already
+  running** setting in the script editor: **Allow** (the default, today's
+  behaviour) starts another run alongside it; **Skip** creates the new run as
+  cancelled with a **skipped: already running** chip on the runs list and the
+  run page, and runs nothing; **Queue** keeps it waiting and starts it when the
+  run ahead of it ends, one at a time and in order, with the inputs, webhook
+  body or chat message it arrived with. It applies to every way a script
+  starts: Run now, Re-run, schedules, webhooks, chat channels and plugins. A
+  skipped webhook call still gets a 200, with `"status": "skipped"`; a skipped
+  chat message gets a reply saying so. A waiting run can be cancelled from its
+  page. The plugin SDK takes it as `ScriptAPI.upsert(concurrency_policy=)`, and
+  `RunView` gains `cancel_reason` and `is_held`. The Brand Tracker and YouTube
+  Comments AI examples now use Skip instead of their own "a run is already in
+  progress" checks, so their schedules can no longer overlap a manual run
+  either. Backups and forks include the setting. Guide: the "When the script
+  is still running" section of `docs/scheduling.md`.
 
 ## [2.0.0] — October 23, 2026
 

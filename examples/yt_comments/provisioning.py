@@ -540,6 +540,9 @@ def provision(data, *, created_by=None):
         notify_on=data.get("notify_on") or "failure",
         notify_email=data.get("notify_email") or "",
         created_by=created_by,
+        # Single-run by design: a Run now or the daily tick that lands while
+        # a run is in flight is skipped (the Skip concurrency policy).
+        concurrency_policy="skip",
     )
 
     # 7) Grants: the owner secrets that exist + the database. The refresh token
@@ -565,18 +568,21 @@ def provision(data, *, created_by=None):
 def queue_run(triggered_by=None):
     """Queue a tracked Run of the managed analyzer script (via the RunBackend seam).
 
-    Returns ``(run, error_message)``; ``run`` is None when not runnable. Skips if
-    a run is already in flight (the analyzer is single-run by design).
+    Returns ``(run, error_message)``; ``run`` is None when not runnable, or when
+    the script's Skip concurrency policy turned it away because a run is
+    already in flight (the analyzer is single-run by design).
     """
     script = get_script()
     if script is None:
         return None, "Not configured yet — save the settings below first."
     if not script.can_run:
         return None, "The analyzer script is disabled or archived."
-    latest = ScriptAPI(OWNER).latest_run(SCRIPT_KEY)
-    if latest and latest.status in ("pending", "running"):
-        return None, "A run is already in progress."
+    if script.concurrency_policy != "skip":
+        # Provisioned before the policy existed: set it now, on first use.
+        ScriptAPI(OWNER).upsert(key=SCRIPT_KEY, concurrency_policy="skip")
     run = ScriptAPI(OWNER).queue_run(SCRIPT_KEY, triggered_by=triggered_by)
+    if run.cancel_reason:
+        return None, "A run is already in progress."
     return run, None
 
 

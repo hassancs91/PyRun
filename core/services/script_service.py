@@ -19,6 +19,7 @@ FORK_COPIED_FIELDS = (
     "inputs_schema",
     "environment",
     "timeout_seconds",
+    "concurrency_policy",
     "is_enabled",
     "injection_mode",
     "isolation_mode",

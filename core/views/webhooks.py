@@ -37,7 +37,10 @@ def webhook_trigger_view(request: HttpRequest, token: str) -> JsonResponse:
 
     Returns:
         JsonResponse with:
-        - 200: Script queued successfully
+        - 200: Script queued successfully (``"status": "queued"``, also when
+          the script's Queue concurrency policy holds the run until the one
+          ahead of it ends), or skipped (``"status": "skipped"``: the script's
+          concurrency policy is Skip and it is already running)
         - 400: The script has a required input with no default; ``inputs``
           maps each such input to the reason (no run is created)
         - 403: Script is disabled
@@ -107,6 +110,15 @@ def webhook_trigger_view(request: HttpRequest, token: str) -> JsonResponse:
         queue_script_run(run, webhook_data=webhook_data)
         logger.info(f"Webhook triggered run {run.id} for script {script.name}")
 
+        if run.is_skipped:
+            # A 200: the call did what the script asked for. A non-2xx would
+            # make most senders retry into the same running script.
+            return JsonResponse({
+                "status": "skipped",
+                "reason": "already_running",
+                "run_id": str(run.id),
+                "script": script.name,
+            })
         return JsonResponse({
             "status": "queued",
             "run_id": str(run.id),

@@ -888,6 +888,44 @@ class ProvisionTests(TestCase):
         self.assertEqual(cfg["start_date"], "2026-01-25")
         self.assertEqual(cfg["tags"], DEFAULT_TAGS)
 
+    def test_provision_sets_the_skip_concurrency_policy(self):
+        script, _ = prov.provision(self._data())
+        self.assertEqual(script.concurrency_policy, "skip")
+
+    def test_run_now_while_a_run_is_in_flight_is_skipped_by_the_policy(self):
+        from core.models import Run
+
+        script, _ = prov.provision(self._data())
+        busy = Run.objects.create(script=script, status=Run.Status.RUNNING)
+        with mock.patch("core.tasks.async_task", return_value="t") as task:
+            run, error = prov.queue_run()
+        self.assertIsNone(run)
+        self.assertEqual(error, "A run is already in progress.")
+        task.assert_not_called()
+        skipped = Run.objects.exclude(pk=busy.pk).get(script=script)
+        self.assertEqual(skipped.status, Run.Status.CANCELLED)
+        self.assertEqual(skipped.cancel_reason, Run.CancelReason.CONCURRENCY_SKIP)
+        # The status badge still follows the run that is going.
+        self.assertEqual(prov.live_status()["run"]["id"], str(busy.pk))
+
+        busy.status = Run.Status.SUCCESS
+        busy.save(update_fields=["status"])
+        with mock.patch("core.tasks.async_task", return_value="t") as task:
+            run, error = prov.queue_run()
+        self.assertIsNone(error)
+        self.assertEqual(run.status, Run.Status.PENDING)
+        task.assert_called_once()
+
+    def test_an_install_provisioned_before_the_policy_gets_it_on_first_run(self):
+        from core.models import Script
+
+        script, _ = prov.provision(self._data())
+        Script.objects.filter(pk=script.pk).update(concurrency_policy="allow")
+        with mock.patch("core.tasks.async_task", return_value="t"):
+            prov.queue_run()
+        script.refresh_from_db()
+        self.assertEqual(script.concurrency_policy, "skip")
+
     def test_provision_is_idempotent(self):
         prov.provision(self._data())
         prov.provision(self._data(max_ai_per_run=50))

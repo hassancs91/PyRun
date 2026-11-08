@@ -369,6 +369,10 @@ class RunView:
     when a secret can't be resolved (the values can't be checked, so they are
     withheld, as on the run page). ``result`` is the dict the script set;
     ``progress`` is ``{"pct", "message", "updated_at"}``. Both None until set.
+
+    ``cancel_reason`` is ``"concurrency_skip"`` on a CANCELLED run the
+    script's Skip concurrency policy didn't start, "" otherwise. ``is_held``
+    is True while a Queue-policy run waits for the runs ahead of it.
     """
 
     id: str
@@ -386,6 +390,8 @@ class RunView:
     inputs: Optional[dict] = None
     result: Optional[dict] = None
     progress: Optional[dict] = None
+    cancel_reason: str = ""
+    is_held: bool = False
 
     @classmethod
     def _from_run(cls, run, masks=None):
@@ -411,6 +417,8 @@ class RunView:
             inputs=_masked_run_inputs(run, masks if masks is not None else {}),
             result=run.result,
             progress=run.progress,
+            cancel_reason=run.cancel_reason or "",
+            is_held=run.is_held,
         )
 
     def as_dict(self) -> dict:
@@ -435,6 +443,8 @@ class RunView:
             "inputs": self.inputs,
             "result": self.result,
             "progress": self.progress,
+            "cancel_reason": self.cancel_reason,
+            "is_held": self.is_held,
         }
 
 
@@ -514,6 +524,7 @@ class ScriptAPI:
         notify_email=None,
         created_by=None,
         inputs_schema=None,
+        concurrency_policy=None,
     ):
         """Create or update an owned script (idempotent on (owner_plugin, owner_key)).
 
@@ -531,12 +542,22 @@ class ScriptAPI:
         refused while the script has an active schedule, because a scheduled
         run would have nothing to fill them with. Raises ValueError, before
         anything is saved.
+
+        ``concurrency_policy`` says what a trigger does while the script
+        already has a run in flight: ``"allow"`` (the default) starts another
+        run, ``"skip"`` creates the run as CANCELLED with ``cancel_reason``
+        ``"concurrency_skip"``, ``"queue"`` holds it and starts it when the
+        runs ahead of it end. It applies to every trigger, ``queue_run`` too.
         """
         from core.models import Script
         from core.services.script_inputs import check_inputs_schema, schedule_conflict
 
         if self.owner and not key:
             raise ValueError("ScriptAPI.upsert requires key= for an owned script")
+        if concurrency_policy is not None and concurrency_policy not in Script.ConcurrencyPolicy.values:
+            raise ValueError(
+                f"concurrency_policy must be one of {', '.join(Script.ConcurrencyPolicy.values)}"
+            )
         set_schema = inputs_schema is not None
         if set_schema:
             # None from here on = the script declares no inputs.
@@ -579,6 +600,8 @@ class ScriptAPI:
             script.timeout_seconds = timeout_seconds
         if set_schema:
             script.inputs_schema = inputs_schema
+        if concurrency_policy is not None:
+            script.concurrency_policy = concurrency_policy
 
         env = _resolve_environment(environment)
         if env is not None:
@@ -611,6 +634,11 @@ class ScriptAPI:
         (``upsert(inputs_schema=)``); defaults fill in whatever is left out.
         They are checked before the run exists: bad inputs raise
         :class:`InputsError` and create no run, not even a failed one.
+
+        The script's concurrency policy applies (``upsert(concurrency_policy=)``):
+        while the script has a run in flight, a Skip-policy script returns the
+        run already CANCELLED (``run.cancel_reason == "concurrency_skip"``)
+        and a Queue-policy one returns it held (PENDING, ``run.is_held``).
         """
         from core.models import Run
         from core.services.run_events import plugin_event
@@ -667,8 +695,18 @@ class ScriptAPI:
     def latest_run(self, key):
         """Return the most recent Run of the owned script ``key`` as a RunView,
         or None when the script has never run (or doesn't exist). Poll this for a
-        plugin's live status badge."""
-        run = self._runs_qs(key).first()
+        plugin's live status badge.
+
+        Runs the Skip concurrency policy didn't start are passed over: a
+        trigger skipped while a run is in flight must not hide that run from
+        the badge. ``runs()`` lists them."""
+        from core.models import Run
+
+        run = (
+            self._runs_qs(key)
+            .exclude(cancel_reason=Run.CancelReason.CONCURRENCY_SKIP)
+            .first()
+        )
         return RunView._from_run(run) if run is not None else None
 
     def runs(self, key, *, limit=20):

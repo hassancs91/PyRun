@@ -4,8 +4,10 @@ Run views for the control panel.
 import json
 import uuid
 
-from django.shortcuts import render, get_object_or_404
+from django.contrib import messages
+from django.shortcuts import redirect, render, get_object_or_404
 from django.contrib.auth.decorators import login_required
+from django.views.decorators.http import require_POST
 from django.core.paginator import Paginator
 from django.db.models import BooleanField, ExpressionWrapper, Q
 from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
@@ -128,6 +130,24 @@ def run_detail_view(request: HttpRequest, pk) -> HttpResponse:
         "progress": progress_for_display(run.progress),
         "event": run_event_card(run, mask_sets),
     })
+
+
+@login_required
+@require_POST
+def run_cancel_view(request: HttpRequest, pk) -> HttpResponse:
+    """Cancel a run that is waiting its turn (Queue concurrency policy).
+
+    A held run has no worker task yet, so the Tasks page's Stop can't reach
+    it. Running runs keep using Stop, which kills the process.
+    """
+    from core.services.run_concurrency import cancel_held
+
+    run = get_object_or_404(Run, pk=pk, workspace=request.workspace)
+    if cancel_held(run):
+        messages.success(request, "Queued run cancelled. It won't start.")
+    else:
+        messages.error(request, "This run isn't waiting its turn any more, so there was nothing to cancel.")
+    return redirect("cpanel:run_detail", pk=run.pk)
 
 
 @login_required

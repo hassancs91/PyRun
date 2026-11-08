@@ -521,15 +521,30 @@ class TaskService:
             run.stderr = (run.stderr or "") + "\n[Killed by user]"
             run.pid = None
             run.save(update_fields=["status", "ended_at", "stderr", "pid"])
+            cls._release_queue(run)
             return True, "Run stopped — the script process was killed."
 
         if run.status == Run.Status.PENDING:
             run.status = Run.Status.CANCELLED
             run.ended_at = timezone.now()
-            run.save(update_fields=["status", "ended_at"])
+            run.queued_payload = ""
+            run.save(update_fields=["status", "ended_at", "queued_payload"])
+            cls._release_queue(run)
             return True, "Pending run cancelled successfully"
 
         return False, "No running or pending task found with this ID"
+
+    @staticmethod
+    def _release_queue(run) -> None:
+        """A stopped run frees its script: start the next queued run, if any.
+
+        The worker's finalize does the same when it notices the kill, but a
+        run whose worker is gone never gets there. Best effort (never raises):
+        the stop itself already succeeded.
+        """
+        from core.services.run_concurrency import try_release
+
+        try_release(run.script_id)
 
     @classmethod
     def force_stop_task(cls, task_id: str, workspace=None) -> tuple[bool, str]:

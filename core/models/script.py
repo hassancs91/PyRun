@@ -131,6 +131,23 @@ class Script(models.Model):
         help_text="Maximum execution time in seconds (default: 1 hour, max: 24 hours)",
     )
 
+    # What a trigger does while the script already has a run in flight (2.5,
+    # T05). Enforced in core.tasks.queue_script_run, the funnel every trigger
+    # goes through (core.services.run_concurrency holds the rules).
+    class ConcurrencyPolicy(models.TextChoices):
+        ALLOW = "allow", "Allow: start another run alongside it"
+        SKIP = "skip", "Skip: don't start the new run"
+        QUEUE = "queue", "Queue: start it when the current run ends"
+
+    concurrency_policy = models.CharField(
+        max_length=10,
+        choices=ConcurrencyPolicy.choices,
+        default=ConcurrencyPolicy.ALLOW,
+        help_text="What happens when the script is triggered while a run is "
+        "still going. Allow starts another run alongside it. Skip records the "
+        "new run as skipped. Queue waits and starts it when the current run ends.",
+    )
+
     # Status
     is_enabled = models.BooleanField(
         default=True,

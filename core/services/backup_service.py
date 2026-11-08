@@ -139,6 +139,11 @@ class BackupService:
     # masked); older backups omit them and restore leaves them NULL.
     # ``event`` on runs (what started the run, stored raw like inputs); older
     # backups omit it and restore leaves it NULL, as for a pre-2.5 run.
+    # ``concurrency_policy`` on scripts (older backups: "allow", the pre-2.5
+    # behaviour); ``cancel_reason`` and ``queued_behind`` on runs (older
+    # backups: blank / NULL). ``queued_behind`` is restored only on finished
+    # runs, and a held run's ``queued_payload`` is never exported: a restore
+    # must not start a run that was waiting its turn when the backup was taken.
     BACKUP_VERSION = "1.13.0"
     MAX_BACKUP_SIZE_MB = 100
     # Default cap on a gzip backup's expanded size (F92, zip-bomb guard);
@@ -347,6 +352,7 @@ class BackupService:
                 "description": script.description,
                 "code": script.code,
                 "inputs_schema": script.inputs_schema,
+                "concurrency_policy": script.concurrency_policy,
                 "environment_id": str(script.environment.id),
                 "workspace_id": str(script.workspace_id) if script.workspace_id else None,
                 "owner_plugin": script.owner_plugin,
@@ -636,6 +642,9 @@ class BackupService:
                 "progress": run.progress,
                 # What started the run (webhook body, chat message...); raw.
                 "event": run.event,
+                # Concurrency policy outcome: skipped, or waited behind a run.
+                "cancel_reason": run.cancel_reason,
+                "queued_behind": str(run.queued_behind) if run.queued_behind else None,
                 "trigger_type": run.trigger_type,
                 "triggered_by_email": run.triggered_by.email if run.triggered_by else None,
                 "created_at": cls._serialize_datetime(run.created_at),
@@ -1687,6 +1696,9 @@ class BackupService:
                 description=script_data.get("description", ""),
                 code=script_data["code"],
                 inputs_schema=script_data.get("inputs_schema"),
+                concurrency_policy=script_data.get(
+                    "concurrency_policy", Script.ConcurrencyPolicy.ALLOW
+                ),
                 environment=env,
                 workspace=cls._resolve_workspace(script_data.get("workspace_id"), ws_map, default_ws),
                 owner_plugin=script_data.get("owner_plugin"),
@@ -1874,11 +1886,13 @@ class BackupService:
             if not script:
                 continue  # Skip if script not found
 
+            status = run_data["status"]
+            finished = status not in (Run.Status.PENDING, Run.Status.RUNNING)
             Run.objects.create(
                 id=run_data["id"],  # Preserve UUID
                 script=script,
                 workspace=cls._resolve_workspace(run_data.get("workspace_id"), ws_map, default_ws),
-                status=run_data["status"],
+                status=status,
                 exit_code=run_data.get("exit_code"),
                 stdout=run_data.get("stdout", ""),
                 stderr=run_data.get("stderr", ""),
@@ -1890,6 +1904,10 @@ class BackupService:
                 result=run_data.get("result"),
                 progress=run_data.get("progress"),
                 event=run_data.get("event"),
+                cancel_reason=run_data.get("cancel_reason") or "",
+                # Unfinished runs come back without it, so they never count as
+                # held (see the 1.14.0 note on BACKUP_VERSION).
+                queued_behind=run_data.get("queued_behind") if finished else None,
                 trigger_type=run_data.get("trigger_type", "manual"),
                 triggered_by=triggered_by,
                 created_at=cls._deserialize_datetime(run_data.get("created_at")),

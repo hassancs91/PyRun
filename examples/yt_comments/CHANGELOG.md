@@ -2,6 +2,13 @@
 
 ## 0.5.0 (unreleased)
 
+One run at a time, everywhere: the analyzer script uses PyRun's **Skip**
+concurrency policy (PyRun 2.5) instead of the plugin's own "a run is already
+in progress" check, which only covered the page's Run now button. The daily
+schedule now can't overlap a manual run either; the skipped attempt is listed
+on the script's runs. An install saved before this change gets the policy on
+its next Run now (or settings save).
+
 Stage 5 — publish-ready testimonials (grading + archived avatars):
 
 - **Publish-worthiness grading**: every testimonial-tagged comment gets a

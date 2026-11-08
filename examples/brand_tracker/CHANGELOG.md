@@ -3,6 +3,17 @@
 All notable changes to the Brand Tracker plugin are documented here. This
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- The tracker script uses PyRun's **Skip** concurrency policy (PyRun 2.5)
+  instead of the plugin's own "a run is already in progress" check. The check
+  only covered the page's Run now button; the policy covers the weekly schedule
+  too, so a scheduled run can no longer overlap a manual one. A Run now while a
+  run is going still shows "A run is already in progress.", and the skipped
+  attempt is listed on the script's runs. An install saved before this change
+  gets the policy on its next Run now (or settings save).
+
 ## [1.1.2] - 2026-10-23
 
 ### Security

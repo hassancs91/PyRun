@@ -148,6 +148,36 @@ creating a run, and the skip is logged with the reason.
 
 ---
 
+## When the script is still running
+
+A schedule can fire while the script's previous run is still going: a slow
+run, an every-minute schedule, or a Run now that happened to overlap. The
+script's **If it's already running** setting (the script editor's Execution
+box) decides what happens. It applies to every way a script starts (Run now,
+Re-run, schedules, webhooks, chat channels and plugins), not just schedules.
+
+| Setting | What a new trigger does while a run is in flight |
+|---|---|
+| **Allow** (default) | Starts another run alongside it. This is how every script behaved before PyRun 2.5. |
+| **Skip** | Creates the run and marks it cancelled at once, with a **skipped: already running** chip on the runs list and the run page. Nothing is executed and no notification is sent. A webhook call still gets a 200, with `"status": "skipped"`, so the sender doesn't retry. A chat message gets a reply saying it was skipped. |
+| **Queue** | Keeps the run pending with a **waiting its turn** chip, and starts it when the run ahead of it ends. Queued runs start one at a time, in the order they came in, each with the inputs, webhook body or chat message it arrived with. |
+
+"In flight" means running, or pending and about to run (queued for a worker,
+or waiting its turn). Finished runs never block.
+
+A queued run normally starts within a second or two of the run ahead of it
+ending: when that run finishes, is stopped, or is marked failed because its
+worker died. The worker's once-a-minute heartbeat also checks for queued runs
+whose turn has come, so nothing waits longer than about a minute after the
+script is free. A queued run doesn't count as lost while it waits, however
+long the runs ahead of it take. To drop a queued run, open it and press
+**Cancel**.
+
+A pending run that never got queued for a worker, for example because the
+process creating it crashed, stops blocking the script after five minutes.
+
+---
+
 ## When the server was down
 
 Missed fires are not replayed one by one. If one or more scheduled times pass

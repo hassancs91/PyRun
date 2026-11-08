@@ -80,6 +80,13 @@ def _script_handler(channel, msg):
     }
     queue_script_run(run, webhook_data=webhook_data)
     logger.info("Inbound message routed to script %s (run %s)", script.id, run.id)
+    if run.is_skipped:
+        # The script won't run, so it can't reply: say so here.
+        return OutboundMessage(
+            "The linked script is already running, so this message was skipped. "
+            "Try again when it finishes.",
+            reply_ref=msg.reply_ref,
+        )
     return None
 
 
