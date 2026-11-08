@@ -41,6 +41,10 @@ def webhook_trigger_view(request: HttpRequest, token: str) -> JsonResponse:
           the script's Queue concurrency policy holds the run until the one
           ahead of it ends), or skipped (``"status": "skipped"``: the script's
           concurrency policy is Skip and it is already running)
+        - 503: A maintenance window blocks webhook calls right now
+          (``"status": "maintenance"``, ``until``); the ``Retry-After``
+          header says how many seconds until it ends. The refused call is
+          listed as a skipped run.
         - 400: The script has a required input with no default; ``inputs``
           maps each such input to the reason (no run is created)
         - 403: Script is disabled
@@ -110,6 +114,19 @@ def webhook_trigger_view(request: HttpRequest, token: str) -> JsonResponse:
         queue_script_run(run, webhook_data=webhook_data)
         logger.info(f"Webhook triggered run {run.id} for script {script.name}")
 
+        if run.is_maintenance_skipped:
+            # A 503 with Retry-After: senders that retry deliver it again
+            # once the window is over.
+            block = run.maintenance_block
+            response = JsonResponse({
+                "status": "maintenance",
+                "error": "Paused for maintenance. Try again later.",
+                "until": block.until.isoformat(),
+                "run_id": str(run.id),
+                "script": script.name,
+            }, status=503)
+            response["Retry-After"] = str(block.retry_after())
+            return response
         if run.is_skipped:
             # A 200: the call did what the script asked for. A non-2xx would
             # make most senders retry into the same running script.

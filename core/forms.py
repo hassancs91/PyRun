@@ -13,7 +13,7 @@ from django.utils.text import slugify
 from core.api.exceptions import ApiError
 # JSON parsing that refuses NaN/Infinity, which neither database stores as JSON.
 from core.api.schema import loads as strict_json_loads
-from core.models import Script, Environment, ScriptSchedule, Tag, DataStore, DataStoreEntry, APIToken, Database, Library, Secret, SecretProvider
+from core.models import Script, Environment, ScriptSchedule, Tag, DataStore, DataStoreEntry, APIToken, Database, Library, MaintenanceWindow, Secret, SecretProvider
 from core.services import EnvironmentService
 from core.services.script_inputs import (
     ScriptInputsError,
@@ -4071,3 +4071,140 @@ class VectorCollectionForm(forms.Form):
                 "dimension is known.",
             )
         return cleaned
+
+
+class _WallClockDateTimeField(forms.DateTimeField):
+    """A date and time as typed, with no time zone (naive).
+
+    Django's DateTimeField reads the value in the console's time zone, which
+    refuses a time in that zone's daylight-saving gap or overlap. A
+    maintenance window's times belong to the window's own zone, which the
+    form attaches in ``clean``.
+    """
+
+    input_formats = ["%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M"]
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("required", False)
+        kwargs.setdefault("widget", forms.DateTimeInput(
+            attrs={"class": INPUT_CLASS, "type": "datetime-local"}, format="%Y-%m-%dT%H:%M"
+        ))
+        super().__init__(**kwargs)
+
+    def to_python(self, value):
+        if value in self.empty_values:
+            return None
+        # BaseTemporalField's parsing (input_formats), without the zone step.
+        return forms.fields.BaseTemporalField.to_python(self, value)
+
+
+class MaintenanceWindowForm(forms.ModelForm):
+    """Create or edit a maintenance window (global or one workspace's).
+
+    A one-off window's two moments are typed as local date-times in the
+    window's time zone; a weekly window takes a time of day and weekdays.
+    The fields of the other kind are cleared on save.
+    """
+
+    WEEKDAY_CHOICES = ScheduleForm.WEEKDAY_CHOICES
+
+    timezone = forms.ChoiceField(
+        choices=get_timezone_choices,
+        initial="UTC",
+        widget=forms.Select(attrs={"class": INPUT_CLASS}),
+        label="Time zone",
+        help_text="The times below are in this time zone.",
+    )
+    starts_at_local = _WallClockDateTimeField(label="Starts")
+    ends_at_local = _WallClockDateTimeField(label="Ends")
+    weekdays = forms.TypedMultipleChoiceField(
+        required=False,
+        choices=WEEKDAY_CHOICES,
+        coerce=int,
+        widget=forms.CheckboxSelectMultiple(attrs={"class": CHECK_CLASS}),
+        label="Days",
+        help_text="The days the window starts on.",
+    )
+    start_time = forms.TimeField(
+        required=False,
+        widget=forms.TimeInput(attrs={"class": INPUT_CLASS, "type": "time"}, format="%H:%M"),
+        label="From",
+    )
+    end_time = forms.TimeField(
+        required=False,
+        widget=forms.TimeInput(attrs={"class": INPUT_CLASS, "type": "time"}, format="%H:%M"),
+        label="To",
+        help_text="An end at or before the start is the next day: 23:00 to 01:00 crosses midnight.",
+    )
+    blocks = forms.MultipleChoiceField(
+        choices=MaintenanceWindow.Block.choices,
+        widget=forms.CheckboxSelectMultiple(attrs={"class": CHECK_CLASS}),
+        label="While it is on, don't start",
+        error_messages={"required": "Choose at least one kind of trigger to block."},
+    )
+
+    class Meta:
+        model = MaintenanceWindow
+        fields = ["name", "kind", "timezone", "weekdays", "start_time", "end_time", "blocks", "enabled"]
+        widgets = {
+            "name": forms.TextInput(attrs={"class": INPUT_CLASS, "placeholder": "Nightly database upgrade"}),
+            "kind": forms.RadioSelect(),
+            "enabled": forms.CheckboxInput(attrs={"class": CHECK_CLASS}),
+        }
+        labels = {"kind": "Happens", "enabled": "Enabled"}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        window = self.instance
+        if not self.is_bound:
+            if window.pk is None:
+                self.initial.setdefault("blocks", list(MaintenanceWindow.DEFAULT_BLOCKS))
+            elif window.kind == MaintenanceWindow.Kind.ONE_OFF and window.starts_at and window.ends_at:
+                tz = window.tzinfo
+                self.initial["starts_at_local"] = window.starts_at.astimezone(tz).replace(tzinfo=None)
+                self.initial["ends_at_local"] = window.ends_at.astimezone(tz).replace(tzinfo=None)
+
+    def clean(self):
+        from zoneinfo import ZoneInfo
+
+        from django.utils import timezone as dj_timezone
+
+        cleaned = super().clean()
+        kind = cleaned.get("kind")
+        tz_name = cleaned.get("timezone")
+        if kind == MaintenanceWindow.Kind.ONE_OFF:
+            starts, ends = cleaned.get("starts_at_local"), cleaned.get("ends_at_local")
+            if starts is None:
+                self.add_error("starts_at_local", "Enter when the window starts.")
+            if ends is None:
+                self.add_error("ends_at_local", "Enter when the window ends.")
+            if starts is not None and ends is not None and tz_name:
+                tz = ZoneInfo(tz_name)
+                starts, ends = starts.replace(tzinfo=tz), ends.replace(tzinfo=tz)
+                if ends <= starts:
+                    self.add_error("ends_at_local", "The end must be after the start.")
+                elif ends <= dj_timezone.now():
+                    self.add_error("ends_at_local", "This window would already be over.")
+                cleaned["starts_at"], cleaned["ends_at"] = starts, ends
+        elif kind == MaintenanceWindow.Kind.WEEKLY:
+            if not cleaned.get("weekdays"):
+                self.add_error("weekdays", "Choose at least one day.")
+            if cleaned.get("start_time") is None:
+                self.add_error("start_time", "Enter the time the window starts.")
+            if cleaned.get("end_time") is None:
+                self.add_error("end_time", "Enter the time the window ends.")
+        return cleaned
+
+    def save(self, commit=True):
+        window = super().save(commit=False)
+        if window.kind == MaintenanceWindow.Kind.ONE_OFF:
+            window.starts_at = self.cleaned_data["starts_at"]
+            window.ends_at = self.cleaned_data["ends_at"]
+            window.start_time = window.end_time = None
+            window.weekdays = []
+        else:
+            window.starts_at = window.ends_at = None
+            window.weekdays = sorted(set(window.weekdays))
+        if commit:
+            window.save()
+        return window

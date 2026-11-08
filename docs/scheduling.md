@@ -113,6 +113,8 @@ what you preview is what you get.
   pause a single schedule without losing its configuration.
 - Admins can pause/resume **all** schedules globally from Settings; cron
   schedules are included in the global pause/resume.
+- For a pause you can plan (an upgrade tonight, a database backup every
+  Sunday), use a [maintenance window](#maintenance-windows) instead.
 
 - **Archiving** a script pauses its schedule. Restoring the script does not
   resume it: tick **Schedule Active** again.
@@ -228,6 +230,58 @@ to the first attempt, and the failed attempt links the retry that followed it.
 To drop a retry that is still waiting, open it and press **Cancel**. Scripts
 can read their attempt number from `run.json` (`run.attempt`, see
 [run context](run-context.md)).
+
+---
+
+## Maintenance windows
+
+A maintenance window is a planned pause: while it is on, the kinds of trigger
+it blocks don't start runs. Instance admins set **global** windows (they apply
+to every workspace) under **Settings → Schedules → Manage maintenance
+windows**; a workspace's Owners and Admins set that workspace's own windows
+from **Workspaces → Maintenance**, where the global ones are listed too.
+
+A window is either:
+
+- **One-off**: from one moment to another, for example 1 December 02:00 to
+  04:30;
+- **Weekly**: from one time of day to another on the days you tick, for
+  example every Sunday 02:00 to 04:00. When the end time is at or before the
+  start time the window ends the next day, so 23:00 to 01:00 crosses
+  midnight and 00:00 to 00:00 is the whole day.
+
+The times are in the window's own time zone, and they stay put across
+daylight saving changes: a Sunday 01:00 to 05:00 window in New York is three
+hours long on the day the clocks go forward and five on the day they go
+back. The window's page shows its next occurrence.
+
+Pick what it blocks (scheduled runs, webhook calls and chat messages by
+default):
+
+| Trigger | Inside the window |
+|---|---|
+| Scheduled runs | skipped; the run is not made up afterwards |
+| Webhook calls | `503` with a `Retry-After` header (seconds until the window ends) and `{"status": "maintenance", "until": ..., "run_id": ...}`; a sender that retries delivers it again after the window |
+| Chat messages | the bot replies that the script isn't started, and until when |
+| Manual runs (optional) | Run now, Re-run and plugin buttons show the same message |
+| API runs (optional) | not started: any run with trigger type API that isn't a webhook call or a chat message |
+
+Every refused trigger is still listed: the run is `cancelled` with a
+**skipped: maintenance window** chip, and its output names the window and
+when it ends. Such a run sends no notification and is never retried. A retry
+that comes due inside a window counts as the trigger of its first attempt;
+when that is blocked the retry is dropped and the failed attempt before it
+sends its notification.
+
+Runs that are already going when a window starts are never stopped, and a
+run waiting its turn under the [Queue policy](#when-the-script-is-still-running)
+still starts when the run ahead of it ends. While a window is on, the
+dashboard shows **Maintenance until ...**. Disabled windows block nothing.
+**Pause all** under Settings → Schedules stays the instant switch for
+schedules.
+
+Maintenance windows are included in backups. Restoring a backup made before
+they existed leaves the instance's windows as they are.
 
 ---
 

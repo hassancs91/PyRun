@@ -581,6 +581,8 @@ def queue_run(triggered_by=None):
         # Provisioned before the policy existed: set it now, on first use.
         ScriptAPI(OWNER).upsert(key=SCRIPT_KEY, concurrency_policy="skip")
     run = ScriptAPI(OWNER).queue_run(SCRIPT_KEY, triggered_by=triggered_by)
+    if run.cancel_reason == "maintenance":
+        return None, "Not started: a maintenance window blocks manual runs right now."
     if run.cancel_reason:
         return None, "A run is already in progress."
     return run, None

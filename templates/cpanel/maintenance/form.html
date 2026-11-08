@@ -1,0 +1,121 @@
+{% extends "cpanel/layout.html" %}
+
+{% block title %}{% if window.pk %}{{ window.name }}{% else %}New maintenance window{% endif %} - {{ instance_name }}{% endblock %}
+
+{% block breadcrumbs %}
+{% if workspace %}<a href="{% url 'cpanel:workspace_list' %}">Workspaces</a>
+<span>{{ workspace.name }}</span>{% else %}<a href="{% url 'cpanel:settings' %}#schedules">Settings</a>{% endif %}
+<a href="{{ list_url }}">Maintenance</a>
+<span>{% if window.pk %}Edit{% else %}New{% endif %}</span>
+{% endblock %}
+{% block heading %}{% if window.pk %}{{ window.name }}{% else %}New maintenance window{% endif %}{% endblock %}
+{% block subtitle %}{% if workspace %}Applies to the scripts in {{ workspace.name }}.{% else %}Global: applies to every workspace.{% endif %}{% endblock %}
+
+{% block page %}
+{% if window.pk %}
+<div class="rounded-2xl border border-line bg-panel p-4 text-sm">
+    <span class="text-muted">Next occurrence:</span>
+    <span class="text-text">{% if next_display %}{{ next_display }}{% else %}none{% endif %}</span>{% if not window.enabled %} <span class="text-faint">(disabled, so it won't block anything)</span>{% endif %}
+</div>
+{% endif %}
+
+<form method="post" class="rounded-2xl border border-line bg-panel p-6 space-y-5">
+    {% csrf_token %}
+    {% include "cpanel/_form_errors.html" %}
+
+    <div>
+        <label for="{{ form.name.id_for_label }}" class="block text-sm font-medium text-text mb-1.5">Name</label>
+        {{ form.name }}
+        {% include "cpanel/_field_errors.html" with field=form.name %}
+    </div>
+
+    <fieldset>
+        <legend class="block text-sm font-medium text-text mb-1.5">{{ form.kind.label }}</legend>
+        <div class="flex flex-wrap gap-4 text-sm text-text">
+            {% for radio in form.kind %}<label class="inline-flex items-center gap-2">{{ radio.tag }} {{ radio.choice_label }}</label>{% endfor %}
+        </div>
+        {% include "cpanel/_field_errors.html" with field=form.kind %}
+    </fieldset>
+
+    <div>
+        <label for="{{ form.timezone.id_for_label }}" class="block text-sm font-medium text-text mb-1.5">{{ form.timezone.label }}</label>
+        {{ form.timezone }}
+        <p class="text-xs text-faint mt-1">{{ form.timezone.help_text }}</p>
+        {% include "cpanel/_field_errors.html" with field=form.timezone %}
+    </div>
+
+    <div data-kind="one_off" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+            <label for="{{ form.starts_at_local.id_for_label }}" class="block text-sm font-medium text-text mb-1.5">{{ form.starts_at_local.label }}</label>
+            {{ form.starts_at_local }}
+            {% include "cpanel/_field_errors.html" with field=form.starts_at_local %}
+        </div>
+        <div>
+            <label for="{{ form.ends_at_local.id_for_label }}" class="block text-sm font-medium text-text mb-1.5">{{ form.ends_at_local.label }}</label>
+            {{ form.ends_at_local }}
+            {% include "cpanel/_field_errors.html" with field=form.ends_at_local %}
+        </div>
+    </div>
+
+    <div data-kind="weekly" class="space-y-4">
+        <fieldset>
+            <legend class="block text-sm font-medium text-text mb-1.5">{{ form.weekdays.label }}</legend>
+            <div class="flex flex-wrap gap-x-4 gap-y-2 text-sm text-text">
+                {% for box in form.weekdays %}<label class="inline-flex items-center gap-2">{{ box.tag }} {{ box.choice_label }}</label>{% endfor %}
+            </div>
+            <p class="text-xs text-faint mt-1">{{ form.weekdays.help_text }}</p>
+            {% include "cpanel/_field_errors.html" with field=form.weekdays %}
+        </fieldset>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+                <label for="{{ form.start_time.id_for_label }}" class="block text-sm font-medium text-text mb-1.5">{{ form.start_time.label }}</label>
+                {{ form.start_time }}
+                {% include "cpanel/_field_errors.html" with field=form.start_time %}
+            </div>
+            <div>
+                <label for="{{ form.end_time.id_for_label }}" class="block text-sm font-medium text-text mb-1.5">{{ form.end_time.label }}</label>
+                {{ form.end_time }}
+                {% include "cpanel/_field_errors.html" with field=form.end_time %}
+            </div>
+        </div>
+        <p class="text-xs text-faint">{{ form.end_time.help_text }}</p>
+    </div>
+
+    <fieldset>
+        <legend class="block text-sm font-medium text-text mb-1.5">{{ form.blocks.label }}</legend>
+        <div class="space-y-2 text-sm text-text">
+            {% for box in form.blocks %}<label class="flex items-center gap-2">{{ box.tag }} {{ box.choice_label }}</label>{% endfor %}
+        </div>
+        <p class="text-xs text-faint mt-1">Manual runs are Run now, Re-run and plugin buttons. A retry counts as the trigger that started the first attempt.</p>
+        {% include "cpanel/_field_errors.html" with field=form.blocks %}
+    </fieldset>
+
+    <label class="flex items-center gap-2 text-sm text-text">{{ form.enabled }} {{ form.enabled.label }}</label>
+
+    <div class="flex flex-wrap items-center gap-2.5 pt-2">
+        <button type="submit" class="text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">Save</button>
+        <a href="{{ list_url }}" class="text-[13px] px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Cancel</a>
+    </div>
+</form>
+
+{% if delete_url %}
+<form method="post" action="{{ delete_url }}" class="rounded-2xl border border-fail/30 bg-panel p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3" onsubmit="return confirm('Delete this maintenance window?');">
+    {% csrf_token %}
+    <p class="text-sm text-muted">Delete the window. Runs it skipped stay in the history.</p>
+    <button type="submit" class="text-[13px] font-medium px-3.5 py-2 rounded-lg border border-fail/40 text-fail hover:bg-fail/10 transition">Delete window</button>
+</form>
+{% endif %}
+
+<script>
+(function () {
+    // Show only the fields of the chosen kind (the server ignores the others).
+    const radios = document.querySelectorAll('input[name="{{ form.kind.html_name }}"]');
+    function sync() {
+        const kind = (Array.from(radios).find(r => r.checked) || {}).value;
+        document.querySelectorAll('[data-kind]').forEach(el => el.classList.toggle('hidden', el.dataset.kind !== kind));
+    }
+    radios.forEach(r => r.addEventListener('change', sync));
+    sync();
+})();
+</script>
+{% endblock %}

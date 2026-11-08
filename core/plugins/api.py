@@ -371,7 +371,8 @@ class RunView:
     ``progress`` is ``{"pct", "message", "updated_at"}``. Both None until set.
 
     ``cancel_reason`` is ``"concurrency_skip"`` on a CANCELLED run the
-    script's Skip concurrency policy didn't start, "" otherwise. ``is_held``
+    script's Skip concurrency policy didn't start, ``"maintenance"`` on one a
+    maintenance window didn't start, "" otherwise. ``is_held``
     is True while a Queue-policy run waits for the runs ahead of it.
     """
 
@@ -639,6 +640,8 @@ class ScriptAPI:
         while the script has a run in flight, a Skip-policy script returns the
         run already CANCELLED (``run.cancel_reason == "concurrency_skip"``)
         and a Queue-policy one returns it held (PENDING, ``run.is_held``).
+        A maintenance window that blocks manual runs returns it CANCELLED
+        with ``run.cancel_reason == "maintenance"``.
         """
         from core.models import Run
         from core.services.run_events import plugin_event
@@ -697,14 +700,19 @@ class ScriptAPI:
         or None when the script has never run (or doesn't exist). Poll this for a
         plugin's live status badge.
 
-        Runs the Skip concurrency policy didn't start are passed over: a
-        trigger skipped while a run is in flight must not hide that run from
-        the badge. ``runs()`` lists them."""
+        Runs the Skip concurrency policy or a maintenance window didn't
+        start are passed over: a trigger skipped while a run is in flight must
+        not hide that run from the badge. ``runs()`` lists them."""
         from core.models import Run
 
         run = (
             self._runs_qs(key)
-            .exclude(cancel_reason=Run.CancelReason.CONCURRENCY_SKIP)
+            .exclude(
+                cancel_reason__in=[
+                    Run.CancelReason.CONCURRENCY_SKIP,
+                    Run.CancelReason.MAINTENANCE,
+                ]
+            )
             .first()
         )
         return RunView._from_run(run) if run is not None else None

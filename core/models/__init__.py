@@ -31,6 +31,7 @@ from .vector_connection import VectorConnection
 from .vector_collection import VectorCollection
 from .brain import Brain, BrainBlob, BrainRevision, BrainEntity, BrainGrant, BrainFeed, BrainReaderJob, BrainSync
 from .ratelimit import RateLimitCounter
+from .maintenance import MaintenanceWindow
 
 __all__ = [
     "User",
@@ -39,6 +40,7 @@ __all__ = [
     "PasswordResetToken",
     "Workspace",
     "WorkspaceMembership",
+    "MaintenanceWindow",
     "Environment",
     "Script",
     "Run",

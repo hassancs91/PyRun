@@ -15,6 +15,7 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from core.models import Script, Run, ScriptSchedule, ScheduleHistory, Library, ScriptLibrary, Secret, SecretGrant, Tag
 from core.charts import DURATION_CHART_MAX_BARS, duration_chart
 from core.forms import ScriptForm, ScheduleForm, ScriptInputsForm
+from core.services.maintenance import blocked_message
 from core.services.run_events import manual_event
 from core.tasks import queue_script_run
 from core.services.schedule_service import ScheduleService
@@ -429,7 +430,9 @@ def _start_manual_run(request: HttpRequest, script, inputs, rerun_of=None) -> Ht
     # Queue for async execution via django-q2
     try:
         queue_script_run(run)
-        if run.is_skipped:
+        if run.is_maintenance_skipped:
+            messages.warning(request, blocked_message(run, run.maintenance_block))
+        elif run.is_skipped:
             messages.warning(
                 request,
                 f'Not started: "{script.name}" is already running, and its '

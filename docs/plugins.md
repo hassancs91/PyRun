@@ -364,9 +364,14 @@ check in the plugin only ever covered the plugin's own button. `None` leaves
 the policy as it is; an unknown value raises `ValueError`. Users can change
 it in the script editor (**If it's already running**).
 
-`latest_run(key)` passes over skipped runs, so a status badge keeps showing
-the run that is actually going; `runs(key)` lists them, with `cancel_reason`
-set. See [scheduling.md](scheduling.md#when-the-script-is-still-running) for
+A [maintenance window](scheduling.md#maintenance-windows) that blocks manual
+runs returns the run from `queue_run` already `cancelled`, with
+`cancel_reason == "maintenance"`: check for it before reading any other
+`cancel_reason` as "already running".
+
+`latest_run(key)` passes over skipped runs (either reason), so a status badge
+keeps showing the run that is actually going; `runs(key)` lists them, with
+`cancel_reason` set. See [scheduling.md](scheduling.md#when-the-script-is-still-running) for
 how queued runs are released.
 
 ### Inputs and results (PyRun 2.5)

@@ -231,7 +231,7 @@ def _dispatch(pk) -> bool:
         _notify_previous(run)
         return False
 
-    if run.is_skipped:
+    if run.is_skipped or run.is_maintenance_skipped:
         _notify_previous(run)
         return False
     logger.info(f"Started retry {run.id} (attempt {run.attempt})")

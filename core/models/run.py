@@ -39,6 +39,7 @@ class Run(models.Model):
     # someone pressing Stop. Blank = an ordinary cancel.
     class CancelReason(models.TextChoices):
         CONCURRENCY_SKIP = "concurrency_skip", "Skipped: already running"
+        MAINTENANCE = "maintenance", "Skipped: maintenance window"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     script = models.ForeignKey(
@@ -565,6 +566,11 @@ class Run(models.Model):
     def is_skipped(self) -> bool:
         """Not started: the script was already running (Skip concurrency policy)."""
         return self.cancel_reason == self.CancelReason.CONCURRENCY_SKIP
+
+    @property
+    def is_maintenance_skipped(self) -> bool:
+        """Not started: a maintenance window blocks its kind of trigger."""
+        return self.cancel_reason == self.CancelReason.MAINTENANCE
 
     @property
     def is_successful(self) -> bool:

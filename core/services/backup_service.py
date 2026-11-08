@@ -24,6 +24,7 @@ from core.models import (
     Environment,
     GlobalSettings,
     Library,
+    MaintenanceWindow,
     PackageOperation,
     Run,
     ScheduleHistory,
@@ -151,6 +152,9 @@ class BackupService:
     # ``retry_of`` is linked once every run is in, and only when that run was
     # restored too. ``next_attempt_at`` is restored only on finished runs, for
     # the same reason as ``queued_behind``: a restore never starts a retry.
+    # ``maintenance_windows`` (global ones with no workspace). A backup with
+    # the section replaces the instance's windows; an older one without it
+    # leaves them as they are.
     BACKUP_VERSION = "1.13.0"
     MAX_BACKUP_SIZE_MB = 100
     # Default cap on a gzip backup's expanded size (F92, zip-bomb guard);
@@ -229,6 +233,7 @@ class BackupService:
         backup_data["vector_collections"] = cls._export_vector_collections()
         from core.brain.backup import export_brains
         backup_data["brains"] = export_brains()
+        backup_data["maintenance_windows"] = cls._export_maintenance_windows()
 
         return backup_data
 
@@ -268,6 +273,72 @@ class BackupService:
                 "updated_at": cls._serialize_datetime(ws.updated_at),
             })
         return workspaces
+
+    @classmethod
+    def _export_maintenance_windows(cls) -> List[dict]:
+        """Maintenance windows, global (no workspace) and per workspace."""
+        def clock(t):
+            return t.isoformat() if t is not None else None
+
+        return [
+            {
+                "id": str(w.id),
+                "workspace_id": str(w.workspace_id) if w.workspace_id else None,
+                "name": w.name,
+                "kind": w.kind,
+                "starts_at": cls._serialize_datetime(w.starts_at),
+                "ends_at": cls._serialize_datetime(w.ends_at),
+                "start_time": clock(w.start_time),
+                "end_time": clock(w.end_time),
+                "weekdays": list(w.weekdays or []),
+                "timezone": w.timezone,
+                "enabled": w.enabled,
+                "blocks": list(w.blocks or []),
+                "created_at": cls._serialize_datetime(w.created_at),
+                "updated_at": cls._serialize_datetime(w.updated_at),
+            }
+            for w in MaintenanceWindow.objects.order_by("created_at")
+        ]
+
+    @classmethod
+    def _import_maintenance_windows(cls, rows: List[dict], ws_map: dict, default_ws) -> Tuple[int, List[str]]:
+        """Replace the windows with the backup's. A window keeps no workspace
+        (global) when it had none; otherwise its workspace is mapped like
+        every other scoped row (default workspace fallback). A time zone this
+        server doesn't know becomes UTC, with a warning naming the window."""
+        from datetime import time
+        from zoneinfo import available_timezones
+
+        def clock(value):
+            return time.fromisoformat(value) if value else None
+
+        known = available_timezones() | {"UTC"}
+        warnings = []
+        MaintenanceWindow.objects.all().delete()
+        for row in rows:
+            ws_id = row.get("workspace_id")
+            tz = row.get("timezone") or "UTC"
+            if tz not in known:
+                warnings.append(
+                    f'Maintenance window "{row["name"]}": time zone {tz!r} is unknown '
+                    "on this server, so it now uses UTC. Edit the window to set its zone."
+                )
+                tz = "UTC"
+            MaintenanceWindow.objects.create(
+                id=row["id"],
+                workspace=cls._resolve_workspace(ws_id, ws_map, default_ws) if ws_id else None,
+                name=row["name"],
+                kind=row.get("kind") or MaintenanceWindow.Kind.WEEKLY,
+                starts_at=cls._deserialize_datetime(row.get("starts_at")),
+                ends_at=cls._deserialize_datetime(row.get("ends_at")),
+                start_time=clock(row.get("start_time")),
+                end_time=clock(row.get("end_time")),
+                weekdays=[int(d) for d in row.get("weekdays") or []],
+                timezone=tz,
+                enabled=bool(row.get("enabled", True)),
+                blocks=[b for b in row.get("blocks") or [] if b in MaintenanceWindow.Block.values],
+            )
+        return len(rows), warnings
 
     @classmethod
     def _export_environments(cls) -> List[dict]:
@@ -1223,6 +1294,12 @@ class BackupService:
                 user_map=user_map, script_map=script_map, current_user=current_user,
             )
             warnings.extend(brain_warnings)
+            maintenance_windows_restored = None
+            if "maintenance_windows" in backup_data:
+                maintenance_windows_restored, window_warnings = cls._import_maintenance_windows(
+                    backup_data["maintenance_windows"], ws_map, default_ws
+                )
+                warnings.extend(window_warnings)
 
             # create() can't set auto_now/auto_now_add fields: Django overwrites
             # them, so every row above was stamped with the restore time. Put
@@ -1249,6 +1326,8 @@ class BackupService:
                 "vector_collections": vector_collections_restored,
                 "brains": brains_restored,
             }
+            if maintenance_windows_restored is not None:
+                counts["maintenance_windows"] = maintenance_windows_restored
 
             return {"success": True, "counts": counts, "errors": [], "warnings": warnings}
 
@@ -1268,6 +1347,7 @@ class BackupService:
         ("runs", Run),
         ("package_operations", PackageOperation),
         ("datastores", DataStore),
+        ("maintenance_windows", MaintenanceWindow),
     )
 
     @classmethod

@@ -176,6 +176,11 @@
             <p class="mt-4 text-xs text-faint">
                 {% if settings.schedules_paused %}Pausing schedules prevents any scheduled scripts from running automatically. Scripts can still be run manually.{% else %}When paused, all scheduled scripts will stop running until resumed.{% endif %}
             </p>
+            <div class="mt-5 pt-5 border-t border-line-soft">
+                <h3 class="text-base font-semibold text-text mb-1">Maintenance windows</h3>
+                <p class="text-sm text-muted mb-3">Plan a pause instead: a one-off or weekly window, in its own time zone, that stops scheduled runs, webhook calls, chat messages and, if you choose, manual and API runs from starting. Global windows apply to every workspace; each workspace can add its own.</p>
+                <a href="{% url 'cpanel:maintenance_list' %}" class="text-sm text-info hover:underline">Manage maintenance windows</a>
+            </div>
         </div>
 
         {# Side column: current status #}

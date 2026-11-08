@@ -892,6 +892,27 @@ class ProvisionTests(TestCase):
         script, _ = prov.provision(self._data())
         self.assertEqual(script.concurrency_policy, "skip")
 
+    def test_run_now_inside_a_maintenance_window_says_so(self):
+        import datetime
+
+        from django.utils import timezone
+
+        from core.models import MaintenanceWindow, Run
+
+        script, _ = prov.provision(self._data())
+        now = timezone.now()
+        MaintenanceWindow.objects.create(
+            name="Upgrade", kind=MaintenanceWindow.Kind.ONE_OFF,
+            starts_at=now - datetime.timedelta(minutes=5),
+            ends_at=now + datetime.timedelta(hours=1), blocks=["manual"],
+        )
+        with mock.patch("core.tasks.async_task", return_value="t") as task:
+            run, error = prov.queue_run()
+        self.assertIsNone(run)
+        self.assertEqual(error, "Not started: a maintenance window blocks manual runs right now.")
+        task.assert_not_called()
+        self.assertEqual(Run.objects.get(script=script).cancel_reason, Run.CancelReason.MAINTENANCE)
+
     def test_run_now_while_a_run_is_in_flight_is_skipped_by_the_policy(self):
         from core.models import Run
 

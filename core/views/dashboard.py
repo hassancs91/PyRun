@@ -6,14 +6,27 @@ import os
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.shortcuts import render
+from django.urls import reverse
 
-from core.models import Environment, Run, Script
+from core.models import Environment, Run, Script, WorkspaceMembership
+from core.services import maintenance
 from core.services.dashboard_service import DashboardService
 from core.services.system_info_service import SystemInfoService
 
 
 def _in_container() -> bool:
     return os.path.exists("/.dockerenv") or os.environ.get("PYRUNNER_IN_CONTAINER") == "1"
+
+
+def _maintenance_url(request, ws):
+    """The banner's link: the workspace's windows page, for those who may manage it."""
+    if ws is None:
+        return reverse("cpanel:maintenance_list") if request.user.is_superuser else None
+    if request.user.is_superuser or WorkspaceMembership.objects.filter(
+        user=request.user, workspace=ws, role__in=WorkspaceMembership.MANAGE_ROLES
+    ).exists():
+        return reverse("cpanel:workspace_maintenance_list", kwargs={"pk": ws.pk})
+    return None
 
 
 @login_required
@@ -64,6 +77,9 @@ def dashboard_view(request):
     )
 
     context = {
+        # A maintenance window that is on right now (dashboard banner)
+        "maintenance": maintenance.banner(ws.id if ws else None),
+        "maintenance_url": _maintenance_url(request, ws),
         # Statistics cards
         "scripts_count": stats["total_scripts"],
         "active_scripts_count": stats["active_scripts"],

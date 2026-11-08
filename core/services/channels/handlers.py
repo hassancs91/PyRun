@@ -34,6 +34,7 @@ def _script_handler(channel, msg):
     provider's raw payload, for ``pyrunner_run.event()``. Returns None: the script replies asynchronously via ``pyrunner_notify.reply()``.
     """
     from core.models import Run, Script
+    from core.services.maintenance import blocked_message
     from core.services.run_events import channel_event
     from core.services.script_inputs import ScriptInputsError, prepare_inputs
     from core.tasks import queue_script_run
@@ -80,6 +81,10 @@ def _script_handler(channel, msg):
     }
     queue_script_run(run, webhook_data=webhook_data)
     logger.info("Inbound message routed to script %s (run %s)", script.id, run.id)
+    if run.is_maintenance_skipped:
+        return OutboundMessage(
+            blocked_message(run, run.maintenance_block), reply_ref=msg.reply_ref
+        )
     if run.is_skipped:
         # The script won't run, so it can't reply: say so here.
         return OutboundMessage(

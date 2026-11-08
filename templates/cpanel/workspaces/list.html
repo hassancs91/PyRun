@@ -43,6 +43,7 @@
                     </select>
                 </form>
                 <a href="{% url 'cpanel:workspace_members' pk=ws.id %}" class="text-[13px] px-3 py-1.5 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Members</a>
+                <a href="{% url 'cpanel:workspace_maintenance_list' pk=ws.id %}" class="text-[13px] px-3 py-1.5 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Maintenance</a>
                 <button type="button"
                         data-rename-url="{% url 'cpanel:workspace_rename' pk=ws.id %}"
                         data-name="{{ ws.name }}"

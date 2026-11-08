@@ -12,7 +12,7 @@ from django.utils import timezone
 from django_q.tasks import async_task
 
 from core.models import Run, Script, ScriptSchedule, GlobalSettings, PackageOperation
-from core.services import run_concurrency
+from core.services import maintenance, run_concurrency
 from core.services.library_service import resync_dev_libraries, stamp_library_versions
 from core.services.run_events import default_event, schedule_event
 from core.services.script_inputs import ScriptInputsError, prepare_inputs
@@ -92,14 +92,20 @@ def queue_script_run(run: Run, webhook_data: dict | None = None) -> str:
         run: The Run model instance to execute
         webhook_data: Optional webhook data to inject as environment variables
 
-    The script's concurrency policy is applied here too, once the run is
-    stamped (``core.services.run_concurrency.admit``): a Skip-policy script
-    that is already running gets the run marked CANCELLED (skipped), and a
+    Maintenance windows and the script's concurrency policy are applied here
+    too, once the run is stamped. A window that blocks the run's kind of
+    trigger (``core.services.maintenance.admit``) marks it CANCELLED with
+    ``cancel_reason = maintenance`` and sets ``run.maintenance_block`` (the
+    window, and when the block ends). Then the concurrency policy
+    (``core.services.run_concurrency.admit``): a Skip-policy script that is
+    already running gets the run marked CANCELLED (skipped), and a
     Queue-policy one keeps it PENDING with no task until the runs ahead of it
-    end. Callers read the outcome from ``run.status`` / ``run.is_held``.
+    end. Callers read the outcome from ``run.status``, ``run.cancel_reason``
+    and ``run.is_held``.
 
     Returns:
-        str: The django-q2 task ID, or "" when the run was skipped or held
+        str: The django-q2 task ID, or "" when the run was blocked, skipped
+        or held
 
     Raises:
         ValueError: If the run is not in PENDING status
@@ -148,6 +154,11 @@ def queue_script_run(run: Run, webhook_data: dict | None = None) -> str:
     # remember. Must happen at queue time, before the worker can pick the run up:
     # stamping at execute would let an edit in between change what the run imports.
     stamp_library_versions(run)
+
+    # A maintenance window first: a run it blocks never starts, so it must not
+    # hold or skip anything under the concurrency policy either.
+    if maintenance.admit(run) is not None:
+        return ""
 
     # Last, so a held run waits with the same inputs and library versions it
     # would have started with now.
@@ -259,7 +270,9 @@ def execute_scheduled_run(script_id: str) -> dict:
     schedule.next_run = ScheduleService.calculate_next_run(schedule)
     schedule.save(update_fields=["next_run"])
 
-    if run.is_skipped:
+    if run.is_maintenance_skipped:
+        logger.info(f"Scheduled run {run.id} of script {script.name} skipped - maintenance window")
+    elif run.is_skipped:
         logger.info(f"Scheduled run {run.id} of script {script.name} skipped - already running")
     else:
         logger.info(f"Scheduled run {run.id} created for script {script.name}")

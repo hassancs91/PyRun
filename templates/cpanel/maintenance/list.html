@@ -1,0 +1,61 @@
+{% extends "cpanel/layout.html" %}
+
+{% block title %}Maintenance windows - {{ instance_name }}{% endblock %}
+
+{% block breadcrumbs %}
+{% if workspace %}<a href="{% url 'cpanel:workspace_list' %}">Workspaces</a>
+<span>{{ workspace.name }}</span>{% else %}<a href="{% url 'cpanel:settings' %}#schedules">Settings</a>{% endif %}
+<span>Maintenance</span>
+{% endblock %}
+{% block heading %}Maintenance windows{% endblock %}
+{% block subtitle %}{% if workspace %}Planned pauses for the scripts in {{ workspace.name }}.{% else %}Planned pauses for every workspace on this instance.{% endif %}{% endblock %}
+{% block actions %}
+<a href="{{ new_url }}" class="text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">New window</a>
+{% endblock %}
+
+{% block page %}
+<div class="rounded-2xl border border-line bg-panel p-6">
+    <p class="text-sm text-muted mb-5">While a window is on, the kinds of trigger it blocks don't start runs: a scheduled run is skipped (it doesn't run later), a webhook call gets <span class="font-mono text-xs">503</span> with <span class="font-mono text-xs">Retry-After</span>, Run now and chat messages get a message, and API runs are not started. Each refused trigger is listed as a skipped run. Runs already going are never stopped.</p>
+    <div class="space-y-3">
+        {% for w in windows %}
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 bg-panel-hi/40 border border-line-soft rounded-lg">
+            <div class="min-w-0">
+                <p class="text-text font-medium break-words">
+                    <a href="{{ w.edit_url }}" class="hover:underline">{{ w.name }}</a>
+                    {% if w.is_on %}<span class="ml-1 px-2 py-0.5 text-xs rounded-md bg-warn/10 text-warn">On now</span>{% elif not w.enabled %}<span class="ml-1 px-2 py-0.5 text-xs rounded-md bg-panel-hi text-faint">Disabled</span>{% endif %}
+                </p>
+                <p class="text-sm text-muted break-words">{{ w.schedule_display }}</p>
+                <p class="text-xs text-faint break-words">Blocks {{ w.blocks_display }} · {% if w.next_display %}{% if w.is_on %}Now: {% else %}Next: {% endif %}{{ w.next_display }}{% else %}No upcoming occurrence{% endif %}</p>
+            </div>
+            <div class="flex items-center gap-2 flex-shrink-0">
+                <a href="{{ w.edit_url }}" class="text-[13px] px-3 py-1.5 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Edit</a>
+                <form method="post" action="{{ w.toggle_url }}">
+                    {% csrf_token %}
+                    <button type="submit" class="text-[13px] px-3 py-1.5 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">{% if w.enabled %}Disable{% else %}Enable{% endif %}</button>
+                </form>
+            </div>
+        </div>
+        {% empty %}
+        <p class="text-sm text-faint">No maintenance windows yet.</p>
+        {% endfor %}
+    </div>
+</div>
+
+{% if workspace %}
+<div class="rounded-2xl border border-line bg-panel p-6">
+    <h3 class="text-base font-semibold text-text mb-1">Global windows</h3>
+    <p class="text-sm text-muted mb-4">These apply to every workspace, this one too.{% if user.is_superuser %} <a href="{% url 'cpanel:maintenance_list' %}" class="text-info hover:underline">Manage global windows</a>{% else %} An instance admin manages them.{% endif %}</p>
+    <div class="space-y-3">
+        {% for w in global_windows %}
+        <div class="p-4 bg-panel-hi/40 border border-line-soft rounded-lg">
+            <p class="text-text font-medium break-words">{{ w.name }}{% if w.is_on %} <span class="ml-1 px-2 py-0.5 text-xs rounded-md bg-warn/10 text-warn">On now</span>{% endif %}</p>
+            <p class="text-sm text-muted break-words">{{ w.schedule_display }}</p>
+            <p class="text-xs text-faint break-words">Blocks {{ w.blocks_display }} · {% if w.next_display %}{% if w.is_on %}Now: {% else %}Next: {% endif %}{{ w.next_display }}{% else %}No upcoming occurrence{% endif %}</p>
+        </div>
+        {% empty %}
+        <p class="text-sm text-faint">No global windows.</p>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}

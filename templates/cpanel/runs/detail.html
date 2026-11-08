@@ -184,7 +184,9 @@
                     <dt class="text-muted">Status</dt>
                     <dd class="flex flex-wrap items-center justify-end gap-1.5">{% include "cpanel/runs/_status_badge.html" %}</dd>
                 </div>
-                {% if run.is_skipped %}
+                {% if run.is_maintenance_skipped %}
+                <p class="text-xs text-muted">Not started: a maintenance window blocked this kind of trigger when it came in. The note in the output names the window.</p>
+                {% elif run.is_skipped %}
                 <p class="text-xs text-muted">Not started: the script already had a run in flight, and its concurrency policy is Skip. <a href="{% url 'cpanel:script_edit' pk=run.script.pk %}" class="text-info hover:underline">Change the policy</a></p>
                 {% elif run.queued_behind and not run.is_held %}
                 <div class="flex items-center justify-between gap-3">

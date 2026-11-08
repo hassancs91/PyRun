@@ -84,6 +84,22 @@ begins tracking at the current release; earlier history is in the git log.
   cancelled from its page. Scripts can read `run.attempt` from `run.json`.
   Backups and forks include the settings. Guide: the "When a run fails:
   retries" section of `docs/scheduling.md`.
+- **Maintenance windows.** Plan a pause instead of remembering to press
+  **Pause all**: a one-off window (from one moment to another) or a weekly
+  one (a time of day on chosen weekdays, across midnight if you like), in its
+  own time zone, with daylight saving handled. Instance admins set global
+  windows under **Settings → Schedules**; a workspace's Owners and Admins set
+  that workspace's own from **Workspaces → Maintenance**. Each window lists
+  its next occurrence. While a window is on, the triggers it blocks don't
+  start runs: scheduled runs are skipped (not made up later), webhook calls
+  get `503` with `Retry-After`, chat messages get a reply, and, if you tick
+  them, manual and API runs show a message. Every refused trigger is listed
+  as a cancelled run with a **skipped: maintenance window** chip and a note
+  naming the window; it sends no notification and never retries. Runs
+  already going are never stopped. The dashboard shows **Maintenance until
+  ...** while a window is on. Plugins: `queue_run` returns such a run with
+  `cancel_reason == "maintenance"`. Backups include the windows. Guide: the
+  "Maintenance windows" section of `docs/scheduling.md`.
 
 ## [2.0.0] — October 23, 2026
 

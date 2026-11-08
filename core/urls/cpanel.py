@@ -223,6 +223,12 @@ from core.views.workspaces import (
     workspace_member_role_view,
     workspace_member_remove_view,
 )
+from core.views.maintenance import (
+    maintenance_list_view,
+    maintenance_edit_view,
+    maintenance_toggle_view,
+    maintenance_delete_view,
+)
 
 app_name = "cpanel"
 
@@ -406,6 +412,13 @@ urlpatterns = [
     path("settings/backup/schedule/status/", backup_schedule_status_view, name="backup_schedule_status"),
     path("settings/backup/run-now/", backup_run_now_view, name="backup_run_now"),
 
+    # Maintenance windows: global (superuser) here, per workspace below.
+    path("settings/maintenance/", maintenance_list_view, name="maintenance_list"),
+    path("settings/maintenance/new/", maintenance_edit_view, name="maintenance_create"),
+    path("settings/maintenance/<uuid:window_id>/", maintenance_edit_view, name="maintenance_edit"),
+    path("settings/maintenance/<uuid:window_id>/toggle/", maintenance_toggle_view, name="maintenance_toggle"),
+    path("settings/maintenance/<uuid:window_id>/delete/", maintenance_delete_view, name="maintenance_delete"),
+
     # Workspaces (tenancy management — role-based; see core/views/workspaces.py)
     path("workspaces/", workspace_list_view, name="workspace_list"),
     path("workspaces/create/", workspace_create_view, name="workspace_create"),
@@ -416,6 +429,11 @@ urlpatterns = [
     path("workspaces/<uuid:pk>/members/add/", workspace_member_add_view, name="workspace_member_add"),
     path("workspaces/<uuid:pk>/members/<uuid:membership_id>/role/", workspace_member_role_view, name="workspace_member_role"),
     path("workspaces/<uuid:pk>/members/<uuid:membership_id>/remove/", workspace_member_remove_view, name="workspace_member_remove"),
+    path("workspaces/<uuid:pk>/maintenance/", maintenance_list_view, name="workspace_maintenance_list"),
+    path("workspaces/<uuid:pk>/maintenance/new/", maintenance_edit_view, name="workspace_maintenance_create"),
+    path("workspaces/<uuid:pk>/maintenance/<uuid:window_id>/", maintenance_edit_view, name="workspace_maintenance_edit"),
+    path("workspaces/<uuid:pk>/maintenance/<uuid:window_id>/toggle/", maintenance_toggle_view, name="workspace_maintenance_toggle"),
+    path("workspaces/<uuid:pk>/maintenance/<uuid:window_id>/delete/", maintenance_delete_view, name="workspace_maintenance_delete"),
 
     # User Management
     path("users/", user_list_view, name="user_list"),
