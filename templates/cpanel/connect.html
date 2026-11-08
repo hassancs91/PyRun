@@ -19,6 +19,19 @@
             <div class="flex items-start gap-2"><pre class="copy-src flex-1 min-w-0 p-3 bg-ink rounded-lg text-xs whitespace-pre-wrap break-all">curl -H "Authorization: Bearer YOUR_TOKEN" {{ api_url }}/_catalog</pre><button type="button" class="copy-btn flex-shrink-0 text-xs px-2.5 py-1.5 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors" aria-label="Copy the curl command">Copy</button></div>
             <p class="text-sm text-muted">Use the same header with <code>/_health</code> or <code>/_openapi.json</code>. OpenAPI includes only endpoints available to that token.</p>
         </div>
+        <div id="scripts-runs" class="rounded-2xl border border-line bg-panel p-6 space-y-3">
+            <h2 class="font-semibold">Scripts and runs</h2>
+            <p class="text-sm text-muted">A token with <code>scripts:read</code>, <code>runs:read</code> and <code>runs:output</code> can list scripts, read a run with its result and fetch its output. Script code is never returned; output comes with secrets masked, exactly as the run page shows it. Bind the token to one script to limit it to that script and its runs. API and MCP callers see who started a manual run by user id only, never the email.</p>
+            <h3 class="text-sm font-medium">Claude Code</h3>
+            <p class="text-sm text-muted">Add the MCP server above with that token, then ask. The tools are <code>scripts-list</code>, <code>scripts-get</code>, <code>runs-list</code>, <code>runs-get</code> and <code>runs-output</code>.</p>
+            <div class="flex items-start gap-2"><pre class="copy-src flex-1 min-w-0 p-3 bg-ink rounded-lg text-xs whitespace-pre-wrap break-all">claude "List my PyRun scripts, then show the stderr of the last failed run and explain the error."</pre><button type="button" class="copy-btn flex-shrink-0 text-xs px-2.5 py-1.5 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors" aria-label="Copy the Claude Code prompt">Copy</button></div>
+            <h3 class="text-sm font-medium">REST</h3>
+            <div class="flex items-start gap-2"><pre class="copy-src flex-1 min-w-0 p-3 bg-ink rounded-lg text-xs whitespace-pre-wrap break-all">curl -H "Authorization: Bearer YOUR_TOKEN" "{{ api_url }}/scripts.list?q=report"
+curl -H "Authorization: Bearer YOUR_TOKEN" "{{ api_url }}/runs.list?status=failed&amp;limit=5"
+curl -H "Authorization: Bearer YOUR_TOKEN" "{{ api_url }}/runs.get?run=RUN_ID"
+curl -H "Authorization: Bearer YOUR_TOKEN" "{{ api_url }}/runs.output?run=RUN_ID&amp;stream=stderr&amp;tail=4000"</pre><button type="button" class="copy-btn flex-shrink-0 text-xs px-2.5 py-1.5 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors" aria-label="Copy the curl commands">Copy</button></div>
+            <p class="text-sm text-muted"><code>runs.output</code> answers with plain text over REST (stdout unless you pass <code>stream=stderr</code>); output is written when the run ends.</p>
+        </div>
         <div class="rounded-2xl border border-line bg-panel p-6 space-y-3">
             <h2 class="font-semibold">claude.ai and URL-only clients</h2>
             <p class="text-sm text-muted">URL tokens are {% if url_tokens_enabled %}enabled{% else %}disabled{% endif %} on this instance. They require an expiry (90 days by default) and read-only permissions.</p>

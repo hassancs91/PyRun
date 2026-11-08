@@ -4,7 +4,7 @@ import logging
 import time
 
 from django.core.exceptions import RequestDataTooBig
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from core.ratelimit import rate_limit_exceeded
@@ -34,6 +34,7 @@ def dispatch(request, slug):
     if failure is not None:
         return cors(failure)
     ctx = token_context(token)
+    spec = None
     try:
         if request.method not in {"GET", "POST"}:
             raise ApiError("method_not_allowed", "Use GET or POST.", status=405)
@@ -66,7 +67,11 @@ def dispatch(request, slug):
                     raise ApiError("invalid_input", "POST parameters belong in the JSON body.")
                 params = loads(request.body)
             data = registry.call(slug, ctx, params)
-        response = JsonResponse(data if slug == "_openapi.json" else {"ok": True, "data": data})
+        if spec is not None and spec.text:
+            # A text endpoint (runs.output) answers with that one field, as text.
+            response = HttpResponse(data[spec.text], content_type="text/plain; charset=utf-8")
+        else:
+            response = JsonResponse(data if slug == "_openapi.json" else {"ok": True, "data": data})
     except RequestDataTooBig:
         response = error_response(413, "too_large", "Request body is too large.", unified=True)
     except ApiError as exc:

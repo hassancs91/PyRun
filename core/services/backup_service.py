@@ -1150,10 +1150,10 @@ class BackupService:
         """API tokens a restore deletes on THIS instance (F61).
 
         Backups don't carry API tokens and a restore leaves the token table
-        alone, but it deletes every Brain and DataStore first, and a token bound
-        to a brain or scoped to one store goes with it (FK cascade) — even when
-        the restored brain/store comes back with the same id. Unbound tokens
-        survive. The preview names them so a same-instance rollback doesn't
+        alone, but it deletes every Brain, DataStore and Script first, and a
+        token bound to a brain or a script, or scoped to one store, goes with it
+        (FK cascade) — even when the restored row comes back with the same id.
+        Unbound tokens survive. The preview names them so a same-instance rollback doesn't
         silently break the connectors using them.
         """
         from django.db.models import Q
@@ -1161,19 +1161,21 @@ class BackupService:
         from core.models import APIToken
 
         rows = (
-            APIToken.objects.filter(Q(brain__isnull=False) | Q(datastore__isnull=False))
-            .select_related("brain", "datastore")
+            APIToken.objects.filter(
+                Q(brain__isnull=False) | Q(datastore__isnull=False) | Q(script__isnull=False)
+            )
+            .select_related("brain", "datastore", "script")
             .order_by("name")
         )
-        return [
-            {
-                "name": token.name,
-                "bound_to": (
-                    f"brain {token.brain.name}" if token.brain_id else f"data store {token.datastore.name}"
-                ),
-            }
-            for token in rows
-        ]
+
+        def bound_to(token):
+            if token.brain_id:
+                return f"brain {token.brain.name}"
+            if token.script_id:
+                return f"script {token.script.name}"
+            return f"data store {token.datastore.name}"
+
+        return [{"name": token.name, "bound_to": bound_to(token)} for token in rows]
 
     # =====================================================================
     # RESTORE METHODS

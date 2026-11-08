@@ -1137,7 +1137,7 @@ function showRestorePreview(preview, warnings) {
             html += '<li>• ' + escapeHtml(String(t.name)) + ' (bound to ' + escapeHtml(String(t.bound_to)) + ')</li>';
         });
         html += '</ul>';
-        html += '<p class="text-xs text-warn/80 mt-2">Tokens bound to a brain or to one data store are removed with it, even when the backup brings it back. Create new tokens afterwards and update the connectors that use them. Other tokens are kept.</p>';
+        html += '<p class="text-xs text-warn/80 mt-2">Tokens bound to a brain, a script or one data store are removed with it, even when the backup brings it back. Create new tokens afterwards and update the connectors that use them. Other tokens are kept.</p>';
         html += '</div>';
     }
 

@@ -66,6 +66,11 @@
                 {{ form.brain_tier }}{% include "cpanel/_field_errors.html" with field=form.brain_tier %}
                 <p class="mt-1.5 text-xs text-faint">A brain grant is also required. The token never grants access by itself.</p>
             </div>
+            <div>
+                <label for="id_script" class="block text-[13px] font-medium text-text mb-1.5">Bind to one script (optional)</label>
+                {{ form.script }}{% include "cpanel/_field_errors.html" with field=form.script %}
+                <p class="mt-1.5 text-xs text-faint">A bound token sees that script and its runs only. Bind to a brain or a script, not both.</p>
+            </div>
         </div>
 
         <script>

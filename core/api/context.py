@@ -13,6 +13,9 @@ class CallContext:
     principal_id: str = ""
     resource: object = None
     tier: str | None = None
+    # The one script a bound token may see (APIToken.script_id); None = any.
+    # Handlers look it up inside ``workspace``, so a mismatch sees nothing.
+    script_id: object = None
     request_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     transport: str = "in-process"
     deadline: float | None = None
@@ -35,6 +38,7 @@ def token_context(token, *, transport="rest", deadline=None):
         permissions=frozenset(token.permissions),
         resource=token.brain,
         tier=token.brain_tier,
+        script_id=token.script_id,
         transport=transport,
         deadline=deadline,
     )

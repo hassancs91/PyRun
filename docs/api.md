@@ -6,14 +6,14 @@ in-process Brain tools use the same handlers, schemas and grant checks.
 ## Authentication and workspace
 
 In **Console → API tokens**, create a **Unified API** token. Choose its workspace,
-permissions and optional Brain binding/tier. The secret is shown once; every API
+permissions, an optional binding (one Brain or one script) and Brain tier. The secret is shown once; every API
 token (Unified, datastore and plugin) is stored only as a digest, and the 2.0
 upgrade hashed the datastore and plugin tokens 1.x kept in plaintext. Save it in
 your client's secret store.
 
-A backup restore deletes the tokens bound to a Brain or scoped to a single data
-store, even when it restores the same Brain or store on the same instance (the
-restore preview lists them); unbound tokens are kept. Create new tokens for the
+A backup restore deletes the tokens bound to a Brain or a script, or scoped to a
+single data store, even when it restores the same Brain, script or store on the
+same instance (the restore preview lists them); unbound tokens are kept. Create new tokens for the
 affected clients after a restore. Backups never carry API tokens.
 
 Send `Authorization: Bearer <token>` or `X-API-Key: <token>`. The token selects the
@@ -102,6 +102,57 @@ Brain. The [Brain guide](brain.md) explains grants, tiers and human review.
 remains a console owner/admin action. Endpoint discovery is authoritative for
 schemas and bounds; there are no `vectors.*` REST/MCP endpoints in this release.
 
+## Scripts and runs
+
+Read a workspace's scripts and runs, a run's result and its output. **Connect**
+has curl and Claude Code examples for this instance.
+
+| REST endpoint | Parameters | Permission |
+|---|---|---|
+| `scripts.list` | Optional `q` (in the name or description), `tag`, `enabled`, `offset`, `limit` (1–200, default 100) | `scripts:read` |
+| `scripts.get` | `script` (its id); optional for a token bound to one script | `scripts:read` |
+| `runs.list` | Optional `script`, `status`, `since` (ISO 8601; UTC when it has no zone), `limit` (1–100, default 20) | `runs:read` |
+| `runs.get` | `run` (its id) | `runs:read` |
+| `runs.output` | `run`; optional `stream` (`stdout`, the default, or `stderr`) and `tail` (keep only the last this many bytes) | `runs:output` |
+
+```sh
+curl -H "Authorization: Bearer $PYRUN_TOKEN" \
+  "https://pyrun.example/api/v1/runs.list?status=failed&limit=5"
+
+curl -H "Authorization: Bearer $PYRUN_TOKEN" \
+  "https://pyrun.example/api/v1/runs.output?run=RUN_ID&stream=stderr&tail=4000"
+```
+
+- `scripts.list` and `scripts.get` leave out archived scripts. Neither returns
+  a script's code, and `runs.get` doesn't return the code a run executed.
+  `scripts.get` adds the inputs schema, the schedule (`mode`, `active`,
+  `summary`, `timezone`, `next_run`) and the last run.
+- `runs.list` is newest first. Runs of archived scripts stay readable, as on the
+  console's Runs page.
+- `runs.get` returns the run's status and timing, `attempt`, `cancel_reason`,
+  its `inputs`, `result`, `progress` and `event`, and the size of each output
+  stream (`output.stdout.chars`, `output.stdout.truncated`). Secret values in the
+  inputs and the event are masked, as on the run page. When a secret can't be
+  resolved, those two come back `null` and are named in `withheld`. The person who
+  started a manual run (or a plugin run a user started) shows as
+  `event.user = {"id": 7}`: API and MCP callers get the user id, never the email.
+  The script itself and the console still see the email.
+- `runs.output` returns exactly what the run page shows: the stored output, with
+  the run's secrets masked, at most 1 MB per stream (over that, the start and
+  the end are kept with a marker line in between). Output is written when the run
+  ends, so a run that is still going has none yet. Over REST the reply is
+  `text/plain`, not the JSON envelope (errors keep the envelope; `_catalog` marks
+  the endpoint `rest_response: "text/plain"`). Over MCP the tool result is
+  `{run, status, stream, text, truncated, tail_cut}`. `tail` cuts at a character
+  boundary, so the text can be a few bytes shorter.
+
+**Bind a token to one script** in the token form. That token's `scripts.list`
+returns that script alone, `scripts.get` may leave out `script`, and every
+`runs.*` call only reaches that script's runs. Any other script or run, like an
+unknown id or one in another workspace, answers 404 `not_found`. A token is
+bound to one Brain or one script, not both. Deleting the script deletes the
+tokens bound to it.
+
 ## MCP clients
 
 Open **Console → Connect** for the instance's exact URL and commands. The normal
@@ -136,7 +187,9 @@ There is no OAuth authorization server.
 
 For clients that can only accept a URL, an instance administrator can enable
 **MCP URL tokens** in Connect. Create a separate token of that kind with read-only
-permissions and a mandatory expiry (90 days by default). Its endpoint is
+permissions and a mandatory expiry (90 days by default). Read-only means
+permissions that guard read endpoints alone: `brain:read`, `scripts:read`,
+`runs:read` and `runs:output`, not `brain:write`. Its endpoint is
 `POST /mcp/k/<url-token>/`. It cannot be used as a REST/bearer token. The URL itself
 is a credential: keep connector configuration private and redact that route from
 reverse-proxy access logs. Because the token travels in the request path, reverse

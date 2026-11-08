@@ -152,6 +152,21 @@ begins tracking at the current release; earlier history is in the git log.
   its `access` as `run` instead of `write`. Backups include the switch; an
   older backup leaves it off. Guide: "Endpoint classes and API writes" in
   `docs/api.md`.
+- **Scripts and runs over the API and MCP.** Five new read endpoints:
+  `scripts.list` (search by name or description, tag, enabled), `scripts.get`
+  (metadata, inputs schema, schedule and last run; never the code),
+  `runs.list` (by script, status and start time), `runs.get` (status, timing,
+  inputs, result, progress and event) and `runs.output` (stdout or stderr,
+  optionally only the last bytes; plain text over REST). They need the new
+  token permissions **Read scripts** (`scripts:read`), **Read runs**
+  (`runs:read`) and **Read run output** (`runs:output`), which MCP URL tokens
+  may hold too. A token can be bound to one script: it then sees that script
+  and its runs only, and it is deleted with the script (and by a backup
+  restore, which the restore preview says). Output is what the run page shows,
+  secrets masked, byte for byte. Inputs and the event are masked like on the
+  run page; API and MCP callers see who started a manual run by user id only,
+  never the email (scripts and the console still get the email). Connect gains
+  curl and Claude Code examples. Guide: "Scripts and runs" in `docs/api.md`.
 
 ## [2.0.0] — October 23, 2026
 

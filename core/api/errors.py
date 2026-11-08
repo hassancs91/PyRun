@@ -97,7 +97,7 @@ def authenticate(request, *, scope="plugin", raw=None, kind="bearer"):
         return fail("Invalid API token")
     if unified and kind == "url" and (
         not token.expires_at or not token.permissions
-        or any(not isinstance(p, str) or not p.endswith(":read") for p in token.permissions)
+        or not APIToken.url_permissions_ok(token.permissions)
     ):
         return fail("Invalid API token")
     return token, None

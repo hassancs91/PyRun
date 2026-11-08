@@ -15,6 +15,7 @@ from django.utils.dateparse import parse_datetime
 
 from core.models import Run, Script
 from core.services.run_events import EVENT_PREVIEW_CHARS, event_text, kind_label
+from core.services.run_output import is_truncated, output_text
 from core.services.run_reports import json_size, progress_for_display, result_text
 from core.services.run_retries import attempt_info
 
@@ -118,11 +119,15 @@ def run_detail_view(request: HttpRequest, pk) -> HttpResponse:
     mask_sets = {}
     input_rows, inputs_hidden = run_input_rows(run, mask_sets)
     has_result = run.result is not None
+    # Output through the helper the runs.output API endpoint uses (same bytes).
+    stdout, stderr = output_text(run, "stdout"), output_text(run, "stderr")
     return render(request, "cpanel/runs/detail.html", {
         "run": run,
         "isolation_note": isolation_note(run),
-        "output_truncated": "[OUTPUT TRUNCATED" in (run.stdout or ""),
-        "stderr_truncated": "[OUTPUT TRUNCATED" in (run.stderr or ""),
+        "stdout": stdout,
+        "stderr": stderr,
+        "output_truncated": is_truncated(stdout),
+        "stderr_truncated": is_truncated(stderr),
         "input_rows": input_rows,
         "inputs_hidden": inputs_hidden,
         # Stored with secrets already masked (core.services.run_reports).

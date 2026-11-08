@@ -15,7 +15,14 @@ def document(ctx):
             "x-mcp-name": spec.mcp_name,
             "x-permission": spec.permission,
             "responses": {
-                "200": {"description": "Success: {ok: true, data: object}"},
+                "200": (
+                    {
+                        "description": f"Success: the result's `{spec.text}` field as plain text",
+                        "content": {"text/plain": {"schema": {"type": "string"}}},
+                    }
+                    if spec.text
+                    else {"description": "Success: {ok: true, data: object}"}
+                ),
                 "default": {"description": "Error: {ok: false, error: {code, message}}"},
             },
         }

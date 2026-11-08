@@ -20,7 +20,8 @@ class APIToken(models.Model):
     - ``datastore``  — a single datastore (the FK).
     - ``datastores`` — all datastores in the token's workspace (legacy "global").
     - ``plugin``     — one plugin's declared API resources (``plugin_slug``).
-    - ``api``        — registry permissions, with an optional brain binding.
+    - ``api``        — registry permissions, with an optional brain or script
+                       binding (at most one).
 
     Historically named ``DataStoreAPIToken`` (the alias survives in
     ``core.models``); the table name is pinned so the rename touched no SQL.
@@ -36,7 +37,13 @@ class APIToken(models.Model):
         BEARER = "bearer", "Authorization header"
         URL = "url", "MCP URL (read-only)"
 
-    API_PERMISSIONS = (("brain:read", "Read brains"), ("brain:write", "Propose brain updates"))
+    API_PERMISSIONS = (
+        ("brain:read", "Read brains"),
+        ("brain:write", "Propose brain updates"),
+        ("scripts:read", "Read scripts (metadata and inputs, never code)"),
+        ("runs:read", "Read runs (status, inputs, result, event)"),
+        ("runs:output", "Read run output (stdout and stderr, secrets masked)"),
+    )
     TIERS = (("public", "Public"), ("agents-only", "Agents only"), ("private", "Private"))
     # Which permissions are write permissions comes from the registry: those
     # guarding write-class endpoints (core.api.registry.write_permissions).
@@ -100,6 +107,11 @@ class APIToken(models.Model):
     brain = models.ForeignKey("Brain", on_delete=models.CASCADE, null=True, blank=True,
                               related_name="api_tokens")
     brain_tier = models.CharField(max_length=16, choices=TIERS, default="public")
+    # Optional binding to one script (2.5): the token then sees that script and
+    # its runs only. CASCADE, like the brain binding: a token whose script is
+    # deleted must never fall back to seeing every script.
+    script = models.ForeignKey("Script", on_delete=models.CASCADE, null=True, blank=True,
+                               related_name="api_tokens")
 
     # Tenancy Stage 3: the workspace this token acts in. A global (no-datastore)
     # token lists/resolves only this workspace's datastores; NULL falls back to
@@ -161,6 +173,13 @@ class APIToken(models.Model):
             models.CheckConstraint(
                 condition=models.Q(scope="api") | models.Q(brain__isnull=True, kind="bearer"),
                 name="apitoken_api_binding",
+            ),
+            # At most one binding: a script-bound token is a Unified API token
+            # without a brain binding.
+            models.CheckConstraint(
+                condition=models.Q(script__isnull=True)
+                | models.Q(scope="api", brain__isnull=True),
+                name="apitoken_one_binding",
             ),
             # scope="datastore" ⇔ datastore FK set (integrity, not just form
             # validation — a plugin/global token must never carry a store FK).
@@ -230,11 +249,25 @@ class APIToken(models.Model):
         if self.kind == self.Kind.URL:
             if not self.expires_at:
                 raise ValidationError({"expires_at": "URL tokens require an expiry."})
-            if any(not p.endswith(":read") for p in self.permissions):
+            if not self.url_permissions_ok(self.permissions):
                 raise ValidationError({"permissions": "URL tokens allow read permissions only."})
         if self.brain_id and self.workspace_id != self.brain.workspace_id:
             raise ValidationError({"brain": "Unknown brain."})
+        if self.script_id:
+            if self.brain_id:
+                raise ValidationError({"script": "Bind a token to one brain or one script, not both."})
+            if self.workspace_id != self.script.workspace_id:
+                raise ValidationError({"script": "Unknown script."})
         self._refuse_write_grants()
+
+    @staticmethod
+    def url_permissions_ok(permissions) -> bool:
+        """URL tokens (the credential sits in the request path) hold only
+        permissions that guard read endpoints alone: never run or write ones."""
+        from core.api.registry import registry
+
+        allowed = registry.read_permissions()
+        return all(isinstance(p, str) and p in allowed for p in permissions)
 
     def _refuse_write_grants(self):
         """Plan D8: no write permission is granted while API writes are off.

@@ -45,13 +45,17 @@ class Endpoint:
     access: str
     permission: str
     rate: tuple[int, int]
+    # When set, REST answers with this string field of the result as
+    # text/plain instead of the JSON envelope (runs.output). MCP and
+    # in-process callers still get the whole dict.
+    text: str = ""
 
     @property
     def mcp_name(self):
         return self.slug.replace(".", "-")
 
     def catalog_entry(self):
-        return {
+        entry = {
             "slug": self.slug,
             "mcp_name": self.mcp_name,
             "title": self.title,
@@ -60,6 +64,9 @@ class Endpoint:
             "access": self.access,
             "permission": self.permission,
         }
+        if self.text:
+            entry["rest_response"] = "text/plain"
+        return entry
 
 
 class Registry:
@@ -111,6 +118,13 @@ class Registry:
     def write_permissions(self):
         """Permissions that guard write endpoints (not grantable while writes are off)."""
         return frozenset(e.permission for e in self._endpoints.values() if e.access == "write")
+
+    def read_permissions(self):
+        """Permissions that guard read endpoints only (all URL tokens may hold)."""
+        others = {e.permission for e in self._endpoints.values() if e.access != "read"}
+        return frozenset(
+            e.permission for e in self._endpoints.values() if e.permission not in others
+        )
 
     def writes(self):
         """The registered write endpoints, by slug."""
@@ -168,12 +182,14 @@ class Registry:
 registry = Registry()
 
 
-def endpoint(slug, *, title, description="", input, access="read", permission, rate=(60, 60)):
+def endpoint(
+    slug, *, title, description="", input, access="read", permission, rate=(60, 60), text=""
+):
     def decorate(handler):
         schema = copy.deepcopy(input)
         schema.setdefault("additionalProperties", False)
         registry.register(
-            Endpoint(slug, handler, schema, title, description, access, permission, rate)
+            Endpoint(slug, handler, schema, title, description, access, permission, rate, text)
         )
         return handler
 

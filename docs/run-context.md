@@ -100,7 +100,7 @@ the kind.
 
 | `kind` | Started by | Other keys |
 |---|---|---|
-| `manual` | **Run now**, or **Re-run with same inputs** | `user` (`{id, email}`); `rerun_of` (the id of the run it copies) for a re-run |
+| `manual` | **Run now**, or **Re-run with same inputs** | `user` (`{id, email}`; API and MCP callers reading the run get `{id}` only); `rerun_of` (the id of the run it copies) for a re-run |
 | `schedule` | the script's schedule | `schedule_id`, `run_mode` (`interval`, `daily`, `cron`...), `fired_at` |
 | `webhook` | a call to the script's webhook URL | `method`, `query` (each name maps to a list of values), `content_type`; for a POST, `body` (the raw text) and, when the body is JSON, `body_json` |
 | `channel` | a chat message to a channel linked to the script | `channel` (its name), `channel_id`, `provider`, `text`, `sender`, `reply_ref`, `raw` (the provider's own payload) |
