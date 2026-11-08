@@ -132,6 +132,9 @@ class BackupService:
     # require an explicit retry; restoring a backup never starts paid AI work.
     # 1.12.0 — Optional Brain vector binding; transient reader jobs are omitted.
     # 1.13.0 — GitHub Brain sync configuration/baseline; jobs omitted, polling paused.
+    # Next (1.14.0, bumped once for the whole 2.5 train): ``inputs_schema`` on
+    # scripts and ``inputs`` on runs. Older backups omit both; restore leaves
+    # them NULL (no declared inputs), which is how every pre-2.5 script runs.
     BACKUP_VERSION = "1.13.0"
     MAX_BACKUP_SIZE_MB = 100
     # Default cap on a gzip backup's expanded size (F92, zip-bomb guard);
@@ -339,6 +342,7 @@ class BackupService:
                 "name": script.name,
                 "description": script.description,
                 "code": script.code,
+                "inputs_schema": script.inputs_schema,
                 "environment_id": str(script.environment.id),
                 "workspace_id": str(script.workspace_id) if script.workspace_id else None,
                 "owner_plugin": script.owner_plugin,
@@ -620,6 +624,9 @@ class BackupService:
                 # code_snapshot's counterpart for shared code — without it a
                 # restored run couldn't say which library versions it ran.
                 "library_versions": run.library_versions,
+                # What the run started with (re-run reads it); raw, like the
+                # rest of a backup's run data.
+                "inputs": run.inputs,
                 "trigger_type": run.trigger_type,
                 "triggered_by_email": run.triggered_by.email if run.triggered_by else None,
                 "created_at": cls._serialize_datetime(run.created_at),
@@ -1670,6 +1677,7 @@ class BackupService:
                 name=script_data["name"],
                 description=script_data.get("description", ""),
                 code=script_data["code"],
+                inputs_schema=script_data.get("inputs_schema"),
                 environment=env,
                 workspace=cls._resolve_workspace(script_data.get("workspace_id"), ws_map, default_ws),
                 owner_plugin=script_data.get("owner_plugin"),
@@ -1869,6 +1877,7 @@ class BackupService:
                 ended_at=cls._deserialize_datetime(run_data.get("ended_at")),
                 code_snapshot=run_data.get("code_snapshot", ""),
                 library_versions=run_data.get("library_versions"),
+                inputs=run_data.get("inputs"),
                 trigger_type=run_data.get("trigger_type", "manual"),
                 triggered_by=triggered_by,
                 created_at=cls._deserialize_datetime(run_data.get("created_at")),

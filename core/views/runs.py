@@ -1,6 +1,7 @@
 """
 Run views for the control panel.
 """
+import json
 import uuid
 
 from django.shortcuts import render, get_object_or_404
@@ -104,12 +105,47 @@ def run_detail_view(request: HttpRequest, pk) -> HttpResponse:
         workspace=request.workspace,
     )
 
+    input_rows, inputs_hidden = run_input_rows(run)
     return render(request, "cpanel/runs/detail.html", {
         "run": run,
         "isolation_note": isolation_note(run),
         "output_truncated": "[OUTPUT TRUNCATED" in (run.stdout or ""),
         "stderr_truncated": "[OUTPUT TRUNCATED" in (run.stderr or ""),
+        "input_rows": input_rows,
+        "inputs_hidden": inputs_hidden,
     })
+
+
+def run_input_rows(run) -> tuple[list[dict], bool]:
+    """The run's inputs for its Inputs card, secrets masked: (rows, hidden).
+
+    Inputs are stored raw because the script needs the real values, so masking
+    happens here, with the same secret set execution uses. When a secret can't
+    be resolved the values can't be checked, so they are hidden, not shown.
+    Rows follow the script's declared order; anything else comes after, sorted
+    (PostgreSQL's jsonb doesn't keep key order).
+    """
+    if not run.inputs:
+        return [], False
+    from core.executor import mask_secrets_in_value, mask_set_for_display
+    from core.services.secret_backends import SecretResolutionError
+
+    try:
+        masked = mask_secrets_in_value(run.inputs, mask_set_for_display(run))
+    except SecretResolutionError:
+        return [], True
+    declared = list((run.script.inputs_schema or {}).get("properties", {}))
+    names = [n for n in declared if n in masked] + sorted(n for n in masked if n not in declared)
+    rows = []
+    for name in names:
+        value = masked[name]
+        is_text = isinstance(value, str)
+        rows.append({
+            "name": name,
+            "text": value if is_text else json.dumps(value, indent=2, ensure_ascii=False),
+            "block": isinstance(value, (dict, list)) or (is_text and "\n" in value),
+        })
+    return rows, False
 
 
 def host_sandbox_tier() -> str:

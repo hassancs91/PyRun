@@ -13,6 +13,7 @@ from django_q.tasks import async_task
 
 from core.models import Run, Script, ScriptSchedule, GlobalSettings, PackageOperation
 from core.services.library_service import resync_dev_libraries, stamp_library_versions
+from core.services.script_inputs import ScriptInputsError, prepare_inputs
 
 logger = logging.getLogger(__name__)
 
@@ -94,11 +95,29 @@ def queue_script_run(run: Run, webhook_data: dict | None = None) -> str:
 
     Raises:
         ValueError: If the run is not in PENDING status
+        ScriptInputsError: If the run's inputs don't fit the script's declared
+            inputs. The pending row is deleted first: bad inputs never become a
+            run, not even a failed one.
     """
     if run.status != Run.Status.PENDING:
         raise ValueError(
             f"Cannot queue run {run.id}: status is {run.status}, expected PENDING"
         )
+
+    # Validate and stamp the declared inputs here, for the same reason libraries
+    # are stamped here: every trigger funnels through this function. They are on
+    # the row before the task exists, so a duplicate delivery reads the same
+    # values. The console's Run now and Re-run, the schedule tick, webhooks and
+    # chat channels validate before creating the row; this is the backstop for
+    # any caller that didn't (or a schema that changed in between).
+    try:
+        inputs = prepare_inputs(run.script, run.inputs)
+    except ScriptInputsError:
+        Run.objects.filter(pk=run.pk, status=Run.Status.PENDING).delete()
+        raise
+    if inputs != run.inputs:
+        run.inputs = inputs
+        run.save(update_fields=["inputs"])
 
     # Dev mode only: re-read the owning plugin's lib/ folder first, so an edit on
     # disk is picked up by the next run with no manual sync. Inert in production
@@ -175,6 +194,15 @@ def execute_scheduled_run(script_id: str) -> dict:
         logger.error(f"No schedule found for script {script.name}")
         return {"success": False, "error": "No schedule"}
 
+    # A scheduled run gets each input's default. Saving a schedule refuses a
+    # script with required inputs that have none, but the schema can still
+    # change underneath (a restore, a plugin): skip the tick, create no run.
+    try:
+        inputs = prepare_inputs(script, None)
+    except ScriptInputsError as e:
+        logger.warning(f"Scheduled run for script {script.name} skipped - {e.message}")
+        return {"success": False, "error": e.message}
+
     # Create the run. A scheduled run fires with no request/user — its workspace
     # comes from the script (tenancy Stage 1), the only authoritative source.
     run = Run.objects.create(
@@ -184,6 +212,7 @@ def execute_scheduled_run(script_id: str) -> dict:
         triggered_by=None,  # System-triggered
         trigger_type=Run.TriggerType.SCHEDULED,
         code_snapshot=script.code,
+        inputs=inputs,
     )
 
     # Update schedule tracking

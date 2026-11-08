@@ -8,6 +8,20 @@ begins tracking at the current release; earlier history is in the git log.
 
 ## [Unreleased]
 
+### Added
+- **Script inputs.** A script can declare what it takes on the new **Inputs**
+  tab of the editor: text, number, yes/no, select and JSON fields, or a raw
+  JSON Schema. **Run now** then asks for them in a form. Inputs are checked
+  before a run is created, so a missing or wrong value comes back as an error
+  on the field and never as a failed run. Each text, number and yes/no value
+  reaches the script as an `INPUT_<NAME>` environment variable (a secret with
+  the same name still wins). The run page shows the inputs it ran with, with
+  secret values masked, and offers **Re-run with same inputs**. Schedules,
+  webhooks and chat channels use each input's default; a schedule can't be
+  turned on while a required input has no default, and a webhook call to such
+  a script gets a 400 that names the inputs. Scripts without inputs work
+  exactly as before.
+
 ## [2.0.0] — October 23, 2026
 
 ### Upgrade notes (from 1.x)

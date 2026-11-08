@@ -33,6 +33,7 @@ def _script_handler(channel, msg):
     Returns None: the script replies asynchronously via ``pyrunner_notify.reply()``.
     """
     from core.models import Run, Script
+    from core.services.script_inputs import ScriptInputsError, prepare_inputs
     from core.tasks import queue_script_run
 
     if not channel.inbound_target_id:
@@ -48,12 +49,22 @@ def _script_handler(channel, msg):
             "The linked script is unavailable right now.", reply_ref=msg.reply_ref
         )
 
+    # A chat message supplies no declared inputs: defaults only, and a script
+    # with a required input that has none can't be started from chat.
+    try:
+        inputs = prepare_inputs(script, None)
+    except ScriptInputsError as e:
+        return OutboundMessage(
+            f"The linked script can't run from chat. {e.message}", reply_ref=msg.reply_ref
+        )
+
     run = Run.objects.create(
         script=script,
         workspace_id=script.workspace_id,
         status=Run.Status.PENDING,
         trigger_type=Run.TriggerType.API,
         code_snapshot=script.code,
+        inputs=inputs,
     )
     webhook_data = {
         "method": "INBOUND",

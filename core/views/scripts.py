@@ -9,14 +9,15 @@ from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db.models import Q
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_http_methods, require_POST
 from django.http import HttpRequest, HttpResponse, JsonResponse
 
 from core.models import Script, Run, ScriptSchedule, ScheduleHistory, Library, ScriptLibrary, Secret, SecretGrant, Tag
 from core.charts import DURATION_CHART_MAX_BARS, duration_chart
-from core.forms import ScriptForm, ScheduleForm
+from core.forms import ScriptForm, ScheduleForm, ScriptInputsForm
 from core.tasks import queue_script_run
 from core.services.schedule_service import ScheduleService
+from core.services.script_inputs import ScriptInputsError, prepare_inputs, schedule_conflict
 from core.views.ownership import owned_block_message, owned_delete_blocked
 
 # Matches os.environ['X'] / os.environ.get('X') / os.getenv('X') (single/double quotes).
@@ -342,7 +343,17 @@ def script_edit_view(request: HttpRequest, pk) -> HttpResponse:
         form = ScriptForm(request.POST, instance=script, workspace=request.workspace)
         schedule_form = ScheduleForm(request.POST, instance=schedule)
 
-        if form.is_valid() and schedule_form.is_valid():
+        valid = form.is_valid() and schedule_form.is_valid()
+        # A scheduled run has nobody to fill in its inputs. Checked across both
+        # forms, so neither a new required input nor turning a schedule on can
+        # leave a schedule that could never start a run.
+        if valid and schedule_form.instance.is_scheduled:
+            conflict = schedule_conflict(form.cleaned_data.get("inputs_schema"))
+            if conflict:
+                schedule_form.add_error(None, conflict)
+                valid = False
+
+        if valid:
             script = form.save(commit=False)
             script.save()
             form.save_m2m()
@@ -397,33 +408,28 @@ def script_edit_view(request: HttpRequest, pk) -> HttpResponse:
     })
 
 
-@login_required
-@require_POST
-def script_run_view(request: HttpRequest, pk) -> HttpResponse:
-    """Trigger a manual script run."""
-    script = get_object_or_404(Script, pk=pk, workspace=request.workspace)
-
-    if not script.can_run:
-        if script.is_archived:
-            messages.error(request, "Cannot run an archived script.")
-        else:
-            messages.error(request, "Cannot run a disabled script.")
-        return redirect("cpanel:script_detail", pk=pk)
-
-    # Create a new Run record (pending state). Stamp the run's workspace from its
-    # script (tenancy Stage 1) so the executor scopes secrets to it.
+def _start_manual_run(request: HttpRequest, script, inputs) -> HttpResponse:
+    """Create and queue a manual run with already-validated inputs; go to it."""
+    # Stamp the run's workspace from its script (tenancy Stage 1) so the
+    # executor scopes secrets to it.
     run = Run.objects.create(
         script=script,
         workspace_id=script.workspace_id,
         status=Run.Status.PENDING,
         triggered_by=request.user,
         code_snapshot=script.code,
+        inputs=inputs,
     )
 
     # Queue for async execution via django-q2
     try:
         queue_script_run(run)
         messages.info(request, f'Script "{script.name}" has been queued for execution.')
+    except ScriptInputsError as e:
+        # The schema changed after validation; queue_script_run deleted the
+        # row, so there is no run to show (and none to save back as failed).
+        messages.error(request, f"Not run. {e.message}")
+        return redirect("cpanel:script_detail", pk=script.pk)
     except Exception as e:
         run.status = Run.Status.FAILED
         run.stderr = f"Failed to queue task: {str(e)}"
@@ -431,6 +437,68 @@ def script_run_view(request: HttpRequest, pk) -> HttpResponse:
         messages.error(request, f"Failed to queue script: {str(e)}")
 
     return redirect("cpanel:run_detail", pk=run.pk)
+
+
+def _refuse_unrunnable(request: HttpRequest, script) -> HttpResponse | None:
+    if script.can_run:
+        return None
+    if script.is_archived:
+        messages.error(request, "Cannot run an archived script.")
+    else:
+        messages.error(request, "Cannot run a disabled script.")
+    return redirect("cpanel:script_detail", pk=script.pk)
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def script_run_view(request: HttpRequest, pk) -> HttpResponse:
+    """Trigger a manual script run.
+
+    A script without declared inputs runs straight from the POST, as always. One
+    with an inputs schema shows its form on GET; the POST is validated before
+    any Run row exists, so bad inputs come back as field errors, never a run.
+    """
+    script = get_object_or_404(Script, pk=pk, workspace=request.workspace)
+
+    refused = _refuse_unrunnable(request, script)
+    if refused:
+        return refused
+
+    if not script.inputs_schema:
+        if request.method == "GET":
+            return redirect("cpanel:script_detail", pk=pk)
+        return _start_manual_run(request, script, None)
+
+    if request.method == "POST":
+        form = ScriptInputsForm(script, request.POST)
+        if form.is_valid():
+            return _start_manual_run(request, script, form.inputs)
+    else:
+        form = ScriptInputsForm(script)
+    return render(request, "cpanel/scripts/run.html", {"script": script, "form": form})
+
+
+@login_required
+@require_POST
+def run_rerun_view(request: HttpRequest, pk) -> HttpResponse:
+    """Start a new run of a run's script with that run's exact inputs."""
+    source = get_object_or_404(
+        Run.objects.select_related("script"), pk=pk, workspace=request.workspace
+    )
+    script = source.script
+
+    refused = _refuse_unrunnable(request, script)
+    if refused:
+        return refused
+
+    # Re-checked against the script as it is now: the schema may have changed
+    # since the original run, and a re-run must not bypass it.
+    try:
+        inputs = prepare_inputs(script, source.inputs)
+    except ScriptInputsError as e:
+        messages.error(request, f"Can't re-run with the same inputs. {e.message}")
+        return redirect("cpanel:run_detail", pk=source.pk)
+    return _start_manual_run(request, script, inputs)
 
 
 @login_required
@@ -486,6 +554,12 @@ def schedule_toggle_view(request: HttpRequest, pk) -> HttpResponse:
     except ScriptSchedule.DoesNotExist:
         messages.error(request, "No schedule configured for this script.")
         return redirect("cpanel:script_detail", pk=pk)
+
+    if not schedule.is_active and schedule.run_mode != ScriptSchedule.RunMode.MANUAL:
+        conflict = schedule_conflict(script.inputs_schema)
+        if conflict:
+            messages.error(request, f"Schedule not resumed. {conflict}")
+            return redirect("cpanel:script_detail", pk=pk)
 
     previous_active = schedule.is_active
     schedule.is_active = not schedule.is_active

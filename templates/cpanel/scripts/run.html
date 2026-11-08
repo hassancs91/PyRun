@@ -1,0 +1,57 @@
+{% extends "cpanel/layout.html" %}
+
+{% block title %}Run {{ script.name }} - {{ instance_name }}{% endblock %}
+
+{% block breadcrumbs %}
+<a href="{% url 'cpanel:script_list' %}">Scripts</a>
+<a href="{% url 'cpanel:script_detail' pk=script.pk %}">{{ script.name }}</a>
+<span>Run</span>
+{% endblock %}
+{% block heading %}Run {{ script.name }}{% endblock %}
+{% block subtitle %}Fill in this script's inputs. Each text, number and yes/no value reaches the script as an <span class="font-mono">INPUT_&lt;NAME&gt;</span> environment variable.{% endblock %}
+
+{% block page %}
+<form method="post" action="{% url 'cpanel:script_run' pk=script.pk %}" class="max-w-2xl">
+    {% csrf_token %}
+    <section class="rounded-2xl border border-line bg-panel p-6 space-y-5">
+        {% if form.non_field_errors %}
+        <div role="alert" class="p-4 rounded-xl border border-fail/30 bg-fail/10 text-sm">
+            <p class="font-medium text-fail">Not run.</p>
+            {% for error in form.non_field_errors %}<p class="text-fail mt-1 break-words">{{ error }}</p>{% endfor %}
+        </div>
+        {% elif form.errors %}
+        <div role="alert" class="p-4 rounded-xl border border-fail/30 bg-fail/10 text-sm">
+            <p class="font-medium text-fail">Not run — fix the highlighted inputs.</p>
+        </div>
+        {% endif %}
+
+        {% for field in form %}
+        <div>
+            {% if field.widget_type == "checkbox" %}
+            <label for="{{ field.id_for_label }}" class="inline-flex items-center gap-2.5 text-[13px] font-medium text-text cursor-pointer">
+                {{ field }}
+                <span>{{ field.label }}</span>
+                <span class="font-mono text-[11px] text-faint">{{ field.name }}</span>
+            </label>
+            {% else %}
+            <label for="{{ field.id_for_label }}" class="flex items-baseline gap-2 text-[13px] font-medium text-text mb-1.5">
+                <span>{{ field.label }}{% if field.field.required %} <span class="text-fail" aria-hidden="true">*</span><span class="sr-only">(required)</span>{% endif %}</span>
+                <span class="font-mono text-[11px] text-faint">{{ field.name }}</span>
+            </label>
+            {{ field }}
+            {% endif %}
+            {% if field.help_text %}<p class="mt-1.5 text-xs text-faint">{{ field.help_text }}</p>{% endif %}
+            {% include "cpanel/_field_errors.html" with field=field %}
+        </div>
+        {% endfor %}
+
+        <div class="flex items-center justify-end gap-2.5 pt-2 border-t border-line-soft">
+            <a href="{% url 'cpanel:script_detail' pk=script.pk %}" class="text-[13px] px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Cancel</a>
+            <button type="submit" class="inline-flex items-center gap-2 text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+                Run now
+            </button>
+        </div>
+    </section>
+</form>
+{% endblock %}

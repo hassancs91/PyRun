@@ -44,6 +44,13 @@
     </button>
 </form>
 {% else %}
+{% if script.inputs_schema and script.can_run %}
+{# Declared inputs: Run now opens the inputs form instead of starting the run. #}
+<a href="{% url 'cpanel:script_run' pk=script.pk %}" class="inline-flex items-center gap-2 text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition" title="Fill in this script's inputs, then run it">
+    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+    Run now…
+</a>
+{% else %}
 <form method="post" action="{% url 'cpanel:script_run' pk=script.pk %}">
     {% csrf_token %}
     <button type="submit" class="inline-flex items-center gap-2 text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition {% if not script.can_run %}opacity-50 cursor-not-allowed{% endif %}" {% if not script.can_run %}disabled{% endif %}>
@@ -51,6 +58,7 @@
         Run now
     </button>
 </form>
+{% endif %}
 <a href="{% url 'cpanel:script_edit' pk=script.pk %}" class="inline-flex items-center gap-2 text-[13px] font-medium px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">
     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
     Edit

@@ -131,6 +131,21 @@ affected by saving.
 
 ---
 
+## Scripts with inputs
+
+A script can declare inputs on its **Inputs** tab. A scheduled run has nobody
+to fill them in, so it gets each input's **default**. That is why a schedule
+can only be turned on when every required input has a default: saving the
+script form, or resuming a paused schedule, is refused with the names of the
+inputs that need one. Optional inputs without a default are simply left out of
+a scheduled run.
+
+If the inputs change later in a way the schedule can't satisfy (for example a
+backup restored from another instance), each scheduled time is skipped without
+creating a run, and the skip is logged with the reason.
+
+---
+
 ## When the server was down
 
 Missed fires are not replayed one by one. If one or more scheduled times pass

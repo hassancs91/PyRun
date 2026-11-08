@@ -110,6 +110,18 @@ class Run(models.Model):
         help_text="Library revisions pinned at queue time: {library_key: version}.",
     )
 
+    # The inputs this run started with, validated against the script's
+    # inputs_schema (defaults filled in) and stamped at QUEUE time by
+    # queue_script_run, so a duplicate task delivery reads the same values.
+    # Stored raw, because the script needs the real values: anything that
+    # displays them masks secrets first. NULL = the script declared no inputs.
+    inputs = models.JSONField(
+        null=True,
+        blank=True,
+        default=None,
+        help_text="Inputs stamped at queue time (validated against the script's inputs_schema).",
+    )
+
     # Who triggered the run
     triggered_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

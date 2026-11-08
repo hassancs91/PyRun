@@ -19,6 +19,15 @@
 {% endblock %}
 {% block subtitle %}Run ID <span class="font-mono text-faint">{{ run.pk }}</span>{% endblock %}
 {% block actions %}
+{% if run.inputs is not None and run.script.can_run %}
+<form method="post" action="{% url 'cpanel:run_rerun' pk=run.pk %}">
+    {% csrf_token %}
+    <button type="submit" class="flex-shrink-0 inline-flex items-center gap-2 text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition" title="Start a new run of the current script with exactly these inputs">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+        Re-run with same inputs
+    </button>
+</form>
+{% endif %}
 <a href="{% url 'cpanel:script_detail' pk=run.script.pk %}"
    class="flex-shrink-0 text-[13px] px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">View script</a>
 {% endblock %}
@@ -161,6 +170,35 @@
                 {% endif %}
             </dl>
         </section>
+
+        {# Declared inputs stamped at queue time (absent for scripts without any) #}
+        {% if run.inputs is not None %}
+        <section class="rounded-2xl border border-line bg-panel p-5" aria-labelledby="run-inputs-heading">
+            <h3 id="run-inputs-heading" class="eyebrow text-faint mb-4">Inputs</h3>
+            {% if inputs_hidden %}
+            <p class="text-sm text-warn">Hidden: a secret couldn't be resolved, so these values can't be checked for secrets before they are shown.</p>
+            {% elif input_rows %}
+            <dl class="space-y-3.5 text-sm">
+                {% for row in input_rows %}
+                {% if row.block %}
+                <div>
+                    <dt class="font-mono text-muted mb-1.5 break-all">{{ row.name }}</dt>
+                    <dd><pre class="font-mono text-xs text-text bg-ink rounded-lg p-3 max-h-60 overflow-auto whitespace-pre-wrap break-words">{{ row.text }}</pre></dd>
+                </div>
+                {% else %}
+                <div class="flex items-start justify-between gap-3">
+                    <dt class="font-mono text-muted flex-shrink-0 break-all max-w-[45%]">{{ row.name }}</dt>
+                    <dd class="font-mono text-text text-right min-w-0 break-words">{{ row.text }}</dd>
+                </div>
+                {% endif %}
+                {% endfor %}
+            </dl>
+            {% else %}
+            <p class="text-sm text-faint">None given.</p>
+            {% endif %}
+            <p class="mt-4 text-xs text-faint">Validated and fixed when this run was queued. Secret values are masked.</p>
+        </section>
+        {% endif %}
 
         {# Libraries pinned at queue time (absent for runs with none) #}
         {% if run.library_versions %}

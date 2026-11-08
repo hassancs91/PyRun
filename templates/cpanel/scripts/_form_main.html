@@ -1,4 +1,4 @@
-{# Main form content: Name, Description, Code editor #}
+{# Main form content: Name, Description, then the Code | Inputs tabs #}
 <div class="rounded-2xl border border-line bg-panel p-6 space-y-5">
     {# Name #}
     <div>
@@ -14,8 +14,22 @@
         {% include "cpanel/_field_errors.html" with field=form.description %}
     </div>
 
+    {# Code | Inputs. Inputs opens first when the schema was refused, so the error is in view. #}
+    {% with inputs_first=form.inputs_schema.errors %}
+    <div data-editor-tabs>
+    <div role="tablist" aria-label="Script editor" class="flex items-center gap-1 border-b border-line-soft">
+        <button type="button" role="tab" id="editor-tab-code" aria-controls="editor-panel-code" aria-selected="{% if inputs_first %}false{% else %}true{% endif %}" data-editor-tab="code"
+                class="-mb-px px-3 py-2 text-[13px] font-medium border-b-2 transition-colors aria-selected:border-ok aria-selected:text-text border-transparent text-muted hover:text-text">Code</button>
+        <button type="button" role="tab" id="editor-tab-inputs" aria-controls="editor-panel-inputs" aria-selected="{% if inputs_first %}true{% else %}false{% endif %}" data-editor-tab="inputs"
+                class="-mb-px px-3 py-2 text-[13px] font-medium border-b-2 transition-colors aria-selected:border-ok aria-selected:text-text border-transparent text-muted hover:text-text inline-flex items-center gap-1.5">
+            Inputs
+            <span data-inputs-count class="hidden min-w-[1.25rem] px-1.5 py-px rounded-full text-[11px] tnum bg-panel-hi text-muted"></span>
+            {% if inputs_first %}<span class="w-1.5 h-1.5 rounded-full bg-fail" aria-label="has an error"></span>{% endif %}
+        </button>
+    </div>
+
     {# Code editor #}
-    <div>
+    <div id="editor-panel-code" role="tabpanel" aria-labelledby="editor-tab-code" class="pt-4" {% if inputs_first %}hidden{% endif %}>
         <div class="flex items-center justify-between mb-1.5">
             <label for="id_code" class="block text-[13px] font-medium text-text">{{ form.code.label }}</label>
             <span class="eyebrow text-faint">Python 3</span>
@@ -33,4 +47,35 @@
         </div>
         {% include "cpanel/_field_errors.html" with field=form.code %}
     </div>
+
+    {# Declared inputs: the field builder writes the JSON Schema into the textarea, which is what gets saved #}
+    <div id="editor-panel-inputs" role="tabpanel" aria-labelledby="editor-tab-inputs" class="pt-4 space-y-4" data-inputs-editor {% if not inputs_first %}hidden{% endif %}>
+        <div class="flex flex-wrap items-start justify-between gap-3">
+            <p class="text-xs text-faint max-w-xl">What this script takes. <span class="text-muted">Run now</span> asks for these, and the values are checked before a run is created. Each text, number and yes/no value reaches the script as <span class="font-mono text-muted">INPUT_&lt;NAME&gt;</span>; JSON values are kept on the run.</p>
+            <div class="inline-flex rounded-lg border border-line p-0.5 flex-shrink-0" role="group" aria-label="Inputs editor mode">
+                <button type="button" data-inputs-mode="fields" aria-pressed="true" class="px-2.5 py-1 text-xs rounded-md transition-colors aria-pressed:bg-panel-hi aria-pressed:text-text text-muted hover:text-text">Fields</button>
+                <button type="button" data-inputs-mode="raw" aria-pressed="false" class="px-2.5 py-1 text-xs rounded-md transition-colors aria-pressed:bg-panel-hi aria-pressed:text-text text-muted hover:text-text">Raw JSON</button>
+            </div>
+        </div>
+
+        <p data-inputs-note role="status" class="hidden text-xs text-warn"></p>
+
+        <div data-inputs-builder class="space-y-3">
+            <div data-inputs-list class="space-y-3"></div>
+            <p data-inputs-empty class="text-sm text-faint italic">No inputs: Run now starts the script straight away.</p>
+            <button type="button" data-inputs-add class="inline-flex items-center gap-1.5 text-[13px] font-medium px-3 py-1.5 rounded-lg border border-dashed border-line text-muted hover:text-text hover:border-faint transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+                Add input
+            </button>
+        </div>
+
+        <div data-inputs-raw class="hidden">
+            <label for="{{ form.inputs_schema.id_for_label }}" class="block text-[13px] font-medium text-text mb-1.5">Inputs schema <span class="text-faint font-normal">(JSON)</span></label>
+            {{ form.inputs_schema }}
+            <p class="mt-1.5 text-xs text-faint">An object JSON Schema. Supported keywords: <span class="font-mono">type, properties, required, default, enum, title, description, maxLength, minimum, maximum, items, maxItems, additionalProperties</span>. Leave empty for no inputs.</p>
+        </div>
+        {% include "cpanel/_field_errors.html" with field=form.inputs_schema %}
+    </div>
+    </div>
+    {% endwith %}
 </div>

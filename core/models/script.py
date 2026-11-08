@@ -99,6 +99,17 @@ class Script(models.Model):
     # The actual Python code
     code = models.TextField(help_text="Python code to execute")
 
+    # Declared inputs: an object JSON Schema in the core.api.schema subset,
+    # checked by core.services.script_inputs.check_inputs_schema. NULL = the
+    # script takes no inputs (every script before 2.5). Run now renders a form
+    # from it; the values a run gets are validated and stamped on Run.inputs.
+    inputs_schema = models.JSONField(
+        null=True,
+        blank=True,
+        default=None,
+        help_text="JSON Schema (type object) of the inputs a run of this script takes.",
+    )
+
     # Execution settings
     environment = models.ForeignKey(
         Environment,

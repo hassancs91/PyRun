@@ -2,14 +2,25 @@
 Forms for the core app.
 """
 import calendar
+import json
+import math
 import re
 from zoneinfo import available_timezones
 
 from django import forms
 from django.utils.text import slugify
 
+from core.api.exceptions import ApiError
+# JSON parsing that refuses NaN/Infinity, which neither database stores as JSON.
+from core.api.schema import loads as strict_json_loads
 from core.models import Script, Environment, ScriptSchedule, Tag, DataStore, DataStoreEntry, APIToken, Database, Library, Secret, SecretProvider
 from core.services import EnvironmentService
+from core.services.script_inputs import (
+    ScriptInputsError,
+    check_inputs_schema,
+    input_fields,
+    prepare_inputs,
+)
 
 
 # Regex pattern for secret key validation (uppercase, numbers, underscores, must start with letter)
@@ -77,8 +88,46 @@ def get_timezone_choices():
     return [("Common", common), ("All timezones", others)]
 
 
+class InputsSchemaField(forms.CharField):
+    """The script's inputs schema as JSON text (the Inputs tab writes it).
+
+    Blank means the script declares no inputs (stored as NULL), not ``null``.
+    """
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("required", False)
+        kwargs.setdefault(
+            "widget",
+            forms.Textarea(
+                attrs={
+                    "class": INPUT_CLASS + " font-mono text-xs",
+                    "rows": 14,
+                    "spellcheck": "false",
+                    "placeholder": '{"type": "object", "properties": {"city": {"type": "string"}}}',
+                }
+            ),
+        )
+        super().__init__(**kwargs)
+
+    def prepare_value(self, value):
+        if isinstance(value, dict):
+            return json.dumps(value, indent=2)
+        return "" if value is None else value
+
+    def to_python(self, value):
+        text = super().to_python(value)
+        if not text:
+            return None
+        try:
+            return strict_json_loads(text)
+        except ApiError:
+            raise forms.ValidationError("The inputs schema isn't valid JSON.") from None
+
+
 class ScriptForm(forms.ModelForm):
     """Form for creating and editing scripts."""
+
+    inputs_schema = InputsSchemaField(label="Inputs")
 
     class Meta:
         model = Script
@@ -86,6 +135,7 @@ class ScriptForm(forms.ModelForm):
             "name",
             "description",
             "code",
+            "inputs_schema",
             "environment",
             "tags",
             "timeout_seconds",
@@ -206,11 +256,153 @@ class ScriptForm(forms.ModelForm):
             raise forms.ValidationError("Script code cannot be empty.")
         return code
 
+    def clean_inputs_schema(self):
+        try:
+            return check_inputs_schema(self.cleaned_data.get("inputs_schema"))
+        except ValueError as e:
+            raise forms.ValidationError(str(e)) from None
+
     def clean_timeout_seconds(self):
         timeout = self.cleaned_data.get("timeout_seconds")
         if timeout is not None and (timeout < 1 or timeout > 86400):
             raise forms.ValidationError("Timeout must be between 1 and 86400 seconds (24 hours).")
         return timeout
+
+
+class _NumberInputField(forms.Field):
+    """A JSON number. Whole-number text stays an int, so 3 reaches the script as "3"."""
+
+    widget = forms.NumberInput
+
+    def to_python(self, value):
+        text = value.strip() if isinstance(value, str) else value
+        if text in (None, ""):
+            return None
+        try:
+            number = int(text) if re.fullmatch(r"[+-]?\d+", str(text)) else float(text)
+        except (TypeError, ValueError):
+            raise forms.ValidationError("Enter a number.") from None
+        if isinstance(number, float) and not math.isfinite(number):
+            raise forms.ValidationError("Enter a finite number.")
+        return number
+
+
+class _JSONInputField(forms.CharField):
+    """Any JSON value typed as text. Blank = not given."""
+
+    def to_python(self, value):
+        text = super().to_python(value)
+        if not text:
+            return None
+        try:
+            return strict_json_loads(text)
+        except ApiError:
+            raise forms.ValidationError("Enter valid JSON.") from None
+
+
+def _input_form_field(spec):
+    """The form field for one declared input (a core.services.script_inputs.InputField)."""
+    common = {"label": spec.label, "help_text": spec.help, "required": spec.required}
+    initial = spec.default if spec.has_default else None
+    if spec.kind == "boolean":
+        common["required"] = False  # an unticked box is a value: false
+        return forms.BooleanField(
+            initial=bool(initial),
+            widget=forms.CheckboxInput(attrs={"class": CHECK_CLASS}),
+            **common,
+        )
+    if spec.kind == "select":
+        choices = [
+            (str(i), v if isinstance(v, str) else json.dumps(v))
+            for i, v in enumerate(spec.choices)
+        ]
+        if not spec.required:
+            choices.insert(0, ("", "—"))
+        picked = next(
+            (
+                str(i)
+                for i, v in enumerate(spec.choices)
+                if spec.has_default and type(v) is type(initial) and v == initial
+            ),
+            None,
+        )
+        return forms.ChoiceField(
+            choices=choices,
+            initial=picked,
+            widget=forms.Select(attrs={"class": INPUT_CLASS}),
+            **common,
+        )
+    if spec.kind in ("number", "integer"):
+        attrs = {"class": INPUT_CLASS, "step": "1" if spec.kind == "integer" else "any"}
+        if spec.minimum is not None:
+            attrs["min"] = spec.minimum
+        if spec.maximum is not None:
+            attrs["max"] = spec.maximum
+        field_class = forms.IntegerField if spec.kind == "integer" else _NumberInputField
+        return field_class(initial=initial, widget=forms.NumberInput(attrs=attrs), **common)
+    if spec.kind == "text":
+        attrs = {"class": INPUT_CLASS}
+        if spec.max_length is not None:
+            attrs["maxlength"] = spec.max_length
+        return forms.CharField(
+            initial=initial,
+            empty_value=None,
+            widget=forms.TextInput(attrs=attrs),
+            **common,
+        )
+    return _JSONInputField(
+        initial=json.dumps(initial, indent=2) if spec.has_default else None,
+        empty_value=None,
+        widget=forms.Textarea(
+            attrs={"class": INPUT_CLASS + " font-mono text-xs", "rows": 4, "spellcheck": "false"}
+        ),
+        **common,
+    )
+
+
+class ScriptInputsForm(forms.Form):
+    """Run now's form for a script's declared inputs.
+
+    One field per declared input. Once the form is valid, ``inputs`` holds the
+    values validated by ``prepare_inputs`` (defaults filled in), ready to stamp
+    on the Run. A blank optional field is left out, so its default applies.
+    """
+
+    def __init__(self, script, *args, **kwargs):
+        # Prefixed so an input can't collide with csrfmiddlewaretoken & co.
+        kwargs.setdefault("prefix", "input")
+        super().__init__(*args, **kwargs)
+        self.script = script
+        self.inputs = None
+        self.input_specs = input_fields(script.inputs_schema)
+        for spec in self.input_specs:
+            self.fields[spec.name] = _input_form_field(spec)
+
+    def clean(self):
+        cleaned = super().clean()
+        if self.errors:
+            return cleaned
+        values = {}
+        for spec in self.input_specs:
+            value = cleaned.get(spec.name)
+            if spec.kind == "select":
+                if not value:
+                    continue
+                value = spec.choices[int(value)]
+            elif value is None:
+                continue
+            values[spec.name] = value
+        try:
+            self.inputs = prepare_inputs(self.script, values)
+        except ScriptInputsError as e:
+            if not e.field_errors:
+                self.add_error(None, e.message)
+            for name, reason in e.field_errors.items():
+                if name in self.fields:
+                    self.add_error(name, reason)
+                else:
+                    self.add_error(None, f"{name}: {reason}")
+        return cleaned
 
 
 class TagForm(forms.ModelForm):

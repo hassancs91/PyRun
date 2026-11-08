@@ -11,6 +11,7 @@ from django.views.decorators.http import require_http_methods
 
 from core.models import Script, Run
 from core.ratelimit import client_ip, rate_limit_exceeded
+from core.services.script_inputs import ScriptInputsError, prepare_inputs
 from core.tasks import queue_script_run
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,8 @@ def webhook_trigger_view(request: HttpRequest, token: str) -> JsonResponse:
     Returns:
         JsonResponse with:
         - 200: Script queued successfully
+        - 400: The script has a required input with no default; ``inputs``
+          maps each such input to the reason (no run is created)
         - 403: Script is disabled
         - 404: Invalid token
         - 429: Rate limit exceeded
@@ -73,6 +76,14 @@ def webhook_trigger_view(request: HttpRequest, token: str) -> JsonResponse:
             status=403,
         )
 
+    # A webhook call supplies no inputs: the run gets each input's default, and
+    # a script with a required input that has none is refused before any run
+    # row exists.
+    try:
+        inputs = prepare_inputs(script, None)
+    except ScriptInputsError as e:
+        return _inputs_rejected(e)
+
     # Extract webhook data
     webhook_data = _extract_webhook_data(request)
 
@@ -85,6 +96,7 @@ def webhook_trigger_view(request: HttpRequest, token: str) -> JsonResponse:
         triggered_by=None,  # Webhook-triggered, no user
         trigger_type=Run.TriggerType.API,
         code_snapshot=script.code,
+        inputs=inputs,
     )
 
     # Queue for async execution
@@ -98,6 +110,11 @@ def webhook_trigger_view(request: HttpRequest, token: str) -> JsonResponse:
             "script": script.name,
         })
 
+    except ScriptInputsError as e:
+        # The schema changed since the check above; queue_script_run already
+        # deleted the row, so don't save it back as a failed run.
+        return _inputs_rejected(e)
+
     except Exception as e:
         run.status = Run.Status.FAILED
         run.stderr = f"Failed to queue task: {str(e)}"
@@ -108,6 +125,14 @@ def webhook_trigger_view(request: HttpRequest, token: str) -> JsonResponse:
             {"error": "Failed to queue script execution"},
             status=500,
         )
+
+
+def _inputs_rejected(error: ScriptInputsError) -> JsonResponse:
+    """400 for a script whose declared inputs a webhook call can't satisfy."""
+    return JsonResponse(
+        {"error": error.message, "inputs": error.field_errors},
+        status=400,
+    )
 
 
 def _extract_webhook_data(request: HttpRequest) -> dict:

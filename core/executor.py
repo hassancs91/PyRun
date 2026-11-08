@@ -31,9 +31,19 @@ from core.services.library_service import (
     LibraryMaterializationError,
     materialize_libraries,
 )
+from core.services.script_inputs import input_env
 from core.services.secret_backends import SecretResolutionError
 
 logger = logging.getLogger(__name__)
+
+# Every credential-bearing variable ClaudeService._build_env can inject into a
+# run (ANTHROPIC_AUTH_TOKEN carries third-party provider keys). Masked in
+# output alongside the run's secrets.
+AI_CREDENTIAL_ENV_KEYS = (
+    "CLAUDE_CODE_OAUTH_TOKEN",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+)
 
 # Each stream (stdout, stderr) is stored up to MAX_OUTPUT_BYTES (1 MB) to keep
 # the database small. Past that the start and the END are kept — the end is where
@@ -198,8 +208,10 @@ def _build_script_environment(
     """
     Build the environment dict for script execution.
 
-    Combines system environment with secrets, webhook data, and DataStore access.
-    Secrets override any same-named system variables.
+    Combines system environment with the run's declared inputs, secrets, webhook
+    data, and DataStore access. Scalar inputs are added as INPUT_<NAME>.
+    Precedence: system environment < inputs < secrets (a secret overrides a
+    same-named input or system variable).
     Webhook data is added with WEBHOOK_ prefix.
 
     Args:
@@ -225,6 +237,11 @@ def _build_script_environment(
     # user's run (a user Secret of the same name still injects below).
     for _denied in settings.PYRUNNER_RUN_ENV_DENYLIST:
         env.pop(_denied, None)
+
+    # Declared inputs stamped on the run at queue time, as INPUT_<NAME>.
+    # Precedence: system environment < inputs < secrets.
+    if run is not None and run.inputs:
+        env.update(input_env(run.inputs))
 
     # Add secrets (overriding any existing vars with same name), scoped to the
     # run's workspace via the shared resolver.
@@ -342,6 +359,52 @@ def _mask_secrets_in_output(output: str, secrets: dict) -> str:
             masked = masked.replace(value, f"[{key}:MASKED]")
 
     return masked
+
+
+def mask_secrets_in_value(value, secrets: dict):
+    """``_mask_secrets_in_output`` for a JSON value, for structured run data.
+
+    Masks every string in ``value``, object keys included. A number whose text
+    contains a secret becomes the masked string. Masking the JSON text instead
+    would miss a secret that JSON escaping changes (one with a quote in it).
+    """
+    if not secrets:
+        return value
+    if isinstance(value, str):
+        return _mask_secrets_in_output(value, secrets)
+    if isinstance(value, bool) or value is None:
+        return value
+    if isinstance(value, (int, float)):
+        text = json.dumps(value)
+        masked = _mask_secrets_in_output(text, secrets)
+        return value if masked == text else masked
+    if isinstance(value, dict):
+        return {
+            mask_secrets_in_value(k, secrets): mask_secrets_in_value(v, secrets)
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [mask_secrets_in_value(item, secrets) for item in value]
+    return value
+
+
+def with_ai_credentials(secrets: dict) -> dict:
+    """Add the AI credential(s) a run gets injected to a mask set, in place."""
+    claude_env = ClaudeService.get_script_env()
+    for cred_key in AI_CREDENTIAL_ENV_KEYS:
+        if claude_env.get(cred_key):
+            secrets[cred_key] = claude_env[cred_key]
+    return secrets
+
+
+def mask_set_for_display(run) -> dict:
+    """Everything to mask out of run data shown in the console.
+
+    The run's secrets (the same resolver execution uses) plus the injected AI
+    credential. Raises SecretResolutionError when an external secret can't be
+    resolved; callers then hide the data rather than show it unmasked.
+    """
+    return with_ai_credentials(resolve_secrets_for_run(run))
 
 
 class ExecutorError(Exception):
@@ -850,17 +913,8 @@ def execute_run(run: Run, webhook_data: dict | None = None) -> None:
                 webhook_data, run=run, secrets=secrets, library_root=library_root
             )
 
-            # Also mask the injected AI credential in output, if any. Covers
-            # every credential-bearing var ClaudeService._build_env can inject
-            # (ANTHROPIC_AUTH_TOKEN carries third-party provider keys).
-            claude_env = ClaudeService.get_script_env()
-            for cred_key in (
-                "CLAUDE_CODE_OAUTH_TOKEN",
-                "ANTHROPIC_API_KEY",
-                "ANTHROPIC_AUTH_TOKEN",
-            ):
-                if claude_env.get(cred_key):
-                    secrets[cred_key] = claude_env[cred_key]
+            # Also mask the injected AI credential in output, if any.
+            with_ai_credentials(secrets)
 
             # Select the RunBackend from the DB isolation policy (instance →
             # workspace → script), resolved per-run; an explicit

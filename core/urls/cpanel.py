@@ -30,6 +30,7 @@ from core.views.scripts import (
     script_detail_view,
     script_edit_view,
     script_run_view,
+    run_rerun_view,
     script_toggle_view,
     script_archive_view,
     script_restore_view,
@@ -269,6 +270,7 @@ urlpatterns = [
     # Runs
     path("runs/", run_list_view, name="run_list"),
     path("runs/<uuid:pk>/", run_detail_view, name="run_detail"),
+    path("runs/<uuid:pk>/rerun/", run_rerun_view, name="run_rerun"),
 
     # Tasks
     path("tasks/", tasks_view, name="tasks"),

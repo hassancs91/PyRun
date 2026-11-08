@@ -16,6 +16,7 @@ from core.models import Script, ScriptLibrary, ScriptSchedule, SecretGrant
 FORK_COPIED_FIELDS = (
     "description",
     "code",
+    "inputs_schema",
     "environment",
     "timeout_seconds",
     "is_enabled",
