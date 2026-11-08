@@ -33,6 +33,41 @@ These are set for every run, whatever triggered it. (Before 2.5 the three ids
 were set only when an AI provider was configured.) They are set after your
 secrets, so a secret with the same name can't replace them.
 
+### Script env vars
+
+A script can carry plain settings of its own, such as a region, a base URL or
+a feature flag: the **Env vars** tab of the script editor, one name and value
+per row. Every run of the script gets them as environment variables:
+
+```python
+import os
+
+region = os.environ.get("REGION", "eu-west-1")
+```
+
+Values are stored and shown as typed, to anyone who can open the script, and
+they are **not masked** in a run's output. Keep API keys, tokens and passwords
+in **Secrets**.
+
+When the same name is set in more than one place, the later one in this list
+wins:
+
+1. PyRun's own environment (the server's variables)
+2. the script's env vars
+3. inputs (`INPUT_<NAME>`)
+4. secrets
+5. PyRun's run variables (`PYRUNNER_*` above, `WEBHOOK_*`, `INBOUND_*`)
+
+So a secret with the same name as an env var always wins, and the editor warns
+you when one of your env vars has the name of a secret the script gets (in
+*All* mode every workspace secret, in *Selected* mode the attached ones). A
+name holds letters, digits and underscores and doesn't start with a digit, at
+most 100 characters. `PATH`, `HOME`, `PYTHONPATH` and the other names secrets
+can't use are refused, and so is anything starting with `PYRUNNER_`. A script
+can have up to 100 env vars, 64 KB in all. Env vars are read when the run
+starts, so an edit applies to the next run. Forks copy them and backups
+include them.
+
 `run.json` is created in the script's working folder when the run starts and
 deleted when it ends:
 

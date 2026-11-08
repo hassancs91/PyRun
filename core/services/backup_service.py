@@ -42,6 +42,7 @@ from core.models import (
 from core.models.library import hash_modules
 from core.services.encryption_service import EncryptionError, EncryptionService
 from core.services.schedule_service import ScheduleService
+from core.services.script_env import usable_env_vars
 from pyrunner.version import __version__ as PYRUNNER_VERSION
 
 
@@ -159,6 +160,8 @@ class BackupService:
     # and ``stop_requested_at`` on runs (older backups: NULL). Like
     # ``queued_behind``, ``stop_requested_at`` is restored only on finished
     # runs: an unfinished one never comes back half-stopped.
+    # ``env_vars`` on scripts (older backups: none, ``{}``). Restore keeps only
+    # the entries the editor would accept (core.services.script_env).
     BACKUP_VERSION = "1.13.0"
     MAX_BACKUP_SIZE_MB = 100
     # Default cap on a gzip backup's expanded size (F92, zip-bomb guard);
@@ -434,6 +437,7 @@ class BackupService:
                 "description": script.description,
                 "code": script.code,
                 "inputs_schema": script.inputs_schema,
+                "env_vars": script.env_vars or {},
                 "concurrency_policy": script.concurrency_policy,
                 "environment_id": str(script.environment.id),
                 "workspace_id": str(script.workspace_id) if script.workspace_id else None,
@@ -1798,6 +1802,7 @@ class BackupService:
                 description=script_data.get("description", ""),
                 code=script_data["code"],
                 inputs_schema=script_data.get("inputs_schema"),
+                env_vars=usable_env_vars(script_data.get("env_vars")),
                 concurrency_policy=script_data.get(
                     "concurrency_policy", Script.ConcurrencyPolicy.ALLOW
                 ),

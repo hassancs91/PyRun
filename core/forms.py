@@ -15,6 +15,7 @@ from core.api.exceptions import ApiError
 from core.api.schema import loads as strict_json_loads
 from core.models import Script, Environment, ScriptSchedule, Tag, DataStore, DataStoreEntry, APIToken, Database, Library, MaintenanceWindow, Secret, SecretProvider
 from core.services import EnvironmentService
+from core.services.script_env import RESERVED_NAMES, EnvVarsError, check_env_vars
 from core.services.script_inputs import (
     ScriptInputsError,
     check_inputs_schema,
@@ -124,10 +125,63 @@ class InputsSchemaField(forms.CharField):
             raise forms.ValidationError("The inputs schema isn't valid JSON.") from None
 
 
+class EnvVarsWidget(forms.HiddenInput):
+    """The editor's Env vars rows: inputs named ``<name>_name`` / ``<name>_value``.
+
+    The template draws the rows itself (``ScriptForm.env_var_rows``); the widget
+    renders only the hidden ``<name>`` marker. A form posted without the marker
+    (no Env vars tab: an older page, a script) leaves the saved variables alone.
+    """
+
+    # A visible field all the same, so the error summary links to the tab.
+    is_hidden = False
+
+    def format_value(self, value):
+        return "1"
+
+    @staticmethod
+    def _list(data, key):
+        getlist = getattr(data, "getlist", None)
+        if getlist is not None:  # a QueryDict: a real POST
+            return list(getlist(key))
+        value = data.get(key, [])
+        return list(value) if isinstance(value, (list, tuple)) else [value]
+
+    def value_from_datadict(self, data, files, name):
+        if name not in data:
+            return None
+        names = self._list(data, name + "_name")
+        values = self._list(data, name + "_value")
+        values += [""] * (len(names) - len(values))
+        return list(zip(names, values))
+
+    def value_omitted_from_data(self, data, files, name):
+        return name not in data
+
+
+class EnvVarsField(forms.Field):
+    """``(name, value)`` rows in, the ``{NAME: value}`` dict to store out."""
+
+    widget = EnvVarsWidget
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("required", False)
+        super().__init__(**kwargs)
+
+    def to_python(self, value):
+        if value is None or isinstance(value, dict):
+            return value
+        try:
+            return check_env_vars(value)
+        except EnvVarsError as e:
+            raise forms.ValidationError(e.messages) from None
+
+
 class ScriptForm(forms.ModelForm):
     """Form for creating and editing scripts."""
 
     inputs_schema = InputsSchemaField(label="Inputs")
+    env_vars = EnvVarsField(label="Env vars")
 
     class Meta:
         model = Script
@@ -136,6 +190,7 @@ class ScriptForm(forms.ModelForm):
             "description",
             "code",
             "inputs_schema",
+            "env_vars",
             "environment",
             "tags",
             "timeout_seconds",
@@ -342,6 +397,32 @@ class ScriptForm(forms.ModelForm):
             return check_inputs_schema(self.cleaned_data.get("inputs_schema"))
         except ValueError as e:
             raise forms.ValidationError(str(e)) from None
+
+    def clean_env_vars(self):
+        value = self.cleaned_data.get("env_vars")
+        if value is None:  # the Env vars rows weren't posted: keep what's saved
+            value = self.instance.env_vars or {}
+        return value
+
+    def env_var_rows(self):
+        """The Env vars tab's rows: as posted (so a refused save keeps what was
+        typed), else as saved, sorted by name (PostgreSQL doesn't keep the
+        order they were typed in)."""
+        if self.is_bound:
+            posted = self["env_vars"].data
+            if posted is not None:
+                return [{"name": n, "value": v} for n, v in posted if n or v]
+        saved = self.initial.get("env_vars") or self.instance.env_vars or {}
+        return [{"name": n, "value": saved[n]} for n in sorted(saved)]
+
+    @property
+    def opening_tab(self):
+        """The editor tab shown first: the one holding an error, else Code."""
+        if self.errors.get("inputs_schema"):
+            return "inputs"
+        if self.errors.get("env_vars"):
+            return "env"
+        return "code"
 
     def clean_timeout_seconds(self):
         timeout = self.cleaned_data.get("timeout_seconds")
@@ -1151,20 +1232,8 @@ class SecretCreateForm(forms.Form):
                 "Key must start with a letter and contain only uppercase letters, numbers, and underscores."
             )
 
-        # Check for reserved environment variable names
-        reserved = {
-            "PATH",
-            "HOME",
-            "USER",
-            "SHELL",
-            "PWD",
-            "PYTHONPATH",
-            "VIRTUAL_ENV",
-            "PYTHONHOME",
-            "PYTHONDONTWRITEBYTECODE",
-            "PYTHONUNBUFFERED",
-        }
-        if key in reserved:
+        # Check for reserved environment variable names (shared with env vars)
+        if key in RESERVED_NAMES:
             raise forms.ValidationError(
                 f"'{key}' is a reserved environment variable name."
             )

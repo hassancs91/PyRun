@@ -1,4 +1,4 @@
-{# Main form content: Name, Description, then the Code | Inputs tabs #}
+{# Main form content: Name, Description, then the Code | Inputs | Env vars tabs #}
 <div class="rounded-2xl border border-line bg-panel p-6 space-y-5">
     {# Name #}
     <div>
@@ -14,22 +14,28 @@
         {% include "cpanel/_field_errors.html" with field=form.description %}
     </div>
 
-    {# Code | Inputs. Inputs opens first when the schema was refused, so the error is in view. #}
-    {% with inputs_first=form.inputs_schema.errors %}
+    {# Code | Inputs | Env vars. A tab whose field was refused opens first, so the error is in view. #}
+    {% with tab=form.opening_tab env_rows=form.env_var_rows %}
     <div data-editor-tabs>
     <div role="tablist" aria-label="Script editor" class="flex items-center gap-1 border-b border-line-soft">
-        <button type="button" role="tab" id="editor-tab-code" aria-controls="editor-panel-code" aria-selected="{% if inputs_first %}false{% else %}true{% endif %}" data-editor-tab="code"
+        <button type="button" role="tab" id="editor-tab-code" aria-controls="editor-panel-code" aria-selected="{% if tab == 'code' %}true{% else %}false{% endif %}" data-editor-tab="code"
                 class="-mb-px px-3 py-2 text-[13px] font-medium border-b-2 transition-colors aria-selected:border-ok aria-selected:text-text border-transparent text-muted hover:text-text">Code</button>
-        <button type="button" role="tab" id="editor-tab-inputs" aria-controls="editor-panel-inputs" aria-selected="{% if inputs_first %}true{% else %}false{% endif %}" data-editor-tab="inputs"
+        <button type="button" role="tab" id="editor-tab-inputs" aria-controls="editor-panel-inputs" aria-selected="{% if tab == 'inputs' %}true{% else %}false{% endif %}" data-editor-tab="inputs"
                 class="-mb-px px-3 py-2 text-[13px] font-medium border-b-2 transition-colors aria-selected:border-ok aria-selected:text-text border-transparent text-muted hover:text-text inline-flex items-center gap-1.5">
             Inputs
             <span data-inputs-count class="hidden min-w-[1.25rem] px-1.5 py-px rounded-full text-[11px] tnum bg-panel-hi text-muted"></span>
-            {% if inputs_first %}<span class="w-1.5 h-1.5 rounded-full bg-fail" aria-label="has an error"></span>{% endif %}
+            {% if form.inputs_schema.errors %}<span class="w-1.5 h-1.5 rounded-full bg-fail" aria-label="has an error"></span>{% endif %}
+        </button>
+        <button type="button" role="tab" id="editor-tab-env" aria-controls="editor-panel-env" aria-selected="{% if tab == 'env' %}true{% else %}false{% endif %}" data-editor-tab="env"
+                class="-mb-px px-3 py-2 text-[13px] font-medium border-b-2 transition-colors aria-selected:border-ok aria-selected:text-text border-transparent text-muted hover:text-text inline-flex items-center gap-1.5">
+            Env vars
+            <span data-env-count class="{% if not env_rows %}hidden {% endif %}min-w-[1.25rem] px-1.5 py-px rounded-full text-[11px] tnum bg-panel-hi text-muted">{{ env_rows|length }}</span>
+            {% if form.env_vars.errors %}<span class="w-1.5 h-1.5 rounded-full bg-fail" aria-label="has an error"></span>{% endif %}
         </button>
     </div>
 
     {# Code editor #}
-    <div id="editor-panel-code" role="tabpanel" aria-labelledby="editor-tab-code" class="pt-4" {% if inputs_first %}hidden{% endif %}>
+    <div id="editor-panel-code" role="tabpanel" aria-labelledby="editor-tab-code" class="pt-4" {% if tab != 'code' %}hidden{% endif %}>
         <div class="flex items-center justify-between mb-1.5">
             <label for="id_code" class="block text-[13px] font-medium text-text">{{ form.code.label }}</label>
             <span class="eyebrow text-faint">Python 3</span>
@@ -49,7 +55,7 @@
     </div>
 
     {# Declared inputs: the field builder writes the JSON Schema into the textarea, which is what gets saved #}
-    <div id="editor-panel-inputs" role="tabpanel" aria-labelledby="editor-tab-inputs" class="pt-4 space-y-4" data-inputs-editor {% if not inputs_first %}hidden{% endif %}>
+    <div id="editor-panel-inputs" role="tabpanel" aria-labelledby="editor-tab-inputs" class="pt-4 space-y-4" data-inputs-editor {% if tab != 'inputs' %}hidden{% endif %}>
         <div class="flex flex-wrap items-start justify-between gap-3">
             <p class="text-xs text-faint max-w-xl">What this script takes. <span class="text-muted">Run now</span> asks for these, and the values are checked before a run is created. Each text, number and yes/no value reaches the script as <span class="font-mono text-muted">INPUT_&lt;NAME&gt;</span>; every value, JSON included, is in <span class="font-mono text-muted">pyrunner_run.inputs()</span>.</p>
             <div class="inline-flex rounded-lg border border-line p-0.5 flex-shrink-0" role="group" aria-label="Inputs editor mode">
@@ -75,6 +81,25 @@
             <p class="mt-1.5 text-xs text-faint">An object JSON Schema. Supported keywords: <span class="font-mono">type, properties, required, default, enum, title, description, maxLength, minimum, maximum, items, maxItems, additionalProperties</span>. Leave empty for no inputs.</p>
         </div>
         {% include "cpanel/_field_errors.html" with field=form.inputs_schema %}
+    </div>
+
+    {# Plain env vars: rows of name/value inputs, paired up in order by core.forms.EnvVarsField. A blank row is ignored. #}
+    <div id="editor-panel-env" role="tabpanel" aria-labelledby="editor-tab-env" class="pt-4 space-y-4" data-env-editor {% if tab != 'env' %}hidden{% endif %}>
+        <p class="text-xs text-faint max-w-xl">Plain settings every run of this script gets as environment variables, such as a region or a feature flag. <span class="text-warn">Values are visible to anyone who can open this script and are never masked in output: put keys and tokens in Secrets.</span> A secret or an input (<span class="font-mono text-muted">INPUT_&lt;NAME&gt;</span>) with the same name wins.</p>
+        {{ form.env_vars }}
+        <div data-env-list class="space-y-2">
+            {% for row in env_rows %}
+            {% include "cpanel/scripts/_env_var_row.html" with name=row.name value=row.value %}
+            {% endfor %}
+            {% include "cpanel/scripts/_env_var_row.html" with name="" value="" %}
+        </div>
+        <template data-env-row-template>{% include "cpanel/scripts/_env_var_row.html" with name="" value="" %}</template>
+        <button type="button" data-env-add class="inline-flex items-center gap-1.5 text-[13px] font-medium px-3 py-1.5 rounded-lg border border-dashed border-line text-muted hover:text-text hover:border-faint transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+            Add variable
+        </button>
+        {{ env_secrets|json_script:"env-secret-names" }}
+        {% include "cpanel/_field_errors.html" with field=form.env_vars %}
     </div>
     </div>
     {% endwith %}

@@ -117,6 +117,16 @@ begins tracking at the current release; earlier history is in the git log.
   plugin SDK's `RunView`). A grace period of 0 keeps the old behaviour. The
   setting is forked and backed up. Guide: "Stopping a run" in
   `docs/run-context.md`.
+- **Per-script env vars.** A new **Env vars** tab in the script editor holds
+  plain settings for the script (a region, a base URL, a feature flag), one
+  name and value per row. Every run gets them as environment variables, below
+  inputs and secrets: a secret with the same name always wins, and the editor
+  warns when a name matches a secret the script gets. Values are shown as
+  typed and never masked, so keys and tokens stay in Secrets. Names are
+  checked (letters, digits and underscores; not `PATH`, `PYTHONPATH` and the
+  other names secrets can't use; nothing starting with `PYRUNNER_`). The
+  script page lists the names. Forks and backups include them. Guide: "Script
+  env vars" in `docs/run-context.md`.
 
 ## [2.0.0] — October 23, 2026
 

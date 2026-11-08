@@ -19,6 +19,7 @@ from core.services.maintenance import blocked_message
 from core.services.run_events import manual_event
 from core.tasks import queue_script_run
 from core.services.schedule_service import ScheduleService
+from core.services.script_env import editor_secret_names, env_var_collisions
 from core.services.script_inputs import ScriptInputsError, prepare_inputs, schedule_conflict
 from core.views.ownership import owned_block_message, owned_delete_blocked
 
@@ -246,6 +247,18 @@ def _warn_if_timeout_outruns_workers(request, script) -> None:
         )
 
 
+def _warn_on_env_var_collisions(request, script):
+    """Name the env vars a secret this script gets replaces at run time."""
+    clashes = env_var_collisions(script)
+    if clashes:
+        listed = ", ".join(clashes)
+        messages.warning(
+            request,
+            f"A secret this script gets has the same name as {listed}, so the "
+            "secret's value is used. Rename the env var to keep both.",
+        )
+
+
 @login_required
 def script_create_view(request: HttpRequest) -> HttpResponse:
     """Create a new script."""
@@ -265,6 +278,7 @@ def script_create_view(request: HttpRequest) -> HttpResponse:
             _reconcile_libraries(script, request.POST.getlist("library_ids"), request.workspace)
             messages.success(request, f'Script "{script.name}" created successfully.')
             _warn_if_timeout_outruns_workers(request, script)
+            _warn_on_env_var_collisions(request, script)
             return redirect("cpanel:script_detail", pk=script.pk)
     else:
         # Optionally pre-fill from a starter template (e.g. ?template=ai).
@@ -283,6 +297,7 @@ def script_create_view(request: HttpRequest) -> HttpResponse:
         "granted_secrets": [],
         "available_libraries": Library.objects.for_workspace(request.workspace).order_by("key"),
         "attached_library_ids": [],
+        "env_secrets": editor_secret_names(None, request.workspace.pk if request.workspace else None),
     })
 
 
@@ -389,6 +404,7 @@ def script_edit_view(request: HttpRequest, pk) -> HttpResponse:
 
             messages.success(request, f'Script "{script.name}" updated successfully.')
             _warn_if_timeout_outruns_workers(request, script)
+            _warn_on_env_var_collisions(request, script)
             return redirect("cpanel:script_detail", pk=script.pk)
     else:
         form = ScriptForm(instance=script, workspace=request.workspace)
@@ -409,6 +425,9 @@ def script_edit_view(request: HttpRequest, pk) -> HttpResponse:
         "granted_secrets": granted_secrets,
         "available_libraries": Library.objects.for_workspace(request.workspace).order_by("key"),
         "attached_library_ids": [str(pk) for pk in script.libraries.values_list("pk", flat=True)],
+        # Names only, for the saved script: a refused POST has written the
+        # posted values onto `script` in memory.
+        "env_secrets": editor_secret_names(Script.objects.get(pk=script.pk), script.workspace_id),
     })
 
 

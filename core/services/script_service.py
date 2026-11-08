@@ -17,6 +17,7 @@ FORK_COPIED_FIELDS = (
     "description",
     "code",
     "inputs_schema",
+    "env_vars",
     "environment",
     "timeout_seconds",
     "stop_grace_seconds",

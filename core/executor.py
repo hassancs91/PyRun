@@ -33,6 +33,7 @@ from core.services.library_service import (
     materialize_libraries,
 )
 from core.services.run_events import default_event
+from core.services.script_env import usable_env_vars
 from core.services.script_inputs import input_env
 from core.services.secret_backends import SecretResolutionError
 
@@ -73,6 +74,39 @@ def run_workspace_id(run):
     if ws_id is None and getattr(run, "script_id", None):
         ws_id = getattr(run.script, "workspace_id", None)
     return ws_id
+
+
+def secrets_in_scope(ws_id, *, mode="all", owner_plugin=None, script_id=None):
+    """The Secret rows a run gets, before anything is decrypted.
+
+    ``ws_id`` is the run's workspace (``run_workspace_id``); ``mode``,
+    ``owner_plugin`` and ``script_id`` come from its script (a run without one:
+    the defaults). The rules are documented on ``resolve_secrets_for_run``;
+    the script editor uses this too, to name the secrets a script gets.
+    With no ``script_id``, Selected mode gives only the plugin's own secrets.
+    """
+
+    def _ws_scope(qs):
+        if ws_id is not None:
+            return qs.filter(Q(workspace_id=ws_id) | Q(workspace__isnull=True))
+        # An unscoped run (no workspace on the run or its script) only sees
+        # unscoped secrets — never every workspace's (fail closed).
+        return qs.filter(workspace__isnull=True)
+
+    if (mode or "all") != "selected":
+        return list(_ws_scope(Secret.objects.filter(owner_plugin__isnull=True)))
+
+    # Build by precedence so an explicitly granted secret wins a clean-name
+    # clash with the plugin's own one.
+    chosen = {}  # clean_name -> Secret
+    if owner_plugin:
+        for s in _ws_scope(Secret.objects.filter(owner_plugin=owner_plugin)):
+            chosen[s.get_clean_name()] = s
+    if script_id is not None:
+        granted = Secret.objects.filter(grants__script_id=script_id, grants__active=True)
+        for s in _ws_scope(granted):
+            chosen[s.get_clean_name()] = s
+    return list(chosen.values())
 
 
 def resolve_secrets_for_run(run) -> dict:
@@ -118,36 +152,16 @@ def resolve_secrets_for_run(run) -> dict:
         return secrets_env
 
     try:
-        ws_id = run_workspace_id(run)
-
-        def _ws_scope(qs):
-            if ws_id is not None:
-                return qs.filter(Q(workspace_id=ws_id) | Q(workspace__isnull=True))
-            # An unscoped run (no workspace on the run or its script) only sees
-            # unscoped secrets — never every workspace's (fail closed).
-            return qs.filter(workspace__isnull=True)
-
         mode = "all"
         owner = None
+        script_id = None
         if run is not None and getattr(run, "script_id", None):
             mode = getattr(run.script, "injection_mode", "all") or "all"
             owner = getattr(run.script, "owner_plugin", None)
-
-        if mode == "selected":
-            # Build by precedence so an explicitly granted secret wins a
-            # clean-name clash with the plugin's own one.
-            chosen = {}  # clean_name -> Secret
-            if owner:
-                for s in _ws_scope(Secret.objects.filter(owner_plugin=owner)):
-                    chosen[s.get_clean_name()] = s
-            granted = Secret.objects.filter(
-                grants__script_id=run.script_id, grants__active=True
-            )
-            for s in _ws_scope(granted):
-                chosen[s.get_clean_name()] = s
-            resolved = list(chosen.values())
-        else:
-            resolved = _ws_scope(Secret.objects.filter(owner_plugin__isnull=True))
+            script_id = run.script_id
+        resolved = secrets_in_scope(
+            run_workspace_id(run), mode=mode, owner_plugin=owner, script_id=script_id
+        )
 
         for secret in resolved:
             if getattr(secret, "source", Secret.Source.LOCAL) == Secret.Source.EXTERNAL:
@@ -254,10 +268,11 @@ def _build_script_environment(
     """
     Build the environment dict for script execution.
 
-    Combines system environment with the run's declared inputs, secrets, webhook
-    data, and DataStore access. Scalar inputs are added as INPUT_<NAME>.
-    Precedence: system environment < inputs < secrets (a secret overrides a
-    same-named input or system variable). The run's own ids
+    Combines system environment with the script's env vars, the run's declared
+    inputs, secrets, webhook data, and DataStore access. Scalar inputs are added
+    as INPUT_<NAME>. Precedence: system environment < env vars < inputs <
+    secrets (a secret overrides a same-named input, env var or system
+    variable). The run's own ids
     (PYRUNNER_RUN_ID, PYRUNNER_SCRIPT_ID, PYRUNNER_SCRIPT_NAME) and
     PYRUNNER_RUN_FILE are set after the secrets, so nothing can override them.
     Webhook data is added with WEBHOOK_ prefix.
@@ -288,8 +303,13 @@ def _build_script_environment(
     for _denied in settings.PYRUNNER_RUN_ENV_DENYLIST:
         env.pop(_denied, None)
 
+    # The script's plain env vars (core.services.script_env), read when the run
+    # starts, like its secrets. Precedence: system environment < env vars <
+    # inputs < secrets.
+    if run is not None and run.script_id:
+        env.update(usable_env_vars(run.script.env_vars))
+
     # Declared inputs stamped on the run at queue time, as INPUT_<NAME>.
-    # Precedence: system environment < inputs < secrets.
     if run is not None and run.inputs:
         env.update(input_env(run.inputs))
 

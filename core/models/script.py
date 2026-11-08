@@ -111,6 +111,17 @@ class Script(models.Model):
         help_text="JSON Schema (type object) of the inputs a run of this script takes.",
     )
 
+    # Plain, non-secret settings exported into every run (2.5, T09), as
+    # {NAME: value}. Below inputs and secrets: a secret with the same name
+    # always wins. Stored and shown as typed, never masked: keys and tokens
+    # belong in Secrets. Rules in core.services.script_env.
+    env_vars = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Non-secret environment variables for every run, as {NAME: value}. "
+        "Inputs and secrets with the same name win.",
+    )
+
     # Execution settings
     environment = models.ForeignKey(
         Environment,
@@ -324,6 +335,11 @@ class Script(models.Model):
         """The longest a run's script can be alive: its timeout plus the grace
         period a timed-out run gets to shut down before the kill."""
         return self.timeout_seconds + self.stop_grace_seconds
+
+    @property
+    def env_var_names(self) -> list:
+        """The env var names, sorted (PostgreSQL doesn't keep the saved order)."""
+        return sorted(self.env_vars) if isinstance(self.env_vars, dict) else []
 
     @property
     def last_run(self):

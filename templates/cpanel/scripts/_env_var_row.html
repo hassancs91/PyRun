@@ -1,0 +1,14 @@
+{# One Env vars row (also the template static/js/script_env.js clones). Warns when a secret this script gets has the same name. #}
+<div data-env-row class="space-y-1">
+    <div class="flex items-center gap-2">
+        <input type="text" name="{{ form.env_vars.html_name }}_name" value="{{ name }}" data-env-name aria-label="Variable name" placeholder="NAME" maxlength="100" autocomplete="off" spellcheck="false"
+               class="min-w-0 basis-2/5 px-3 py-2 bg-ink border border-line rounded-lg text-text text-sm font-mono placeholder-faint/60 focus:outline-none focus:ring-2 focus:ring-ok/30 focus:border-ok/60 transition-colors">
+        <input type="text" name="{{ form.env_vars.html_name }}_value" value="{{ value }}" data-env-value aria-label="Value" placeholder="value" autocomplete="off" spellcheck="false"
+               class="min-w-0 flex-1 px-3 py-2 bg-ink border border-line rounded-lg text-text text-sm font-mono placeholder-faint/60 focus:outline-none focus:ring-2 focus:ring-ok/30 focus:border-ok/60 transition-colors">
+        <button type="button" data-env-remove aria-label="Remove this variable" title="Remove"
+                class="flex-shrink-0 w-8 h-8 inline-flex items-center justify-center rounded-lg text-faint hover:text-fail hover:bg-fail/10 transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+    </div>
+    <p data-env-warning class="text-xs text-warn"{% if not name or name not in env_secrets.visible %} hidden{% endif %}>A secret this script gets has the same name, so the secret's value is used at run time.</p>
+</div>
