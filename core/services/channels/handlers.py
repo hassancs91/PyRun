@@ -30,9 +30,11 @@ def get_handler(key: str):
 def _script_handler(channel, msg):
     """Run the linked script, passing the inbound message as INBOUND_* env.
 
-    Returns None: the script replies asynchronously via ``pyrunner_notify.reply()``.
+    The run's event (``channel_event``) carries the same message, plus the
+    provider's raw payload, for ``pyrunner_run.event()``. Returns None: the script replies asynchronously via ``pyrunner_notify.reply()``.
     """
     from core.models import Run, Script
+    from core.services.run_events import channel_event
     from core.services.script_inputs import ScriptInputsError, prepare_inputs
     from core.tasks import queue_script_run
 
@@ -65,6 +67,7 @@ def _script_handler(channel, msg):
         trigger_type=Run.TriggerType.API,
         code_snapshot=script.code,
         inputs=inputs,
+        event=channel_event(channel, msg),
     )
     webhook_data = {
         "method": "INBOUND",

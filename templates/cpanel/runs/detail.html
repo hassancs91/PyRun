@@ -241,6 +241,40 @@
         </section>
         {% endif %}
 
+        {# What started the run (Run.event; absent for runs from before 2.5) #}
+        {% if event %}
+        <section class="rounded-2xl border border-line bg-panel p-5" aria-labelledby="run-event-heading">
+            <div class="flex items-center justify-between gap-3 mb-4">
+                <h3 id="run-event-heading" class="eyebrow text-faint">Event</h3>
+                {% if not event.hidden %}<a href="{% url 'cpanel:run_event_download' pk=run.pk %}" class="text-xs text-info hover:underline">Download</a>{% endif %}
+            </div>
+            <dl class="space-y-3.5 text-sm">
+                <div class="flex items-center justify-between gap-3">
+                    <dt class="text-muted">Kind</dt>
+                    <dd class="text-text">{{ event.kind }}</dd>
+                </div>
+                {% if event.received_at %}
+                <div class="flex items-center justify-between gap-3">
+                    <dt class="text-muted">Received</dt>
+                    <dd class="font-mono text-text text-xs">{{ event.received_at|date:"M d, Y H:i:s" }}</dd>
+                </div>
+                {% endif %}
+            </dl>
+            {% if event.body_truncated %}
+            <p class="mt-3 text-xs text-warn">The body was over 1 MB, so it was cut to fit (<span class="font-mono">body_truncated</span>).</p>
+            {% elif event.truncated %}
+            <p class="mt-3 text-xs text-warn">The event was over 1 MB, so part of it was left out (<span class="font-mono">truncated</span>).</p>
+            {% endif %}
+            {% if event.hidden %}
+            <p class="mt-3 text-sm text-warn">Hidden: a secret couldn't be resolved, so this event can't be checked for secrets before it is shown.</p>
+            {% else %}
+            <pre class="mt-3 font-mono text-xs text-text bg-ink rounded-lg p-3 max-h-72 overflow-auto whitespace-pre-wrap break-words">{{ event.text }}</pre>
+            {% if event.preview_cut %}<p class="mt-2 text-xs text-faint">Showing the start; the download has all of it.</p>{% endif %}
+            {% endif %}
+            <p class="mt-4 text-xs text-faint">What started this run. The script reads it with <span class="font-mono">pyrunner_run.event()</span>. Secret values are masked.</p>
+        </section>
+        {% endif %}
+
         {# Libraries pinned at queue time (absent for runs with none) #}
         {% if run.library_versions %}
         <section class="rounded-2xl border border-line bg-panel p-5">

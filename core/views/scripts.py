@@ -15,6 +15,7 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from core.models import Script, Run, ScriptSchedule, ScheduleHistory, Library, ScriptLibrary, Secret, SecretGrant, Tag
 from core.charts import DURATION_CHART_MAX_BARS, duration_chart
 from core.forms import ScriptForm, ScheduleForm, ScriptInputsForm
+from core.services.run_events import manual_event
 from core.tasks import queue_script_run
 from core.services.schedule_service import ScheduleService
 from core.services.script_inputs import ScriptInputsError, prepare_inputs, schedule_conflict
@@ -408,8 +409,11 @@ def script_edit_view(request: HttpRequest, pk) -> HttpResponse:
     })
 
 
-def _start_manual_run(request: HttpRequest, script, inputs) -> HttpResponse:
-    """Create and queue a manual run with already-validated inputs; go to it."""
+def _start_manual_run(request: HttpRequest, script, inputs, rerun_of=None) -> HttpResponse:
+    """Create and queue a manual run with already-validated inputs; go to it.
+
+    ``rerun_of``: the id of the run a Re-run copies, recorded in the event.
+    """
     # Stamp the run's workspace from its script (tenancy Stage 1) so the
     # executor scopes secrets to it.
     run = Run.objects.create(
@@ -419,6 +423,7 @@ def _start_manual_run(request: HttpRequest, script, inputs) -> HttpResponse:
         triggered_by=request.user,
         code_snapshot=script.code,
         inputs=inputs,
+        event=manual_event(request.user, rerun_of=rerun_of),
     )
 
     # Queue for async execution via django-q2
@@ -498,7 +503,7 @@ def run_rerun_view(request: HttpRequest, pk) -> HttpResponse:
     except ScriptInputsError as e:
         messages.error(request, f"Can't re-run with the same inputs. {e.message}")
         return redirect("cpanel:run_detail", pk=source.pk)
-    return _start_manual_run(request, script, inputs)
+    return _start_manual_run(request, script, inputs, rerun_of=source.pk)
 
 
 @login_required

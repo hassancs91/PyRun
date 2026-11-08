@@ -11,6 +11,7 @@ from django.views.decorators.http import require_http_methods
 
 from core.models import Script, Run
 from core.ratelimit import client_ip, rate_limit_exceeded
+from core.services.run_events import webhook_event
 from core.services.script_inputs import ScriptInputsError, prepare_inputs
 from core.tasks import queue_script_run
 
@@ -84,7 +85,8 @@ def webhook_trigger_view(request: HttpRequest, token: str) -> JsonResponse:
     except ScriptInputsError as e:
         return _inputs_rejected(e)
 
-    # Extract webhook data
+    # Extract webhook data. It still reaches the task as before (the WEBHOOK_*
+    # variables are built from it); the run's event carries the same values.
     webhook_data = _extract_webhook_data(request)
 
     # Create a new Run record. No user/session here — the run inherits its
@@ -97,6 +99,7 @@ def webhook_trigger_view(request: HttpRequest, token: str) -> JsonResponse:
         trigger_type=Run.TriggerType.API,
         code_snapshot=script.code,
         inputs=inputs,
+        event=webhook_event(webhook_data),
     )
 
     # Queue for async execution

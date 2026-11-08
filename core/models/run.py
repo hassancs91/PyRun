@@ -142,6 +142,20 @@ class Run(models.Model):
         help_text="Latest pyrunner_run.progress() update: {pct, message, updated_at}.",
     )
 
+    # What started the run (2.5, T03): one envelope for every trigger,
+    # {"kind", "received_at", ...kind-specific keys}, built by
+    # core.services.run_events and capped there at EVENT_MAX_BYTES. Set when
+    # the run is created (queue_script_run fills in a minimal one for any
+    # caller that didn't). Stored raw, like inputs, because the script reads
+    # it (pyrunner_run.event()): the run page masks secrets before showing it.
+    # NULL = a run from before 2.5.
+    event = models.JSONField(
+        null=True,
+        blank=True,
+        default=None,
+        help_text="What started the run: {kind, received_at, ...} (see core.services.run_events).",
+    )
+
     # Who triggered the run
     triggered_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

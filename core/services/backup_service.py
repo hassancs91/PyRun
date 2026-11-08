@@ -137,6 +137,8 @@ class BackupService:
     # them NULL (no declared inputs), which is how every pre-2.5 script runs.
     # ``result`` and ``progress`` on runs (what pyrunner_run reported, stored
     # masked); older backups omit them and restore leaves them NULL.
+    # ``event`` on runs (what started the run, stored raw like inputs); older
+    # backups omit it and restore leaves it NULL, as for a pre-2.5 run.
     BACKUP_VERSION = "1.13.0"
     MAX_BACKUP_SIZE_MB = 100
     # Default cap on a gzip backup's expanded size (F92, zip-bomb guard);
@@ -632,6 +634,8 @@ class BackupService:
                 # What the script reported (pyrunner_run); masked when stored.
                 "result": run.result,
                 "progress": run.progress,
+                # What started the run (webhook body, chat message...); raw.
+                "event": run.event,
                 "trigger_type": run.trigger_type,
                 "triggered_by_email": run.triggered_by.email if run.triggered_by else None,
                 "created_at": cls._serialize_datetime(run.created_at),
@@ -1885,6 +1889,7 @@ class BackupService:
                 inputs=run_data.get("inputs"),
                 result=run_data.get("result"),
                 progress=run_data.get("progress"),
+                event=run_data.get("event"),
                 trigger_type=run_data.get("trigger_type", "manual"),
                 triggered_by=triggered_by,
                 created_at=cls._deserialize_datetime(run_data.get("created_at")),

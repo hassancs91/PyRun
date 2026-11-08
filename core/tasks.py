@@ -13,6 +13,7 @@ from django_q.tasks import async_task
 
 from core.models import Run, Script, ScriptSchedule, GlobalSettings, PackageOperation
 from core.services.library_service import resync_dev_libraries, stamp_library_versions
+from core.services.run_events import default_event, schedule_event
 from core.services.script_inputs import ScriptInputsError, prepare_inputs
 
 logger = logging.getLogger(__name__)
@@ -115,9 +116,18 @@ def queue_script_run(run: Run, webhook_data: dict | None = None) -> str:
     except ScriptInputsError:
         Run.objects.filter(pk=run.pk, status=Run.Status.PENDING).delete()
         raise
+    stamped = []
     if inputs != run.inputs:
         run.inputs = inputs
-        run.save(update_fields=["inputs"])
+        stamped.append("inputs")
+    # Every trigger stamps its event when it creates the run; this is the same
+    # backstop for one that didn't (a plugin creating the Run itself): the
+    # minimal event for its trigger type, so every queued run has one.
+    if run.event is None:
+        run.event = default_event(run)
+        stamped.append("event")
+    if stamped:
+        run.save(update_fields=stamped)
 
     # Dev mode only: re-read the owning plugin's lib/ folder first, so an edit on
     # disk is picked up by the next run with no manual sync. Inert in production
@@ -205,6 +215,7 @@ def execute_scheduled_run(script_id: str) -> dict:
 
     # Create the run. A scheduled run fires with no request/user — its workspace
     # comes from the script (tenancy Stage 1), the only authoritative source.
+    fired_at = timezone.now()
     run = Run.objects.create(
         script=script,
         workspace_id=script.workspace_id,
@@ -213,10 +224,11 @@ def execute_scheduled_run(script_id: str) -> dict:
         trigger_type=Run.TriggerType.SCHEDULED,
         code_snapshot=script.code,
         inputs=inputs,
+        event=schedule_event(schedule, fired_at),
     )
 
     # Update schedule tracking
-    schedule.last_scheduled_run = timezone.now()
+    schedule.last_scheduled_run = fired_at
     schedule.save(update_fields=["last_scheduled_run"])
 
     # Queue for execution

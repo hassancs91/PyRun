@@ -563,6 +563,7 @@ class ScriptAPI:
     def queue_run(self, key, *, triggered_by=None):
         """Queue a tracked Run for the owned script ``key`` (via the RunBackend seam)."""
         from core.models import Run
+        from core.services.run_events import plugin_event
         from core.tasks import queue_script_run
 
         script = self.get(key)
@@ -575,6 +576,7 @@ class ScriptAPI:
             triggered_by=triggered_by,
             trigger_type=Run.TriggerType.MANUAL,
             code_snapshot=script.code,
+            event=plugin_event(self.owner, key, triggered_by),
         )
         queue_script_run(run)
         return run

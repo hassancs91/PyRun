@@ -9,8 +9,10 @@ from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db.models import BooleanField, ExpressionWrapper, Q
 from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
+from django.utils.dateparse import parse_datetime
 
 from core.models import Run, Script
+from core.services.run_events import EVENT_PREVIEW_CHARS, event_text, kind_label
 from core.services.run_reports import json_size, progress_for_display, result_text
 
 RUNS_PER_PAGE = 25
@@ -30,8 +32,9 @@ def run_list_view(request: HttpRequest) -> HttpResponse:
         .select_related("script", "triggered_by")
         # The list renders stderr (the inline error expander) but never stdout,
         # which is the far larger column. Deferring it keeps a page of runs small.
-        # Same for the result (up to 256 KB): the list only marks that one exists.
-        .defer("stdout", "result", "progress")
+        # Same for the result (up to 256 KB): the list only marks that one exists,
+        # and the event (up to 1 MB), which it doesn't show.
+        .defer("stdout", "result", "progress", "event")
         .annotate(has_result=ExpressionWrapper(Q(result__isnull=False), output_field=BooleanField()))
         .order_by("-created_at")
     )
@@ -108,7 +111,9 @@ def run_detail_view(request: HttpRequest, pk) -> HttpResponse:
         workspace=request.workspace,
     )
 
-    input_rows, inputs_hidden = run_input_rows(run)
+    # Inputs and event share one secret lookup (both are stored raw).
+    mask_sets = {}
+    input_rows, inputs_hidden = run_input_rows(run, mask_sets)
     has_result = run.result is not None
     return render(request, "cpanel/runs/detail.html", {
         "run": run,
@@ -121,6 +126,7 @@ def run_detail_view(request: HttpRequest, pk) -> HttpResponse:
         "result_text": result_text(run.result) if has_result else "",
         "result_bytes": json_size(run.result) if has_result else 0,
         "progress": progress_for_display(run.progress),
+        "event": run_event_card(run, mask_sets),
     })
 
 
@@ -150,7 +156,67 @@ def run_result_download_view(request: HttpRequest, pk) -> HttpResponse:
     return response
 
 
-def run_input_rows(run) -> tuple[list[dict], bool]:
+@login_required
+def run_event_download_view(request: HttpRequest, pk) -> HttpResponse:
+    """The run's event as a .json file, secrets masked."""
+    from core.executor import mask_run_value
+    from core.services.secret_backends import SecretResolutionError
+
+    run = get_object_or_404(Run.objects.select_related("script"), pk=pk, workspace=request.workspace)
+    if run.event is None:
+        raise Http404("This run has no event.")
+    try:
+        masked = mask_run_value(run, run.event)
+    except SecretResolutionError:
+        return HttpResponse(
+            "A secret couldn't be resolved, so this event can't be checked for secrets "
+            "before it is shown. Try again once the secret provider is reachable.",
+            status=503,
+            content_type="text/plain; charset=utf-8",
+        )
+    response = HttpResponse(event_text(masked), content_type="application/json; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="run-{run.pk}-event.json"'
+    return response
+
+
+def run_event_card(run, mask_sets: dict | None = None) -> dict | None:
+    """The run's Event card: kind, when, and its JSON with secrets masked.
+
+    None for a run without an event (from before 2.5). The event is stored raw
+    (the script reads the real values), so it is masked here, the same way the
+    inputs are; when a secret can't be resolved, its JSON is hidden. The JSON
+    shown is cut at ``EVENT_PREVIEW_CHARS``; the download has all of it.
+    """
+    event = run.event
+    if event is None:
+        return None
+    from core.executor import mask_run_value
+    from core.services.secret_backends import SecretResolutionError
+
+    meta = event if isinstance(event, dict) else {}  # a restored backup could hold anything
+    received = meta.get("received_at")
+    card = {
+        "kind": kind_label(meta.get("kind")),
+        "received_at": parse_datetime(received) if isinstance(received, str) else None,
+        "truncated": bool(meta.get("truncated")),
+        "body_truncated": bool(meta.get("body_truncated")),
+        "hidden": False,
+        "text": "",
+        "preview_cut": False,
+    }
+    try:
+        text = event_text(mask_run_value(run, event, mask_sets))
+    except SecretResolutionError:
+        card["hidden"] = True
+        return card
+    if len(text) > EVENT_PREVIEW_CHARS:
+        text = text[:EVENT_PREVIEW_CHARS] + "\n…"
+        card["preview_cut"] = True
+    card["text"] = text
+    return card
+
+
+def run_input_rows(run, mask_sets: dict | None = None) -> tuple[list[dict], bool]:
     """The run's inputs for its Inputs card, secrets masked: (rows, hidden).
 
     Inputs are stored raw because the script needs the real values, so masking
@@ -158,6 +224,7 @@ def run_input_rows(run) -> tuple[list[dict], bool]:
     When a secret can't be resolved the values can't be checked, so they are
     hidden, not shown. Rows follow the script's declared order; anything else
     comes after, sorted (PostgreSQL's jsonb doesn't keep key order).
+    ``mask_sets``: a cache shared with the other cards of one page.
     """
     if not run.inputs:
         return [], False
@@ -165,7 +232,7 @@ def run_input_rows(run) -> tuple[list[dict], bool]:
     from core.services.secret_backends import SecretResolutionError
 
     try:
-        masked = mask_run_inputs(run)
+        masked = mask_run_inputs(run, mask_sets)
     except SecretResolutionError:
         return [], True
     declared = list((run.script.inputs_schema or {}).get("properties", {}))

@@ -35,6 +35,16 @@ begins tracking at the current release; earlier history is in the git log.
   and `PYRUNNER_RUN_ID`, `PYRUNNER_SCRIPT_ID` and `PYRUNNER_SCRIPT_NAME`; the
   three ids used to be set only when an AI provider was configured. Guide:
   `docs/run-context.md`.
+- **One event for every trigger.** Whatever starts a run (Run now or Re-run,
+  a schedule, a webhook call, a chat message, a plugin) now records what
+  started it, in one shape: `kind`, `received_at`, and the trigger's own data
+  (a webhook's method, query, content type and body; the chat message with its
+  sender; the schedule and when it fired; who clicked Run now). Scripts read it
+  with `pyrunner_run.event()`, and the run page shows it in an **Event** card
+  with a download, secret values masked. An event over 1 MB is cut with an
+  explicit `truncated` / `body_truncated` flag instead of failing the run.
+  `WEBHOOK_*` and `INBOUND_*` variables work exactly as before. Backups include
+  the event.
 
 ## [2.0.0] — October 23, 2026
 

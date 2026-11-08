@@ -1,9 +1,9 @@
 """
-PyRun run context for scripts: the inputs this run started with, its id, and a
-way to report back a structured result and live progress.
+PyRun run context for scripts: the inputs this run started with, what started
+it, its id, and a way to report back a structured result and live progress.
 
-Stdlib only. ``inputs()`` and ``run_id()`` read what PyRun hands every run (the
-``PYRUNNER_RUN_FILE`` JSON file and ``PYRUNNER_RUN_ID``). ``set_result()`` and
+Stdlib only. ``inputs()``, ``event()`` and ``run_id()`` read what PyRun hands
+every run (the ``PYRUNNER_RUN_FILE`` JSON file and ``PYRUNNER_RUN_ID``). ``set_result()`` and
 ``progress()`` POST to PyRun's internal loopback API with this run's signed
 token, so a script can only ever report on its own run. PyRun masks secret
 values in both before it stores them.
@@ -12,6 +12,7 @@ Usage:
     import pyrunner_run
 
     params = pyrunner_run.inputs()             # every declared input, JSON ones too
+    event = pyrunner_run.event()               # {"kind": "webhook", "received_at": ..., ...}
     pyrunner_run.progress(10, "Fetching pages")
     ...
     pyrunner_run.set_result({"pages": 12, "ok": True})
@@ -28,7 +29,7 @@ import time
 import urllib.error
 import urllib.request
 
-__all__ = ["RunError", "inputs", "progress", "run_id", "set_result"]
+__all__ = ["RunError", "event", "inputs", "progress", "run_id", "set_result"]
 
 # Same limits PyRun enforces (core/services/run_reports.py); checked here too so
 # a mistake fails in the script with a clear message instead of a refused request.
@@ -77,6 +78,21 @@ def inputs() -> dict:
     dict, so changing it changes nothing else.
     """
     value = _run_file().get("inputs")
+    return value if isinstance(value, dict) else {}
+
+
+def event() -> dict:
+    """What started this run: one envelope for every trigger.
+
+    Always has ``kind`` (``manual``, ``schedule``, ``webhook``, ``channel``,
+    ``plugin`` or ``api``) and ``received_at`` (ISO 8601). The other keys
+    depend on the kind: a webhook's ``method``, ``query``, ``content_type``,
+    ``body`` and ``body_json``; a chat message's ``text``, ``sender`` and
+    ``reply_ref``; a schedule's ``schedule_id`` and ``fired_at``. An event
+    over 1 MB carries ``truncated: true`` (and ``body_truncated: true`` when
+    the webhook body was cut). Each call returns a new dict.
+    """
+    value = _run_file().get("event")
     return value if isinstance(value, dict) else {}
 
 

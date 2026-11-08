@@ -31,6 +31,7 @@ from core.services.library_service import (
     LibraryMaterializationError,
     materialize_libraries,
 )
+from core.services.run_events import default_event
 from core.services.script_inputs import input_env
 from core.services.secret_backends import SecretResolutionError
 
@@ -200,10 +201,12 @@ def remove_script_workdir(script_id) -> bool:
 
 
 def run_file_payload(run) -> dict:
-    """What ``run.json`` holds for a run: the run, its script, trigger and inputs.
+    """What ``run.json`` holds for a run: the run, its script, trigger, inputs, event.
 
     Ids use ``.hex``, the same form as ``PYRUNNER_RUN_ID``. ``inputs`` is every
     stamped input (JSON ones too), ``{}`` when the script declares none.
+    ``event`` is what started the run (``core.services.run_events``); a run
+    queued before 2.5 has none stored and gets the minimal one for its trigger.
     """
     return {
         "run": {
@@ -214,6 +217,7 @@ def run_file_payload(run) -> dict:
         "script": {"id": run.script.id.hex, "name": run.script.name},
         "trigger": {"type": str(run.trigger_type)},
         "inputs": run.inputs or {},
+        "event": run.event if run.event is not None else default_event(run),
     }
 
 
@@ -465,6 +469,16 @@ def mask_run_inputs(run, mask_sets: dict | None = None):
     """
     if not run.inputs:
         return None
+    return mask_run_value(run, run.inputs, mask_sets)
+
+
+def mask_run_value(run, value, mask_sets: dict | None = None):
+    """``value``, raw data of ``run`` (its inputs, its event), masked for display.
+
+    The masking behind ``mask_run_inputs``, for any stored-raw field. Raises
+    SecretResolutionError when a secret can't be resolved; ``mask_sets`` is
+    the same per-(workspace, script) cache.
+    """
     if mask_sets is None:
         masks = mask_set_for_display(run)
     else:
@@ -477,7 +491,7 @@ def mask_run_inputs(run, mask_sets: dict | None = None):
         masks = mask_sets[key]
         if isinstance(masks, SecretResolutionError):
             raise masks
-    return mask_secrets_in_value(run.inputs, masks)
+    return mask_secrets_in_value(value, masks)
 
 
 class ExecutorError(Exception):

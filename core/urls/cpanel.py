@@ -46,6 +46,7 @@ from core.views.scripts import (
 )
 from core.views.runs import (
     run_detail_view,
+    run_event_download_view,
     run_list_view,
     run_result_download_view,
     run_status_view,
@@ -278,6 +279,7 @@ urlpatterns = [
     path("runs/<uuid:pk>/rerun/", run_rerun_view, name="run_rerun"),
     path("runs/<uuid:pk>/status/", run_status_view, name="run_status"),
     path("runs/<uuid:pk>/result.json", run_result_download_view, name="run_result_download"),
+    path("runs/<uuid:pk>/event.json", run_event_download_view, name="run_event_download"),
 
     # Tasks
     path("tasks/", tasks_view, name="tasks"),

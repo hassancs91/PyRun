@@ -279,6 +279,10 @@ Key behaviors:
   unowned, global/user-namespace row — handy for porting old code gradually.
 - **No seam bypass.** `queue_run` goes through `queue_script_run` (RunBackend +
   `resolve_isolation`); the SDK never touches raw SQLite or the scheduler directly.
+- **Run event.** A run queued with `queue_run` has the event
+  `{"kind": "plugin", "plugin": OWNER, "script_key": key, ...}` (plus `user`
+  when you pass `triggered_by=`), which the script reads with
+  `pyrunner_run.event()` (see [run-context.md](run-context.md#the-run-event)).
 
 ### Observe & control runs (API 2.1)
 
