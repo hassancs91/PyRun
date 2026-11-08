@@ -160,10 +160,85 @@ secrets.grant(script, s)   # selected-mode</pre>
                 </div>
             </section>
 
-            <!-- ================= 4 · Worker output ================= -->
+            <!-- ================= 4 · Inputs & result ================= -->
+            <section id="inputs" class="rounded-2xl border border-line bg-panel overflow-hidden">
+                <div class="px-5 py-4 border-b border-line-soft">
+                    <h2 class="text-sm font-semibold">4 · Inputs &amp; result <span class="text-faint font-normal">— call the script like a function</span></h2>
+                    <p class="eyebrow text-faint mt-1">ScriptAPI · upsert(inputs_schema=) / queue_run(inputs=) · RunView.inputs / progress / result</p>
+                </div>
+                <div class="p-5 grid grid-cols-1 lg:grid-cols-2 gap-5">
+                    <div class="space-y-4">
+                        <form method="post" action="{% url 'sdk_showcase:run_inputs' %}" class="space-y-3">
+                            {% csrf_token %}
+                            {% for error in inputs_form.non_field_errors %}<p class="text-xs text-fail">{{ error }}</p>{% endfor %}
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {% for field in inputs_form %}
+                                <div>
+                                    <label class="block text-xs font-medium text-muted mb-1.5" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                                    {{ field }}
+                                    {% for error in field.errors %}<p class="text-xs text-fail mt-1">{{ error }}</p>{% endfor %}
+                                </div>
+                                {% endfor %}
+                            </div>
+                            <div class="flex items-center justify-between gap-3 flex-wrap">
+                                <p class="text-xs text-faint">Blank = the input's default (your saved settings). Try 99 steps to see the SDK refuse it.</p>
+                                <button type="submit" class="inline-flex items-center gap-2 text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">Run with inputs</button>
+                            </div>
+                        </form>
+
+                        <div class="rounded-lg border border-line-soft p-3 space-y-3">
+                            {% if latest %}
+                            <p class="eyebrow text-faint">Latest run · <span id="core-run-status" class="font-mono text-text">{{ latest.status }}</span></p>
+                            <div>
+                                <p class="text-xs text-faint mb-1">Progress <span class="font-mono">(RunView.progress)</span></p>
+                                <div class="h-1.5 w-full rounded-full bg-panel-hi overflow-hidden">
+                                    <div id="core-progress-bar" class="h-full bg-ok rounded-full transition-all duration-500" style="width: {{ latest.progress.pct|default:0 }}%"></div>
+                                </div>
+                                <p id="core-progress-label" class="text-xs text-muted mt-1">{{ latest.progress.message|default:"No progress reported yet." }}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-faint mb-1">Inputs <span class="font-mono">(RunView.inputs)</span></p>
+                                {% if latest.inputs_json %}<pre class="text-xs text-muted bg-ink border border-line-soft rounded-lg p-3 overflow-x-auto">{{ latest.inputs_json }}</pre>{% else %}<p class="text-xs text-faint">None: the script declared no inputs for this run.</p>{% endif %}
+                            </div>
+                            <div>
+                                <p class="text-xs text-faint mb-1">Result <span class="font-mono">(RunView.result)</span></p>
+                                {% if latest.result_json %}<pre class="text-xs text-muted bg-ink border border-line-soft rounded-lg p-3 overflow-x-auto">{{ latest.result_json }}</pre>{% elif latest.is_finished %}<p class="text-xs text-faint">This run set no result.</p>{% else %}<p class="text-xs text-faint">Shows here when the run finishes.</p>{% endif %}
+                            </div>
+                            {% else %}
+                            <p class="text-xs text-faint">No runs yet. Run with inputs, and the run's inputs, live progress and result show here.</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <pre class="text-xs text-muted bg-ink border border-line-soft rounded-lg p-3 overflow-x-auto">api = ScriptAPI("sdk_showcase")
+api.upsert(key="demo", ..., inputs_schema={
+    "type": "object",
+    "properties": {
+        "message": {"type": "string", "maxLength": 200,
+                    "default": saved_message},
+        "steps": {"type": "integer", "minimum": 1,
+                  "maximum": 30, "default": saved_steps}},
+    "required": ["message", "steps"]})
+
+try:
+    api.queue_run("demo", inputs={"steps": 3})
+except InputsError as e:
+    e.field_errors   # {"steps": "Number is outside ..."}
+
+view = api.latest_run("demo")
+view.inputs, view.progress, view.result
+
+# in the worker:
+import pyrunner_run
+pyrunner_run.inputs()              # {"message": ..., "steps": 3}
+pyrunner_run.progress(40, "Step 2 of 5")
+pyrunner_run.set_result({"steps": 3, ...})</pre>
+                </div>
+            </section>
+
+            <!-- ================= 5 · Worker output ================= -->
             <section id="worker" class="rounded-2xl border border-line bg-panel overflow-hidden">
                 <div class="px-5 py-4 border-b border-line-soft">
-                    <h2 class="text-sm font-semibold">4 · Worker output <span class="text-faint font-normal">— the script side</span></h2>
+                    <h2 class="text-sm font-semibold">5 · Worker output <span class="text-faint font-normal">— the script side</span></h2>
                     <p class="eyebrow text-faint mt-1">pyrunner_datastore · the worker appends its own summaries</p>
                 </div>
                 <div class="p-5">
@@ -194,10 +269,10 @@ secrets.grant(script, s)   # selected-mode</pre>
                 </div>
             </section>
 
-            <!-- ================= 5 · Schedule ================= -->
+            <!-- ================= 6 · Schedule ================= -->
             <section id="schedule" class="rounded-2xl border border-line bg-panel overflow-hidden">
                 <div class="px-5 py-4 border-b border-line-soft">
-                    <h2 class="text-sm font-semibold">5 · Schedule</h2>
+                    <h2 class="text-sm font-semibold">6 · Schedule</h2>
                     <p class="eyebrow text-faint mt-1">ScheduleAPI · sync / list</p>
                 </div>
                 <div class="p-5 flex items-center justify-between gap-4 flex-wrap">
@@ -217,10 +292,10 @@ secrets.grant(script, s)   # selected-mode</pre>
                 </div>
             </section>
 
-            <!-- ================= 6 · Vectors ================= -->
+            <!-- ================= 7 · Vectors ================= -->
             <section id="vectors" class="rounded-2xl border border-line bg-panel overflow-hidden">
                 <div class="px-5 py-4 border-b border-line-soft">
-                    <h2 class="text-sm font-semibold">6 · Vectors <span class="text-faint font-normal">— search by meaning</span></h2>
+                    <h2 class="text-sm font-semibold">7 · Vectors <span class="text-faint font-normal">— search by meaning</span></h2>
                     <p class="eyebrow text-faint mt-1">VectorAPI · provision / add_vectors / search_vector · pyrunner_vectors in the worker</p>
                 </div>
                 {% if vectors %}
@@ -275,10 +350,10 @@ get_collection("sdk_showcase:demo").count()</pre>
                 {% endif %}
             </section>
 
-            <!-- ================= 7 · Ownership & cleanup ================= -->
+            <!-- ================= 8 · Ownership & cleanup ================= -->
             <section id="ownership" class="rounded-2xl border border-line bg-panel overflow-hidden">
                 <div class="px-5 py-4 border-b border-line-soft">
-                    <h2 class="text-sm font-semibold">7 · Ownership &amp; cleanup</h2>
+                    <h2 class="text-sm font-semibold">8 · Ownership &amp; cleanup</h2>
                     <p class="eyebrow text-faint mt-1">every resource is owner-stamped → grouped, filtered, delete-guarded</p>
                 </div>
                 <div class="p-5 flex items-center justify-between gap-4 flex-wrap">
@@ -317,6 +392,13 @@ get_collection("sdk_showcase:demo").count()</pre>
             if (hdr) hdr.classList.remove('hidden');
             if (runForm) runForm.classList.add('hidden');
             if (stopForm) stopForm.classList.remove('hidden');
+            const rp = d.run ? d.run.progress : null;  // RunView.progress (pyrunner_run)
+            const coreBar = document.getElementById('core-progress-bar');
+            const coreLabel = document.getElementById('core-progress-label');
+            const coreStatus = document.getElementById('core-run-status');
+            if (coreStatus && d.run) coreStatus.textContent = d.run.status;
+            if (rp && coreBar && typeof rp.pct === 'number') coreBar.style.width = Math.max(0, Math.min(100, rp.pct)) + '%';
+            if (rp && coreLabel && typeof rp.message === 'string') coreLabel.textContent = rp.message;
             const bar = document.getElementById('run-bar');
             const label = document.getElementById('run-label');
             const p = d.progress;

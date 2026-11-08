@@ -26,7 +26,11 @@ add `requests`/`boto3` here.
    `steps`); the worker reads the *same* names from `os.environ` and the data
    store. `provisioning._worker_code()` fails **loudly at Save** if
    `worker_body.py` stops referencing an expected token — rename on both sides
-   or Save breaks (by design).
+   or Save breaks (by design). The config keys are also the script's declared
+   inputs (`provisioning.inputs_schema`): the saved settings are their
+   defaults, and the worker reads `pyrunner_run.inputs()` first, the data
+   store second. Keep every input required **with** a default, or
+   `ScheduleAPI.sync` refuses the Schedule card's modes.
 2. **Import-light / SDK-only.** `views.py` and `provisioning.py` go through
    `core.plugins.api` exclusively — never `import core.models|services|tasks`.
    The doctor enforces import-light (test files are exempt).
@@ -46,7 +50,11 @@ add `requests`/`boto3` here.
 ## Keep the manifest truthful
 
 `plugin.json` must match the code:
-- **`api` / `min_pyrunner`** = `2.1` / `1.13.0` (the run-lifecycle surface).
+- **`api` / `min_pyrunner`** = `2.6` / `1.13.0` today. The Inputs & result
+  card needs the PyRun 2.5 SDK (`inputs_schema=`, `queue_run(inputs=)`,
+  `InputsError`), so they move to `2.8` / `2.5.0` when the SDK version is
+  bumped for that release (a `min_pyrunner` above this PyRun's own version
+  would block the install).
 - **`provisions`** = what `provision()` creates (1 datastore, 1 secret, 1 script,
   1 schedule + the `DEMO_TOKEN` key).
 

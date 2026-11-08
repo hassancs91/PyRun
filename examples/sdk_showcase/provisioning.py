@@ -6,7 +6,8 @@ example of *how to use it*. Nothing imports core models/tasks/services directly.
 One "Set up demo" save provisions, owned by the ``sdk_showcase`` slug:
   * a DataStore  ``sdk_showcase:state``  (config + counter + runs + progress),
   * 1 owner-scoped Secret  (DEMO_TOKEN),
-  * a managed Script  (key ``demo`` = the bundled stdlib worker),
+  * a managed Script  (key ``demo`` = the bundled stdlib worker) that declares
+    two inputs, ``message`` and ``steps``, defaulting to the saved settings,
   * a Schedule (manual by default),
   * a vector collection  ``sdk_showcase:demo``  (vectors-only, toy word-hash
     vectors, so it works with no embedding provider configured).
@@ -15,6 +16,7 @@ Re-saving updates the same rows (idempotent on ``(owner_plugin, owner_key)``).
 """
 
 import hashlib
+import json
 import math
 import re
 from pathlib import Path
@@ -28,7 +30,7 @@ from core.plugins.api import (
     VectorAPI,
 )
 
-from .forms import SECRET_FIELDS
+from .forms import MESSAGE_MAX_LENGTH, SECRET_FIELDS, STEPS_MAX, STEPS_MIN
 
 OWNER = "sdk_showcase"
 SCRIPT_KEY = "demo"
@@ -37,6 +39,7 @@ STORE_KEY = "state"
 DEFAULT_TIMEOUT = 120
 
 # Keys of the non-secret config persisted to the DataStore (the worker reads them).
+# They are also the names of the demo script's declared inputs (inputs_schema).
 CONFIG_KEYS = ("message", "steps")
 
 VECTOR_KEY = "demo"
@@ -66,6 +69,38 @@ def toy_embedding(text, dim=VECTOR_DIM):
         vector[h % dim] += 1.0 if (h >> 8) & 1 else -1.0
     norm = math.sqrt(sum(x * x for x in vector)) or 1.0
     return [x / norm for x in vector]
+
+
+def inputs_schema(message, steps):
+    """The inputs the demo script declares (``ScriptAPI.upsert(inputs_schema=)``).
+
+    Both are required and both have a default: the saved settings. So **Run
+    demo** and the schedule (which pass no inputs) run with the settings, and
+    the inputs card overrides them for one run. A required input WITHOUT a
+    default would make ``ScheduleAPI.sync`` refuse every mode but manual.
+    """
+    return {
+        "type": "object",
+        "properties": {
+            "message": {
+                "type": "string",
+                "title": "Message",
+                "description": "What the worker prints and looks up in the vector collection.",
+                "maxLength": MESSAGE_MAX_LENGTH,
+                "default": message,
+            },
+            "steps": {
+                "type": "integer",
+                "title": "Steps",
+                "description": "How many one-second steps the worker loops.",
+                "minimum": STEPS_MIN,
+                "maximum": STEPS_MAX,
+                "default": steps,
+            },
+        },
+        "required": list(CONFIG_KEYS),
+        "additionalProperties": False,
+    }
 
 
 def _worker_code():
@@ -233,6 +268,28 @@ def live_status():
     return {"active": active, "run": run.as_dict() if run else None, "progress": progress}
 
 
+def _pretty(value):
+    return json.dumps(value, indent=2, ensure_ascii=False) if value is not None else ""
+
+
+def latest_run_report():
+    """The latest demo run's inputs, progress and result, read from ``RunView``
+    (the inputs card). All three come back with secret values masked."""
+    run = ScriptAPI(OWNER).latest_run(SCRIPT_KEY)
+    if run is None:
+        return None
+    return {
+        "id": run.id,
+        "status": run.status,
+        "is_finished": run.is_finished,
+        "inputs": run.inputs,
+        "progress": run.progress,
+        "result": run.result,
+        "inputs_json": _pretty(run.inputs),
+        "result_json": _pretty(run.result),
+    }
+
+
 def recent_runs(limit=10):
     """Authoritative run history from the SDK run-lifecycle surface (RunViews)."""
     return [r.as_dict() for r in ScriptAPI(OWNER).runs(SCRIPT_KEY, limit=limit)]
@@ -257,10 +314,11 @@ def provision(data, *, created_by=None):
         description="SDK Showcase demo state (config + counter + runs)",
         created_by=created_by,
     )
-    store.set("config", {
+    config = {
         "message": data.get("message") or "hello from the data store",
         "steps": int(data.get("steps") or 5),
-    })
+    }
+    store.set("config", config)
     if store.get("counter") is None:
         store.set("counter", 0)
 
@@ -276,7 +334,8 @@ def provision(data, *, created_by=None):
     if env is None:
         raise ValueError("Select an environment to run the demo script in.")
 
-    # 4) Managed Script (selected-mode injection; isolation stays 'inherit').
+    # 4) Managed Script (selected-mode injection; isolation stays 'inherit'),
+    #    declaring its inputs with the saved settings as their defaults.
     script = ScriptAPI(OWNER).upsert(
         key=SCRIPT_KEY,
         name=SCRIPT_NAME,
@@ -287,6 +346,7 @@ def provision(data, *, created_by=None):
         description="Managed by the SDK Showcase plugin — edit settings on its page.",
         is_enabled=True,
         created_by=created_by,
+        inputs_schema=inputs_schema(**config),
     )
 
     # 5) Grant the demo secret to the script (so it injects as $DEMO_TOKEN).
@@ -358,14 +418,19 @@ def reset_demo_data():
     store.set("progress", None)
 
 
-def queue_demo_run(triggered_by=None):
-    """Queue a tracked Run of the managed demo script (via the RunBackend seam)."""
+def queue_demo_run(triggered_by=None, inputs=None):
+    """Queue a tracked Run of the managed demo script (via the RunBackend seam).
+
+    ``inputs`` is a dict for the script's declared inputs; what's left out gets
+    its default. Bad values raise ``InputsError`` (from ``queue_run``) and no
+    run is created.
+    """
     script = get_script()
     if script is None:
         return None, "Set up the demo first."
     if not script.can_run:
         return None, "The demo script is disabled or archived."
-    run = ScriptAPI(OWNER).queue_run(SCRIPT_KEY, triggered_by=triggered_by)
+    run = ScriptAPI(OWNER).queue_run(SCRIPT_KEY, triggered_by=triggered_by, inputs=inputs)
     return run, None
 
 

@@ -19,10 +19,11 @@ idempotent on re-save.
 | **1 · Data store** | `DataStoreAPI.upsert`, `store.set/get`, owner auto-naming (`sdk_showcase:state`), idempotency — a counter |
 | **2 · Secrets** | `SecretAPI.upsert/grant` — encrypted, owner-scoped, injected into the script as the clean env var `$DEMO_TOKEN` (selected-mode) |
 | **3 · Run lifecycle** | `ScriptAPI.queue_run` / `latest_run` / `runs` / `cancel_latest_run`, the `RunView` read-model, live progress + **Stop** |
-| **4 · Worker output** | the script side — `pyrunner_datastore`, `pyrunner_vectors`, `$PYRUNNER_OWNER_PLUGIN`, the progress heartbeat, the run-history record |
-| **5 · Schedule** | `ScheduleAPI.sync/list` (manual / interval / daily) |
-| **6 · Vectors** | `VectorAPI.provision`, `add_vectors`, `search_vector` with a payload filter — toy word-hash vectors, so no embedding provider is needed (API 2.6) |
-| **7 · Ownership** | the owned-resource inventory (`.list()` on each API); clean teardown on uninstall |
+| **4 · Inputs & result** | `ScriptAPI.upsert(inputs_schema=)`, `queue_run(inputs=)` and `InputsError`, `RunView.inputs` / `progress` / `result`; in the worker, `pyrunner_run.inputs()` / `progress()` / `set_result()` (PyRun 2.5) |
+| **5 · Worker output** | the script side — `pyrunner_datastore`, `pyrunner_vectors`, `$PYRUNNER_OWNER_PLUGIN`, the progress heartbeat, the run-history record |
+| **6 · Schedule** | `ScheduleAPI.sync/list` (manual / interval / daily) |
+| **7 · Vectors** | `VectorAPI.provision`, `add_vectors`, `search_vector` with a payload filter — toy word-hash vectors, so no embedding provider is needed (API 2.6) |
+| **8 · Ownership** | the owned-resource inventory (`.list()` on each API); clean teardown on uninstall |
 
 The **demo worker uses only the standard library** — no `requests`, no `boto3` —
 so it runs in *any* environment with zero package setup. That makes "see it work"
@@ -60,7 +61,9 @@ python manage.py test core.test_sdk_showcase_plugin
 
 The tests live in [`tests.py`](tests.py) and run via a thin shim in
 `core/test_sdk_showcase_plugin.py`. They cover provisioning idempotency, the
-counter read/write, the worker secret/config contract, and form validation.
+counter read/write, the worker secret/config contract, form validation, and the
+inputs card (declared inputs, `queue_run(inputs=)`, the worker's
+`pyrunner_run` side and the page).
 
 ## Package the zip
 

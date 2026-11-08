@@ -339,6 +339,66 @@ and `progress` the latest `{"pct", "message", "updated_at"}` from
 script that calls `pyrunner_run.progress()` gets a progress bar on its run page
 for free; a plugin can show the same thing from `RunView.progress`.
 
+### Inputs and results (PyRun 2.5)
+
+A provisioned script can declare its inputs, so the plugin starts it like a
+function call and reads back what it returned:
+
+```python
+from core.plugins.api import InputsError, ScheduleAPI, ScriptAPI
+
+OWNER = "my_flows"
+
+script = ScriptAPI(OWNER).upsert(
+    key="report", code=WORKER_BODY, environment=env,
+    inputs_schema={
+        "type": "object",
+        "properties": {
+            "city": {"type": "string", "title": "City", "maxLength": 80},
+            "days": {"type": "integer", "minimum": 1, "maximum": 14, "default": 3},
+        },
+        "required": ["city"],
+    },
+)
+
+try:
+    ScriptAPI(OWNER).queue_run("report", inputs={"city": "Paris"}, triggered_by=request.user)
+except InputsError as e:
+    for name, reason in e.field_errors.items():   # {"days": "Number is outside the allowed range."}
+        form.add_error(name if name in form.fields else None, reason)
+
+view = ScriptAPI(OWNER).latest_run("report")
+view.inputs    # {"city": "Paris", "days": 3}  (defaults filled in)
+view.progress  # {"pct": 40, "message": "Fetching", "updated_at": "..."}
+view.result    # whatever the worker passed to pyrunner_run.set_result()
+```
+
+- **`upsert(inputs_schema=)`** takes an object JSON Schema (`"type": "object"`)
+  in the small subset the script editor's **Inputs** tab and the API registry
+  share: `type` (`string`, `number`, `integer`, `boolean`, `object`, `array`,
+  `null`), `enum`, `title`, `description`, `default`, `required`, `maxLength`,
+  `minimum`, `maximum`, `items`, `maxItems` and `additionalProperties`. Any
+  other keyword is refused. It is checked the same way the editor checks it
+  (input names are identifier-like, defaults must fit their input), and a bad
+  schema raises `ValueError` before anything is saved. `{}` removes the declaration; leaving the argument out (or
+  `None`) keeps the current one, as with every other `upsert` argument.
+- **`queue_run(inputs=)`** checks the values before the run exists and fills
+  in defaults. Bad values raise **`InputsError`** (a `ValueError`) with
+  `.message`, one sentence naming every bad input, and `.field_errors`, a dict
+  of input name to reason; no run is created, not even a failed one. Inputs
+  for a script that declares none are refused the same way. The worker reads
+  them with `pyrunner_run.inputs()`, and text, number and yes/no ones also
+  arrive as `INPUT_<NAME>` (see [run-context.md](run-context.md)).
+- **Schedules need defaults.** A scheduled run has nobody to supply inputs, so
+  `ScheduleAPI.sync` refuses every mode but `manual` with a `ValueError` while
+  a required input has no default, and `upsert` refuses such a schema while the
+  script has an active schedule. Scheduled runs get each input's default.
+- The worker reports back with `pyrunner_run.set_result({...})` and
+  `pyrunner_run.progress(pct, message)`; the plugin reads both from `RunView`.
+
+The **SDK Showcase** example's *Run with inputs* card is a working version of
+all of this.
+
 `worker_body.py` (the runtime script you provision) reads its credentials from the
 injected, masked env vars (clean names), opens datastores with the normal
 `from pyrunner_datastore import DataStore`, and can read `PYRUNNER_OWNER_PLUGIN`.

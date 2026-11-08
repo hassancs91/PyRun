@@ -45,6 +45,15 @@ begins tracking at the current release; earlier history is in the git log.
   explicit `truncated` / `body_truncated` flag instead of failing the run.
   `WEBHOOK_*` and `INBOUND_*` variables work exactly as before. Backups include
   the event.
+- **Inputs and results in the plugin SDK.** `ScriptAPI.upsert(inputs_schema=)`
+  declares the inputs a plugin's script takes, checked the way the editor's
+  Inputs tab checks them (`{}` removes them). `ScriptAPI.queue_run(inputs=)`
+  starts a run with values for them; bad values raise the new `InputsError`,
+  with a reason per input, and create no run. `ScheduleAPI.sync` refuses any
+  mode but manual while a required input has no default, and `upsert` refuses
+  such a schema while the script has an active schedule. The SDK Showcase
+  example gains a **Run with inputs** card that queues a run with inputs and
+  shows its live progress and result from `RunView`.
 
 ## [2.0.0] — October 23, 2026
 

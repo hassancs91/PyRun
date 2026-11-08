@@ -9,11 +9,14 @@
 
  Every run it:
    1. reads an injected secret from the environment ($DEMO_TOKEN), redacted,
-   2. reads non-secret config (message, steps) from the owned data store,
+   2. reads its inputs (message, steps) with pyrunner_run.inputs(), falling back
+      to the non-secret config in the owned data store,
    3. asks the owned vector collection which sample doc is nearest the message
       (pyrunner_vectors — no API key, nothing to install),
-   4. loops `steps` times, writing a live progress heartbeat each step,
-   5. records a compact run summary into the data store (the dashboard reads it).
+   4. loops `steps` times, reporting live progress each step (pyrunner_run
+      progress, plus the older data-store heartbeat),
+   5. records a compact run summary into the data store and returns the same
+      summary as the run's result (pyrunner_run.set_result).
 
  It needs NO third-party packages, so it runs in any environment.
 =============================================================================
@@ -73,6 +76,40 @@ def load_config():
     }
 
 
+def run_inputs():
+    """This run's inputs (defaults filled in by PyRun), or {} for a standalone
+    run or a run of an older script that declared none."""
+    try:
+        import pyrunner_run
+    except ImportError:
+        return {}  # standalone run: PyRun's helpers aren't on the path
+    try:
+        return pyrunner_run.inputs()
+    except pyrunner_run.RunError as exc:
+        log(f"no run inputs ({exc}); using the data store config")
+        return {}
+
+
+def report_progress(pct, message):
+    """Core-native live progress: the run page and RunView.progress show it.
+    Best effort by design: pyrunner_run warns on stderr if PyRun can't take it."""
+    try:
+        import pyrunner_run
+    except ImportError:
+        return  # standalone run: no PyRun to report to
+    pyrunner_run.progress(pct, message)
+
+
+def report_result(result):
+    """Store the run's structured result (RunView.result, the run page)."""
+    try:
+        import pyrunner_run
+
+        pyrunner_run.set_result(result)
+    except Exception as exc:
+        log(f"could not store the result: {exc}")
+
+
 def toy_embedding(text, dim=64):
     """The plugin's stand-in embedding (a signed hash per word, unit length) —
     a copy of provisioning.toy_embedding, which this standalone script can't import."""
@@ -86,7 +123,8 @@ def toy_embedding(text, dim=64):
 
 def vector_demo(message):
     """Best effort: the nearest sample doc to this run's message, via the loopback
-    helper. A missing collection or a standalone run just logs and moves on."""
+    helper; returns its text, or None. A missing collection or a standalone run
+    just logs and moves on."""
     try:
         from pyrunner_vectors import get_collection
 
@@ -94,8 +132,10 @@ def vector_demo(message):
         hits = collection.search_vector(toy_embedding(message or "hello"), k=1)
         nearest = f", nearest doc: {hits[0]['text']!r}" if hits else " (index the sample docs)"
         log(f"  vectors:      {collection.count()} point(s) in '{VECTORS}'{nearest}")
+        return hits[0]["text"] if hits else None
     except Exception as exc:
         log(f"  vectors:      skipped ({exc})")
+        return None
 
 
 def write_progress(state, *, index=0, total=0, phase=""):
@@ -136,8 +176,9 @@ def record_run(status, steps, token_seen, message, duration_s):
 def main():
     start = time.time()
     cfg = load_config()
-    steps = cfg["steps"]
-    message = cfg["message"]
+    inputs = run_inputs()
+    steps = int(inputs.get("steps") or cfg["steps"])
+    message = inputs.get("message", cfg["message"])
     token_seen = bool(DEMO_TOKEN)
     if len(DEMO_TOKEN) >= 2:
         redacted = DEMO_TOKEN[:1] + "***" + DEMO_TOKEN[-1:]
@@ -148,20 +189,31 @@ def main():
     log("SDK SHOWCASE — demo worker starting")
     log(f"  owner slug:   {OWNER}")
     log(f"  DEMO_TOKEN:   {redacted}   (injected secret)")
-    log(f"  message:      {message!r}   (from the data store)")
+    source = "run inputs" if inputs else "the data store"
+    log(f"  message:      {message!r}   (from {source})")
     log(f"  steps:        {steps}")
-    vector_demo(message)
+    nearest = vector_demo(message)
     log("=" * 52)
 
     write_progress("running", index=0, total=steps, phase="starting")
+    report_progress(0, "Starting")
     for i in range(1, steps + 1):
         log(f"  step {i}/{steps} …")
         write_progress("running", index=i, total=steps, phase="working")
+        report_progress(round(100 * (i - 1) / steps), f"Step {i} of {steps}")
         time.sleep(1)
 
     duration = time.time() - start
     record_run("success", steps, token_seen, message, duration)
     write_progress("done", index=steps, total=steps)
+    report_progress(100, "Done")
+    report_result({
+        "message": message,
+        "steps": steps,
+        "token_seen": token_seen,
+        "nearest_doc": nearest,
+        "duration_s": round(duration, 1),
+    })
     log(f"done in {duration:.1f}s — recorded a run summary to '{STATE_STORE}'.")
 
 

@@ -3,6 +3,31 @@
 All notable changes to the SDK Showcase plugin are documented here. This
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - Unreleased
+
+### Added
+- An **Inputs & result** card. The demo script now declares two inputs,
+  `message` and `steps`, through `ScriptAPI.upsert(inputs_schema=)`, with the
+  saved settings as their defaults, so **Run demo** and the schedule behave as
+  before. *Run with inputs* queues one run with `queue_run(inputs=...)`; a
+  value the SDK refuses (try 99 steps) shows its reason on the field, and no
+  run is created. The card shows the latest run's `RunView.inputs`, its live
+  `RunView.progress` and, once it finishes, its `RunView.result`.
+- The demo worker reads its inputs with `pyrunner_run.inputs()` (falling back
+  to the data store), reports progress with `pyrunner_run.progress()` and
+  returns its run summary with `pyrunner_run.set_result()`.
+
+### Changed
+- The demo message is limited to 200 characters, the same limit as the
+  `message` input.
+- The Schedule card shows the SDK's error when a schedule is refused instead
+  of failing the request.
+
+### Notes
+- Needs the plugin SDK from PyRun 2.5 (`inputs_schema=`, `queue_run(inputs=)`,
+  `InputsError`). The manifest's `api` and `min_pyrunner` move to `2.8` and
+  `2.5.0` when the SDK version is bumped for that release.
+
 ## [1.1.0] - 2026-10-17
 
 ### Added

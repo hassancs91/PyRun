@@ -13,10 +13,10 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
-from core.plugins.api import VectorError
+from core.plugins.api import InputsError, VectorError
 
 from . import provisioning as prov
-from .forms import SetupForm
+from .forms import RunInputsForm, SetupForm
 
 superuser_required = user_passes_test(lambda u: u.is_superuser)
 
@@ -30,10 +30,17 @@ def _build_form(data=None):
     )
 
 
+def _inputs_form(data=None):
+    """The inputs card's form, prefilled with the inputs' defaults (the settings)."""
+    return RunInputsForm(data, initial=None if data else prov.get_config())
+
+
 def _render(request, form, **extra):
     is_setup = prov.is_setup()
     ctx = {
         "form": form,
+        "inputs_form": _inputs_form(),
+        "latest": prov.latest_run_report() if is_setup else None,
         "has_environments": bool(prov.list_environments()),
         "is_setup": is_setup,
         "counter": prov.get_counter(),
@@ -92,12 +99,39 @@ def increment(request):
 @superuser_required
 @require_POST
 def run_demo(request):
-    run, error = prov.queue_demo_run(triggered_by=request.user)
+    try:
+        run, error = prov.queue_demo_run(triggered_by=request.user)
+    except InputsError as exc:  # the declared inputs were edited to need a value
+        run, error = None, f"Could not queue the demo: {exc.message}"
     if error:
         messages.error(request, error)
     else:
         messages.info(request, "Demo run queued — watch it below.")
     return redirect(reverse("sdk_showcase:index") + "#runs")
+
+
+@superuser_required
+@require_POST
+def run_with_inputs(request):
+    """Queue one run with the posted inputs. The SDK checks them against the
+    script's declared inputs; its per-input reasons land on the form fields."""
+    inputs_form = _inputs_form(data=request.POST)
+    if inputs_form.is_valid():
+        try:
+            _run, error = prov.queue_demo_run(
+                triggered_by=request.user, inputs=inputs_form.inputs()
+            )
+        except InputsError as exc:
+            for name, reason in exc.field_errors.items():
+                inputs_form.add_error(name if name in inputs_form.fields else None, reason)
+            error = exc.message
+        if not error:
+            messages.info(request, "Run queued with your inputs — its progress and result show below.")
+            return redirect(reverse("sdk_showcase:index") + "#inputs")
+        messages.error(request, error)
+    else:
+        messages.error(request, "Please fix the errors below.")
+    return _render(request, _build_form(), inputs_form=inputs_form)
 
 
 @superuser_required
@@ -114,10 +148,15 @@ def stop(request):
 @require_POST
 def set_schedule(request):
     mode = request.POST.get("mode", "manual")
-    if prov.sync_schedule(mode):
-        messages.success(request, f"Schedule set to: {mode}.")
+    try:
+        synced = prov.sync_schedule(mode)
+    except ValueError as exc:  # e.g. a required input with no default
+        messages.error(request, str(exc))
     else:
-        messages.error(request, "Set up the demo first.")
+        if synced:
+            messages.success(request, f"Schedule set to: {mode}.")
+        else:
+            messages.error(request, "Set up the demo first.")
     return redirect(reverse("sdk_showcase:index") + "#schedule")
 
 

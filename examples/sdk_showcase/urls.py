@@ -9,6 +9,7 @@ urlpatterns = [
     path("setup/", views.setup, name="setup"),
     path("increment/", views.increment, name="increment"),
     path("run/", views.run_demo, name="run"),
+    path("run/inputs/", views.run_with_inputs, name="run_inputs"),
     path("stop/", views.stop, name="stop"),
     path("schedule/", views.set_schedule, name="schedule"),
     path("reset/", views.reset_demo, name="reset"),

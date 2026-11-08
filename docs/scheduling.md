@@ -138,7 +138,9 @@ to fill them in, so it gets each input's **default**. That is why a schedule
 can only be turned on when every required input has a default: saving the
 script form, or resuming a paused schedule, is refused with the names of the
 inputs that need one. Optional inputs without a default are simply left out of
-a scheduled run.
+a scheduled run. Plugins get the same rule: the SDK's `ScheduleAPI.sync`
+refuses to schedule such a script, and `ScriptAPI.upsert` refuses such inputs
+on a script whose schedule is on (see [plugins.md](plugins.md)).
 
 If the inputs change later in a way the schedule can't satisfy (for example a
 backup restored from another instance), each scheduled time is skipped without

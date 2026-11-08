@@ -457,6 +457,29 @@ def _masked_run_inputs(run, masks: dict):
 # Scripts
 # --------------------------------------------------------------------------- #
 
+class InputsError(ValueError):
+    """``ScriptAPI.queue_run`` refused the inputs; no run was created.
+
+    ``message`` is one sentence naming every bad input and ``field_errors``
+    maps each input name to its reason, so a plugin form can show them next
+    to its fields. A subclass of ValueError, so an ``except ValueError`` that
+    already guards ``queue_run`` keeps working.
+    """
+
+    def __init__(self, message, field_errors=None):
+        super().__init__(message)
+        self.message = str(message)
+        self.field_errors = dict(field_errors or {})
+
+
+def _active_schedule(script):
+    """The script's schedule when it fires on its own (not manual, not paused)."""
+    from core.models import ScriptSchedule
+
+    schedule = ScriptSchedule.objects.filter(script_id=script.pk).first()
+    return schedule if schedule is not None and schedule.is_scheduled else None
+
+
 class ScriptAPI:
     """Owner-scoped scripts. ``upsert`` is idempotent on (owner_plugin, owner_key)."""
 
@@ -490,6 +513,7 @@ class ScriptAPI:
         notify_on=None,
         notify_email=None,
         created_by=None,
+        inputs_schema=None,
     ):
         """Create or update an owned script (idempotent on (owner_plugin, owner_key)).
 
@@ -498,11 +522,25 @@ class ScriptAPI:
         scripts default to ``injection_mode='selected'`` (so they receive only
         granted and same-owner secrets); ``isolation_mode`` is left at the model
         default ``'inherit'`` so ``resolve_isolation`` (the sandbox policy) decides.
+
+        ``inputs_schema`` declares the inputs the script takes: an object JSON
+        Schema in the subset the script editor's Inputs tab writes (see
+        "Inputs and results" in docs/plugins.md). It is checked the way the editor checks it, and
+        ``{}`` removes the declaration; None, like every other argument here,
+        leaves it as it is. A schema whose required inputs have no default is
+        refused while the script has an active schedule, because a scheduled
+        run would have nothing to fill them with. Raises ValueError, before
+        anything is saved.
         """
         from core.models import Script
+        from core.services.script_inputs import check_inputs_schema, schedule_conflict
 
         if self.owner and not key:
             raise ValueError("ScriptAPI.upsert requires key= for an owned script")
+        set_schema = inputs_schema is not None
+        if set_schema:
+            # None from here on = the script declares no inputs.
+            inputs_schema = check_inputs_schema(inputs_schema)
 
         if self.owner:
             script = self._qs().filter(owner_key=key).first()
@@ -511,6 +549,10 @@ class ScriptAPI:
             script = self._qs().filter(name=name).first() if name else None
 
         creating = script is None
+        if set_schema and not creating and _active_schedule(script):
+            conflict = schedule_conflict(inputs_schema)
+            if conflict:
+                raise ValueError(f"The script has an active schedule. {conflict}")
         if creating:
             script = Script(workspace=self._ws(), owner_plugin=self.owner, owner_key=key)
             # Default scoped injection for owned scripts; legacy stays 'all'.
@@ -535,6 +577,8 @@ class ScriptAPI:
             script.notify_email = notify_email
         if timeout_seconds is not None:
             script.timeout_seconds = timeout_seconds
+        if set_schema:
+            script.inputs_schema = inputs_schema
 
         env = _resolve_environment(environment)
         if env is not None:
@@ -560,25 +604,39 @@ class ScriptAPI:
             raise ValueError("set_environment: unknown environment")
         return self._qs().update(environment=env)
 
-    def queue_run(self, key, *, triggered_by=None):
-        """Queue a tracked Run for the owned script ``key`` (via the RunBackend seam)."""
+    def queue_run(self, key, *, triggered_by=None, inputs=None):
+        """Queue a tracked Run for the owned script ``key`` (via the RunBackend seam).
+
+        ``inputs`` is a dict of values for the inputs the script declares
+        (``upsert(inputs_schema=)``); defaults fill in whatever is left out.
+        They are checked before the run exists: bad inputs raise
+        :class:`InputsError` and create no run, not even a failed one.
+        """
         from core.models import Run
         from core.services.run_events import plugin_event
+        from core.services.script_inputs import ScriptInputsError, prepare_inputs
         from core.tasks import queue_script_run
 
         script = self.get(key)
         if script is None:
             raise ValueError(f"No owned script with key={key!r}")
-        run = Run.objects.create(
-            script=script,
-            workspace_id=script.workspace_id,
-            status=Run.Status.PENDING,
-            triggered_by=triggered_by,
-            trigger_type=Run.TriggerType.MANUAL,
-            code_snapshot=script.code,
-            event=plugin_event(self.owner, key, triggered_by),
-        )
-        queue_script_run(run)
+        try:
+            prepared = prepare_inputs(script, inputs)
+            run = Run.objects.create(
+                script=script,
+                workspace_id=script.workspace_id,
+                status=Run.Status.PENDING,
+                triggered_by=triggered_by,
+                trigger_type=Run.TriggerType.MANUAL,
+                code_snapshot=script.code,
+                inputs=prepared,
+                event=plugin_event(self.owner, key, triggered_by),
+            )
+            # Checks the inputs again against the schema as it is now, and
+            # deletes the pending row if it changed in between.
+            queue_script_run(run)
+        except ScriptInputsError as e:
+            raise InputsError(e.message, e.field_errors) from None
         return run
 
     def get(self, key):
@@ -1490,9 +1548,25 @@ class ScheduleAPI:
         sync_schedule, generalized. Yearly mode takes ``month``, ``day`` and one
         ``time_str`` in HH:MM format; ``cron`` mode takes a raw 5-field expression
         via ``cron``. Both are written in ``tz``.
+
+        Any mode but manual is refused (ValueError, nothing saved) while the
+        script declares a required input with no default: a scheduled run has
+        nobody to supply it. The script editor applies the same rule.
         """
-        from core.models import ScriptSchedule
+        from core.models import Script, ScriptSchedule
         from core.services.schedule_service import ScheduleService
+        from core.services.script_inputs import schedule_conflict
+
+        if mode != ScriptSchedule.RunMode.MANUAL:
+            # The stored schema, not the caller's copy, which may be stale.
+            schema = (
+                Script.objects.filter(pk=script.pk)
+                .values_list("inputs_schema", flat=True)
+                .first()
+            )
+            conflict = schedule_conflict(schema)
+            if conflict:
+                raise ValueError(f"Schedule not saved. {conflict}")
 
         sched, _ = ScriptSchedule.objects.get_or_create(
             script=script, defaults={"workspace_id": script.workspace_id}
