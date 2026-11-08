@@ -178,6 +178,59 @@ process creating it crashed, stops blocking the script after five minutes.
 
 ---
 
+## When a run fails: retries
+
+A script can try again on its own when a run fails. The settings are in the
+script editor's Execution box, and like the concurrency setting they apply to
+every way a script starts, not just schedules:
+
+| Setting | Default | What it does |
+|---|---|---|
+| **Retries on failure** | 0 (never) | How many more times a failed run is tried, up to 10. |
+| **Delay before a retry** | 60 seconds | How long the first retry waits, up to a day. |
+| **Backoff multiplier** | 1 | Each retry waits this many times longer than the one before. With a 60-second delay, 1 gives 60 s, 60 s, 60 s; 2 gives 60 s, 120 s, 240 s. A retry never waits more than a day. |
+| **Retry timeouts too** | off | Whether a run that hit its timeout is retried as well. |
+
+A run counts as failed when the script exits with an error, or PyRun couldn't
+start it (a missing environment, a secret that couldn't be resolved). When it
+fails, PyRun creates the next attempt right away as a pending run with a
+**retry at HH:MM** chip. It has the same inputs, and for a webhook or chat
+trigger the same request data (`WEBHOOK_*`, `INBOUND_*`, `pyrunner_run.event()`).
+It runs the script's code as it is when the retry starts, so a fix you save
+in the meantime is picked up.
+
+**Timing.** The worker checks for due retries once a minute, on its
+heartbeat. A retry therefore starts up to about a minute after its delay ends,
+and delays under a minute act like about a minute.
+
+**What never retries:** a successful run, a run you stopped, a run the
+concurrency policy skipped, a run the platform marked failed because its
+worker died, and a timeout unless **Retry timeouts too** is on. When the
+retry is due PyRun checks again: if the script has been disabled or archived,
+or its retries were turned down below this attempt, the retry is cancelled
+without running.
+
+**Concurrency.** A retry obeys the script's **If it's already running**
+setting when it starts, lined up behind any run that was triggered while it
+waited: with **Skip** it is skipped if another run is going, with **Queue** it
+waits its turn. A retry that is still waiting for its delay doesn't count as
+running, so it never holds up other runs.
+
+**Notifications** go out once, for the outcome: the first success, or the
+last failed attempt. A failed attempt with a retry after it sends nothing. If
+the retry then can't start (skipped, cancelled because the script was
+disabled, or its inputs no longer fit the script), the failed attempt before
+it sends its notification at that point. Cancelling a retry yourself sends
+nothing.
+
+**On the run page** a retry shows **attempt 2 of 3 · retry of #…** with a link
+to the first attempt, and the failed attempt links the retry that followed it.
+To drop a retry that is still waiting, open it and press **Cancel**. Scripts
+can read their attempt number from `run.json` (`run.attempt`, see
+[run context](run-context.md)).
+
+---
+
 ## When the server was down
 
 Missed fires are not replayed one by one. If one or more scheduled times pass

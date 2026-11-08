@@ -6,6 +6,7 @@ import secrets
 import uuid
 
 from django.conf import settings
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 from .environment import Environment
@@ -146,6 +147,38 @@ class Script(models.Model):
         help_text="What happens when the script is triggered while a run is "
         "still going. Allow starts another run alongside it. Skip records the "
         "new run as skipped. Queue waits and starts it when the current run ends.",
+    )
+
+    # Retry on failure (2.5, T06; core.services.run_retries holds the rules).
+    # A failed run, and a timed-out one when retry_on_timeout is on, gets up
+    # to retry_max_attempts more attempts. The n-th retry waits
+    # retry_delay_seconds * retry_backoff_multiplier ** (n - 1), at most a day.
+    MAX_RETRY_ATTEMPTS = 10
+    MAX_RETRY_DELAY_SECONDS = 86400
+    MAX_RETRY_BACKOFF_MULTIPLIER = 10.0
+
+    retry_max_attempts = models.PositiveSmallIntegerField(
+        default=0,
+        validators=[MaxValueValidator(MAX_RETRY_ATTEMPTS)],
+        help_text="How many times a failed run is retried (0 = never).",
+    )
+    retry_delay_seconds = models.PositiveIntegerField(
+        default=60,
+        validators=[MaxValueValidator(MAX_RETRY_DELAY_SECONDS)],
+        help_text="How long to wait before the first retry, in seconds.",
+    )
+    retry_backoff_multiplier = models.FloatField(
+        default=1.0,
+        validators=[
+            MinValueValidator(1.0),
+            MaxValueValidator(MAX_RETRY_BACKOFF_MULTIPLIER),
+        ],
+        help_text="Each retry waits this many times longer than the one before "
+        "(1 = the same delay every time, 2 = 1x, 2x, 4x...).",
+    )
+    retry_on_timeout = models.BooleanField(
+        default=False,
+        help_text="Also retry a run that timed out.",
     )
 
     # Status

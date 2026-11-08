@@ -44,7 +44,7 @@
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
         </svg>
         <div class="min-w-0 flex-1">
-            <span class="text-sm text-warn font-medium">{% if run.is_held %}Waiting its turn: this script runs one at a time, and this run starts when <a href="{% url 'cpanel:run_detail' pk=run.queued_behind %}" class="underline">the run ahead of it</a> ends.{% elif run.status == 'pending' %}Queued and waiting for a worker…{% else %}Running…{% endif %}</span>
+            <span class="text-sm text-warn font-medium">{% if run.is_held %}Waiting its turn: this script runs one at a time, and this run starts when <a href="{% url 'cpanel:run_detail' pk=run.queued_behind %}" class="underline">the run ahead of it</a> ends.{% elif run.is_waiting_retry %}Retry waiting: attempt {{ run.attempt }}{% if attempt_info %} of {{ attempt_info.total }}{% endif %} starts at {{ run.next_attempt_at|date:"M d, H:i:s" }} (PyRun checks for due retries once a minute).{% elif run.status == 'pending' %}Queued and waiting for a worker…{% else %}Running…{% endif %}</span>
             {# Live progress from pyrunner_run.progress(); kept current by the script below #}
             <div id="run-progress" class="mt-2 max-w-xl" {% if not progress %}hidden{% endif %} aria-live="polite">
                 <div class="flex items-baseline justify-between gap-3 text-xs">
@@ -61,7 +61,7 @@
     <div class="flex items-center gap-2">
         {% if run.status == 'running' and run.task_id %}
         <button onclick="stopRun('{{ run.task_id }}')" class="text-xs font-medium px-2.5 py-1 rounded-md border border-fail/40 text-fail hover:bg-fail/10 transition-colors">Stop</button>
-        {% elif run.is_held %}
+        {% elif run.is_held or run.is_waiting_retry %}
         <form method="post" action="{% url 'cpanel:run_cancel' pk=run.pk %}">
             {% csrf_token %}
             <button type="submit" class="text-xs font-medium px-2.5 py-1 rounded-md border border-fail/40 text-fail hover:bg-fail/10 transition-colors">Cancel</button>
@@ -191,6 +191,18 @@
                     <dt class="text-muted">Waited behind</dt>
                     <dd class="font-mono text-xs"><a href="{% url 'cpanel:run_detail' pk=run.queued_behind %}" class="text-info hover:underline">{{ run.queued_behind|stringformat:"s"|truncatechars:9 }}</a></dd>
                 </div>
+                {% endif %}
+                {% if attempt_info %}
+                <div class="flex items-center justify-between gap-3">
+                    <dt class="text-muted">Attempt</dt>
+                    <dd class="text-text text-right">attempt {{ attempt_info.attempt }} of {{ attempt_info.total }}{% if run.retry_of_id %} · retry of <a href="{% url 'cpanel:run_detail' pk=run.retry_of_id %}" class="font-mono text-xs text-info hover:underline">#{{ run.retry_of_id|stringformat:"s"|truncatechars:9 }}</a>{% endif %}</dd>
+                </div>
+                {% if attempt_info.next %}
+                <div class="flex items-center justify-between gap-3">
+                    <dt class="text-muted">Retried as</dt>
+                    <dd class="text-text text-right"><a href="{% url 'cpanel:run_detail' pk=attempt_info.next.pk %}" class="font-mono text-xs text-info hover:underline">#{{ attempt_info.next.pk|stringformat:"s"|truncatechars:9 }}</a> · attempt {{ attempt_info.next.attempt }}</dd>
+                </div>
+                {% endif %}
                 {% endif %}
                 {% if run.exit_code is not None %}
                 <div class="flex items-center justify-between gap-3">

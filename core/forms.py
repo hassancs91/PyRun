@@ -140,6 +140,10 @@ class ScriptForm(forms.ModelForm):
             "tags",
             "timeout_seconds",
             "concurrency_policy",
+            "retry_max_attempts",
+            "retry_delay_seconds",
+            "retry_backoff_multiplier",
+            "retry_on_timeout",
             "is_enabled",
             "isolation_mode",
             "injection_mode",
@@ -173,6 +177,21 @@ class ScriptForm(forms.ModelForm):
                 attrs={"class": INPUT_CLASS, "min": 1, "max": 86400}
             ),
             "concurrency_policy": forms.Select(attrs={"class": INPUT_CLASS}),
+            "retry_max_attempts": forms.NumberInput(
+                attrs={"class": INPUT_CLASS, "min": 0, "max": Script.MAX_RETRY_ATTEMPTS}
+            ),
+            "retry_delay_seconds": forms.NumberInput(
+                attrs={"class": INPUT_CLASS, "min": 0, "max": Script.MAX_RETRY_DELAY_SECONDS}
+            ),
+            "retry_backoff_multiplier": forms.NumberInput(
+                attrs={
+                    "class": INPUT_CLASS,
+                    "min": 1,
+                    "max": Script.MAX_RETRY_BACKOFF_MULTIPLIER,
+                    "step": "0.1",
+                }
+            ),
+            "retry_on_timeout": forms.CheckboxInput(attrs={"class": CHECK_CLASS}),
             "is_enabled": forms.CheckboxInput(attrs={"class": CHECK_CLASS}),
             "isolation_mode": forms.Select(attrs={"class": INPUT_CLASS}),
             "injection_mode": forms.Select(attrs={"class": INPUT_CLASS}),
@@ -200,6 +219,10 @@ class ScriptForm(forms.ModelForm):
             "tags": "Tags",
             "timeout_seconds": "Timeout (seconds)",
             "concurrency_policy": "If it's already running",
+            "retry_max_attempts": "Retries on failure",
+            "retry_delay_seconds": "Delay before a retry (seconds)",
+            "retry_backoff_multiplier": "Backoff multiplier",
+            "retry_on_timeout": "Retry timeouts too",
             "is_enabled": "Enabled",
             "isolation_mode": "Execution Isolation",
             "injection_mode": "Secret injection",
@@ -215,6 +238,12 @@ class ScriptForm(forms.ModelForm):
             "Allow starts another run alongside it. Skip doesn't start it and lists "
             "it as skipped. Queue starts it when the current run ends, one at a time, "
             "in order. Applies to Run now, schedules, webhooks, chat and plugins.",
+            "retry_max_attempts": "How many more times a failed run is tried, "
+            "with the same inputs (0 = never, up to 10). Only the last attempt notifies.",
+            "retry_delay_seconds": "Wait before the first retry (up to a day). PyRun "
+            "checks for due retries once a minute, so shorter delays act like about a minute.",
+            "retry_backoff_multiplier": "Each retry waits this many times longer than "
+            "the one before: 1 keeps the same delay, 2 gives 1x, 2x, 4x.",
             "isolation_mode": "Run sandboxed. Effective only when the workspace policy is 'optional' (a 'required' workspace always sandboxes).",
             "injection_mode": "All = every workspace secret (default). Selected = only the secrets you attach below.",
             "notify_email": "Leave empty to use global default",
@@ -245,6 +274,9 @@ class ScriptForm(forms.ModelForm):
         self.fields["injection_mode"].required = False
         # Same for the concurrency policy, which then keeps its saved value.
         self.fields["concurrency_policy"].required = False
+        # And for the retry numbers (the checkbox posts nothing when off).
+        for name in ("retry_max_attempts", "retry_delay_seconds", "retry_backoff_multiplier"):
+            self.fields[name].required = False
         # Scope the notify-channels picker to the active workspace (tenancy);
         # None ⇒ empty so a channel never leaks across workspaces in the picker.
         from core.models import Channel
@@ -265,6 +297,22 @@ class ScriptForm(forms.ModelForm):
             or self.instance.concurrency_policy
             or Script.ConcurrencyPolicy.ALLOW
         )
+
+    def _saved_if_blank(self, name):
+        """A retry number posted blank (or not at all) keeps its saved value."""
+        value = self.cleaned_data.get(name)
+        if value is None:
+            value = getattr(self.instance, name)
+        return value
+
+    def clean_retry_max_attempts(self):
+        return self._saved_if_blank("retry_max_attempts")
+
+    def clean_retry_delay_seconds(self):
+        return self._saved_if_blank("retry_delay_seconds")
+
+    def clean_retry_backoff_multiplier(self):
+        return self._saved_if_blank("retry_backoff_multiplier")
 
     def clean_code(self):
         code = self.cleaned_data.get("code", "").strip()

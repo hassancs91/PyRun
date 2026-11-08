@@ -99,10 +99,17 @@ class NotificationService:
         elif notify_on == Script.NotifyOn.SUCCESS:
             return run.status == Run.Status.SUCCESS
         elif notify_on == Script.NotifyOn.FAILURE:
-            return run.status in (Run.Status.FAILED, Run.Status.TIMEOUT)
+            wanted = run.status in (Run.Status.FAILED, Run.Status.TIMEOUT)
         elif notify_on == Script.NotifyOn.BOTH:
-            return run.is_finished
-        return False
+            wanted = run.is_finished
+        else:
+            return False
+        if wanted and run.status in (Run.Status.FAILED, Run.Status.TIMEOUT):
+            # Retry on failure: only the last failed attempt reports.
+            from core.services.run_retries import retry_follows
+
+            return not retry_follows(run)
+        return wanted
 
     @classmethod
     def send_notification(cls, run: "Run") -> dict:

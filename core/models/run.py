@@ -191,6 +191,33 @@ class Run(models.Model):
         help_text="Request data for a run waiting its turn (cleared when it starts).",
     )
 
+    # Retry on failure (2.5, T06; core.services.run_retries).
+    # ``attempt``: 1 for a run a trigger started, n for its (n - 1)-th retry.
+    # ``retry_of``: on a retry, the first attempt (the run the trigger started).
+    # ``next_attempt_at``: on a retry waiting for its delay, when it is due.
+    # The worker heartbeat starts it then: it clears this, resets created_at
+    # to that moment (so the concurrency policy lines it up behind any run
+    # triggered while it waited) and queues it like any other run. A waiting
+    # retry keeps its webhook or chat data in ``queued_payload`` meanwhile.
+    attempt = models.PositiveSmallIntegerField(
+        default=1,
+        help_text="1 for a run a trigger started, 2 for its first retry, and so on.",
+    )
+    retry_of = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="retries",
+        help_text="On a retry: the first attempt, the run the trigger started.",
+    )
+    next_attempt_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="On a retry waiting for its delay: when it starts.",
+    )
+
     # Who triggered the run
     triggered_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -338,6 +365,8 @@ class Run(models.Model):
         # A run held by the Queue concurrency policy has no task yet by
         # design: it is waiting its turn, not lost, however long the runs ahead
         # of it take (they are reconciled on their own; that releases it).
+        # Nor is a retry waiting for its delay (up to a day): it counts as
+        # lost only once it has been due for as long as any pending run.
         if GlobalSettings.get_settings().worker_is_alive():
             stale_pending = list(
                 cls.objects.filter(
@@ -345,6 +374,11 @@ class Run(models.Model):
                     created_at__lt=now - cls.RECONCILE_PENDING_AFTER,
                 )
                 .exclude(task_id="", queued_behind__isnull=False)
+                .exclude(
+                    models.Q(task_id="")
+                    & models.Q(next_attempt_at__isnull=False)
+                    & models.Q(next_attempt_at__gt=now - cls.RECONCILE_PENDING_AFTER)
+                )
                 .values_list("pk", flat=True)
             )
             flipped = cls.objects.filter(
@@ -515,6 +549,16 @@ class Run(models.Model):
             self.status == self.Status.PENDING
             and not self.task_id
             and self.queued_behind is not None
+        )
+
+    @property
+    def is_waiting_retry(self) -> bool:
+        """A retry waiting for its delay (the heartbeat starts it when due)."""
+        return (
+            self.status == self.Status.PENDING
+            and not self.task_id
+            and self.queued_behind is None
+            and self.next_attempt_at is not None
         )
 
     @property

@@ -16,6 +16,7 @@ from django.utils.dateparse import parse_datetime
 from core.models import Run, Script
 from core.services.run_events import EVENT_PREVIEW_CHARS, event_text, kind_label
 from core.services.run_reports import json_size, progress_for_display, result_text
+from core.services.run_retries import attempt_info
 
 RUNS_PER_PAGE = 25
 SEARCH_MAX_LENGTH = 200
@@ -129,24 +130,29 @@ def run_detail_view(request: HttpRequest, pk) -> HttpResponse:
         "result_bytes": json_size(run.result) if has_result else 0,
         "progress": progress_for_display(run.progress),
         "event": run_event_card(run, mask_sets),
+        "attempt_info": attempt_info(run),
     })
 
 
 @login_required
 @require_POST
 def run_cancel_view(request: HttpRequest, pk) -> HttpResponse:
-    """Cancel a run that is waiting its turn (Queue concurrency policy).
+    """Cancel a run that hasn't started: one waiting its turn (Queue
+    concurrency policy) or a retry waiting for its delay.
 
-    A held run has no worker task yet, so the Tasks page's Stop can't reach
-    it. Running runs keep using Stop, which kills the process.
+    Neither has a worker task yet, so the Tasks page's Stop can't reach it.
+    Running runs keep using Stop, which kills the process.
     """
     from core.services.run_concurrency import cancel_held
+    from core.services.run_retries import cancel_waiting
 
     run = get_object_or_404(Run, pk=pk, workspace=request.workspace)
     if cancel_held(run):
         messages.success(request, "Queued run cancelled. It won't start.")
+    elif cancel_waiting(run):
+        messages.success(request, "Retry cancelled. It won't start.")
     else:
-        messages.error(request, "This run isn't waiting its turn any more, so there was nothing to cancel.")
+        messages.error(request, "This run has started or ended, so there was nothing to cancel.")
     return redirect("cpanel:run_detail", pk=run.pk)
 
 

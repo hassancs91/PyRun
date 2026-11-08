@@ -213,6 +213,7 @@ def run_file_payload(run) -> dict:
             "id": run.id.hex,
             "created_at": run.created_at.isoformat() if run.created_at else None,
             "started_at": run.started_at.isoformat() if run.started_at else None,
+            "attempt": run.attempt,
         },
         "script": {"id": run.script.id.hex, "name": run.script.name},
         "trigger": {"type": str(run.trigger_type)},
@@ -1178,6 +1179,12 @@ def execute_run(run: Run, webhook_data: dict | None = None) -> None:
             f"Run {run.id} completed with status {run.status} "
             f"(exit_code={run.exit_code})"
         )
+
+        # A failed run of a script that retries schedules its next attempt
+        # (the worker heartbeat starts it when due). Never raises.
+        from core.services.run_retries import try_schedule_retry
+
+        try_schedule_retry(run, webhook_data)
 
         # The run has ended: a Queue-policy script starts its next waiting run
         # now. try_release never raises, so this can't turn a finished run into

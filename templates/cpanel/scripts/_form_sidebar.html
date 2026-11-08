@@ -26,6 +26,35 @@
                 {% if form.concurrency_policy.help_text %}<p class="mt-1.5 text-xs text-faint">{{ form.concurrency_policy.help_text }}</p>{% endif %}
                 {% include "cpanel/_field_errors.html" with field=form.concurrency_policy %}
             </div>
+            <fieldset class="space-y-3 pt-3 border-t border-line-soft">
+                <legend class="sr-only">Retry on failure</legend>
+                <div>
+                    <label for="id_retry_max_attempts" class="block text-[13px] font-medium text-text mb-1.5">{{ form.retry_max_attempts.label }}</label>
+                    {{ form.retry_max_attempts }}
+                    {% if form.retry_max_attempts.help_text %}<p class="mt-1.5 text-xs text-faint">{{ form.retry_max_attempts.help_text }}</p>{% endif %}
+                    {% include "cpanel/_field_errors.html" with field=form.retry_max_attempts %}
+                </div>
+                <div>
+                    <label for="id_retry_delay_seconds" class="block text-[13px] font-medium text-text mb-1.5">{{ form.retry_delay_seconds.label }}</label>
+                    {{ form.retry_delay_seconds }}
+                    {% if form.retry_delay_seconds.help_text %}<p class="mt-1.5 text-xs text-faint">{{ form.retry_delay_seconds.help_text }}</p>{% endif %}
+                    {% include "cpanel/_field_errors.html" with field=form.retry_delay_seconds %}
+                </div>
+                <div>
+                    <label for="id_retry_backoff_multiplier" class="block text-[13px] font-medium text-text mb-1.5">{{ form.retry_backoff_multiplier.label }}</label>
+                    {{ form.retry_backoff_multiplier }}
+                    {% if form.retry_backoff_multiplier.help_text %}<p class="mt-1.5 text-xs text-faint">{{ form.retry_backoff_multiplier.help_text }}</p>{% endif %}
+                    {% include "cpanel/_field_errors.html" with field=form.retry_backoff_multiplier %}
+                </div>
+                <label class="flex items-center gap-3 cursor-pointer">
+                    {{ form.retry_on_timeout }}
+                    <span>
+                        <span class="block text-[13px] font-medium text-text">{{ form.retry_on_timeout.label }}</span>
+                        <span class="block text-xs text-faint">Off: a run that hits its timeout isn't retried.</span>
+                    </span>
+                </label>
+                {% include "cpanel/_field_errors.html" with field=form.retry_on_timeout %}
+            </fieldset>
             <div>
                 <label for="id_isolation_mode" class="block text-[13px] font-medium text-text mb-1.5">{{ form.isolation_mode.label }}</label>
                 {{ form.isolation_mode }}

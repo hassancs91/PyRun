@@ -593,6 +593,18 @@ def worker_heartbeat_task() -> dict:
         except Exception:
             logger.exception("Releasing queued runs failed")
 
+        # Retry on failure: start every retry whose delay has run out. This
+        # cadence is the retry granularity (a retry starts up to a minute
+        # after it is due). Never fails the heartbeat.
+        try:
+            from core.services import run_retries
+
+            retried = run_retries.dispatch_due()
+            if retried:
+                logger.info(f"Started {retried} retry run(s) that were due")
+        except Exception:
+            logger.exception("Starting due retries failed")
+
         # Same for package operations: the packages page used to be the only
         # reconciler, so an install whose worker died stayed "running" (and the
         # page kept polling) until someone opened it.

@@ -61,10 +61,12 @@ def in_flight(script_id, now=None):
     from core.models import Run
 
     now = now or timezone.now()
+    # A retry waiting for its delay (core.services.run_retries) isn't about
+    # to run: it comes back through queue_script_run when it is due.
     pending = Q(status=Run.Status.PENDING) & (
         ~Q(task_id="")
         | Q(queued_behind__isnull=False)
-        | Q(created_at__gte=now - UNQUEUED_GRACE)
+        | Q(created_at__gte=now - UNQUEUED_GRACE, next_attempt_at__isnull=True)
     )
     return Run.objects.filter(script_id=script_id).filter(
         Q(status=Run.Status.RUNNING) | pending

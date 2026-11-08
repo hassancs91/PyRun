@@ -144,6 +144,13 @@ class BackupService:
     # backups: blank / NULL). ``queued_behind`` is restored only on finished
     # runs, and a held run's ``queued_payload`` is never exported: a restore
     # must not start a run that was waiting its turn when the backup was taken.
+    # Retry settings on scripts (``retry_max_attempts``, ``retry_delay_seconds``,
+    # ``retry_backoff_multiplier``, ``retry_on_timeout``; older backups: the
+    # model defaults, no retries) and ``attempt``, ``retry_of`` and
+    # ``next_attempt_at`` on runs (older backups: 1 / NULL / NULL).
+    # ``retry_of`` is linked once every run is in, and only when that run was
+    # restored too. ``next_attempt_at`` is restored only on finished runs, for
+    # the same reason as ``queued_behind``: a restore never starts a retry.
     BACKUP_VERSION = "1.13.0"
     MAX_BACKUP_SIZE_MB = 100
     # Default cap on a gzip backup's expanded size (F92, zip-bomb guard);
@@ -360,6 +367,10 @@ class BackupService:
                 "injection_mode": script.injection_mode,
                 "isolation_mode": script.isolation_mode,
                 "timeout_seconds": script.timeout_seconds,
+                "retry_max_attempts": script.retry_max_attempts,
+                "retry_delay_seconds": script.retry_delay_seconds,
+                "retry_backoff_multiplier": script.retry_backoff_multiplier,
+                "retry_on_timeout": script.retry_on_timeout,
                 "is_enabled": script.is_enabled,
                 "webhook_token": script.webhook_token,
                 "notify_on": script.notify_on,
@@ -645,6 +656,10 @@ class BackupService:
                 # Concurrency policy outcome: skipped, or waited behind a run.
                 "cancel_reason": run.cancel_reason,
                 "queued_behind": str(run.queued_behind) if run.queued_behind else None,
+                # Retry on failure: which attempt, of which first run.
+                "attempt": run.attempt,
+                "retry_of": str(run.retry_of_id) if run.retry_of_id else None,
+                "next_attempt_at": cls._serialize_datetime(run.next_attempt_at),
                 "trigger_type": run.trigger_type,
                 "triggered_by_email": run.triggered_by.email if run.triggered_by else None,
                 "created_at": cls._serialize_datetime(run.created_at),
@@ -1706,6 +1721,10 @@ class BackupService:
                 injection_mode=script_data.get("injection_mode", "all"),
                 isolation_mode=script_data.get("isolation_mode", Script.IsolationMode.INHERIT),
                 timeout_seconds=script_data.get("timeout_seconds", 300),
+                retry_max_attempts=script_data.get("retry_max_attempts", 0),
+                retry_delay_seconds=script_data.get("retry_delay_seconds", 60),
+                retry_backoff_multiplier=script_data.get("retry_backoff_multiplier", 1.0),
+                retry_on_timeout=script_data.get("retry_on_timeout", False),
                 is_enabled=script_data.get("is_enabled", False),
                 webhook_token=script_data.get("webhook_token"),
                 notify_on=script_data.get("notify_on", "never"),
@@ -1879,6 +1898,7 @@ class BackupService:
     @classmethod
     def _import_runs(cls, runs_data: List[dict], script_map: dict, user_map: dict, current_user, ws_map: dict, default_ws) -> None:
         """Import runs."""
+        retry_links = []
         for run_data in runs_data:
             script = script_map.get(run_data["script_id"])
             triggered_by = user_map.get(run_data.get("triggered_by_email"), current_user)
@@ -1908,10 +1928,33 @@ class BackupService:
                 # Unfinished runs come back without it, so they never count as
                 # held (see the 1.14.0 note on BACKUP_VERSION).
                 queued_behind=run_data.get("queued_behind") if finished else None,
+                attempt=run_data.get("attempt") or 1,
+                # Same rule as queued_behind: an unfinished retry comes back
+                # without its due time, so the heartbeat never starts it.
+                next_attempt_at=(
+                    cls._deserialize_datetime(run_data.get("next_attempt_at"))
+                    if finished
+                    else None
+                ),
                 trigger_type=run_data.get("trigger_type", "manual"),
                 triggered_by=triggered_by,
                 created_at=cls._deserialize_datetime(run_data.get("created_at")),
             )
+            if run_data.get("retry_of"):
+                retry_links.append((run_data["id"], run_data["retry_of"]))
+
+        # A retry's first attempt may come later in the file, or not at all
+        # (only the newest runs are exported): link once all are in.
+        if retry_links:
+            restored = {
+                str(pk)
+                for pk in Run.objects.filter(
+                    pk__in={first for _, first in retry_links}
+                ).values_list("pk", flat=True)
+            }
+            for run_id, first in retry_links:
+                if first in restored:
+                    Run.objects.filter(pk=run_id).update(retry_of_id=first)
 
     @classmethod
     def _import_package_operations(cls, ops_data: List[dict], env_map: dict, user_map: dict, current_user) -> None:

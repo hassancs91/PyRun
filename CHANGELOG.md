@@ -70,6 +70,20 @@ begins tracking at the current release; earlier history is in the git log.
   progress" checks, so their schedules can no longer overlap a manual run
   either. Backups and forks include the setting. Guide: the "When the script
   is still running" section of `docs/scheduling.md`.
+- **Retry on failure, with backoff.** New script settings: **Retries on
+  failure** (0 by default, up to 10), a **delay** before the first retry
+  (60 seconds), a **backoff multiplier** (each retry waits that many times
+  longer: 2 gives 1x, 2x, 4x; never more than a day) and **Retry timeouts
+  too** (off). A failed run creates its next attempt as a pending run with a
+  **retry at HH:MM** chip, carrying the same inputs and webhook or chat data;
+  the worker starts it when it is due, checking once a minute, so delays
+  under a minute act like about a minute. Retries obey the script's
+  concurrency setting. Stopped and skipped runs never retry. Only the last
+  failed attempt (or the first success) sends a notification. The run page
+  shows **attempt 2 of 3 · retry of #…**, and a waiting retry can be
+  cancelled from its page. Scripts can read `run.attempt` from `run.json`.
+  Backups and forks include the settings. Guide: the "When a run fails:
+  retries" section of `docs/scheduling.md`.
 
 ## [2.0.0] — October 23, 2026
 

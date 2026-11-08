@@ -38,7 +38,7 @@ deleted when it ends:
 
 ```json
 {
-  "run": {"id": "3f2c…", "created_at": "2026-11-08T10:00:00+00:00", "started_at": "2026-11-08T10:00:01+00:00"},
+  "run": {"id": "3f2c…", "created_at": "2026-11-08T10:00:00+00:00", "started_at": "2026-11-08T10:00:01+00:00", "attempt": 1},
   "script": {"id": "9a1b…", "name": "Weather report"},
   "trigger": {"type": "manual"},
   "inputs": {"city": "Paris", "options": {"units": "metric"}},
@@ -46,6 +46,9 @@ deleted when it ends:
 }
 ```
 
+`run.attempt` is 1, or 2 and up for an automatic retry of a failed run (see
+[retries](scheduling.md#when-a-run-fails-retries)); a retry gets the same
+`inputs` and `event` as the attempt it retries.
 `trigger.type` is `manual`, `scheduled` or `api` (webhooks and chat channels).
 `inputs` holds every input the run was started with, defaults filled in, JSON
 inputs included, and is `{}` for a script that declares none. `event` is
