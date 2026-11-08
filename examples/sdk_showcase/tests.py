@@ -318,6 +318,30 @@ class InputsCardTests(TestCase):
         self.assertEqual(set(cm.exception.field_errors), {"steps"})
         self.assertFalse(self._runs().exists())
 
+    def test_run_inside_a_maintenance_window_says_so(self):
+        # Found in the 2.5 test pass: the button said "Demo run queued" for a
+        # run the window had already cancelled.
+        import datetime
+
+        from django.utils import timezone
+
+        from core.models import MaintenanceWindow, Run
+
+        now = timezone.now()
+        MaintenanceWindow.objects.create(
+            name="Upgrade", kind=MaintenanceWindow.Kind.ONE_OFF,
+            starts_at=now - datetime.timedelta(minutes=5),
+            ends_at=now + datetime.timedelta(hours=1), blocks=["manual"],
+        )
+        for inputs in (None, {"steps": 2}):
+            run, error = prov.queue_demo_run(inputs=inputs)
+            self.assertIsNone(run)
+            self.assertEqual(error, "Not started: a maintenance window blocks manual runs right now.")
+        self.assertEqual(
+            list(self._runs().values_list("cancel_reason", flat=True)),
+            [Run.CancelReason.MAINTENANCE] * 2,
+        )
+
     def test_latest_run_report_reads_run_view(self):
         self.assertIsNone(prov.latest_run_report())
         run, _ = prov.queue_demo_run(inputs={"steps": 2})

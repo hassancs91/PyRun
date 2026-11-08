@@ -394,6 +394,16 @@ class RunNowFormTests(_ConsoleFixture, TestCase):
         resp = self.client.get(reverse("cpanel:script_detail", args=[script.pk]))
         self.assertContains(resp, f'href="{self._url(script)}"')
 
+    def test_form_page_highlights_only_scripts_in_the_sidebar(self):
+        # Found in the 2.5 test pass: "script_run" contains "run", so the
+        # sidebar lit up Runs as well as Scripts on this page.
+        marker = "absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-ok"
+        script = self._script()
+        detail = self.client.get(reverse("cpanel:script_detail", args=[script.pk])).content.decode()
+        form = self.client.get(self._url(script)).content.decode()
+        self.assertGreater(detail.count(marker), 0)
+        self.assertEqual(form.count(marker), detail.count(marker))
+
     def test_get_without_a_schema_goes_back_to_the_script(self):
         script = self._script(schema=None)
         resp = self.client.get(self._url(script))

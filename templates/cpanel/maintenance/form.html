@@ -1,18 +1,18 @@
 {% extends "cpanel/layout.html" %}
 
-{% block title %}{% if window.pk %}{{ window.name }}{% else %}New maintenance window{% endif %} - {{ instance_name }}{% endblock %}
+{% block title %}{% if not is_new %}{{ window.name }}{% else %}New maintenance window{% endif %} - {{ instance_name }}{% endblock %}
 
 {% block breadcrumbs %}
 {% if workspace %}<a href="{% url 'cpanel:workspace_list' %}">Workspaces</a>
 <span>{{ workspace.name }}</span>{% else %}<a href="{% url 'cpanel:settings' %}#schedules">Settings</a>{% endif %}
 <a href="{{ list_url }}">Maintenance</a>
-<span>{% if window.pk %}Edit{% else %}New{% endif %}</span>
+<span>{% if not is_new %}Edit{% else %}New{% endif %}</span>
 {% endblock %}
-{% block heading %}{% if window.pk %}{{ window.name }}{% else %}New maintenance window{% endif %}{% endblock %}
+{% block heading %}{% if not is_new %}{{ window.name }}{% else %}New maintenance window{% endif %}{% endblock %}
 {% block subtitle %}{% if workspace %}Applies to the scripts in {{ workspace.name }}.{% else %}Global: applies to every workspace.{% endif %}{% endblock %}
 
 {% block page %}
-{% if window.pk %}
+{% if not is_new %}
 <div class="rounded-2xl border border-line bg-panel p-4 text-sm">
     <span class="text-muted">Next occurrence:</span>
     <span class="text-text">{% if next_display %}{{ next_display }}{% else %}none{% endif %}</span>{% if not window.enabled %} <span class="text-faint">(disabled, so it won't block anything)</span>{% endif %}

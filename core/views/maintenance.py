@@ -102,13 +102,17 @@ def maintenance_edit_view(request: HttpRequest, pk=None, window_id=None) -> Http
             return redirect(_url("list", workspace))
     else:
         form = MaintenanceWindowForm(instance=window)
+    # The id is a UUID with a default, so an unsaved window already has a pk:
+    # "new" is decided by the URL, not by window.pk.
+    is_new = window_id is None
     return render(request, "cpanel/maintenance/form.html", {
         "workspace": workspace,
         "form": form,
         "window": window,
-        "next_display": _next_display(window) if window.pk else None,
+        "is_new": is_new,
+        "next_display": None if is_new else _next_display(window),
         "list_url": _url("list", workspace),
-        "delete_url": _url("delete", workspace, window_id=window.pk) if window.pk else None,
+        "delete_url": None if is_new else _url("delete", workspace, window_id=window.pk),
     })
 
 

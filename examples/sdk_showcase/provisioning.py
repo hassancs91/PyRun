@@ -431,6 +431,10 @@ def queue_demo_run(triggered_by=None, inputs=None):
     if not script.can_run:
         return None, "The demo script is disabled or archived."
     run = ScriptAPI(OWNER).queue_run(SCRIPT_KEY, triggered_by=triggered_by, inputs=inputs)
+    # A maintenance window that blocks manual runs hands the run back already
+    # cancelled: say so instead of "queued".
+    if run.cancel_reason == "maintenance":
+        return None, "Not started: a maintenance window blocks manual runs right now."
     return run, None
 
 

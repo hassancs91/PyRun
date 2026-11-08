@@ -65,8 +65,8 @@
 
         {# Runs #}
         <a href="{% url 'cpanel:run_list' %}"
-           class="relative flex items-center gap-3 px-3 py-1.5 rounded-md text-sm transition-colors {% if 'run' in request.resolver_match.url_name %}font-medium text-ok bg-ok/10{% else %}text-muted hover:text-text hover:bg-panel-hi{% endif %}">
-            {% if 'run' in request.resolver_match.url_name %}<span class="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-ok"></span>{% endif %}
+           class="relative flex items-center gap-3 px-3 py-1.5 rounded-md text-sm transition-colors {% if request.resolver_match.url_name|slice:":4" == 'run_' %}font-medium text-ok bg-ok/10{% else %}text-muted hover:text-text hover:bg-panel-hi{% endif %}">
+            {% if request.resolver_match.url_name|slice:":4" == 'run_' %}<span class="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-ok"></span>{% endif %}
             {% icon "circle-play" %}
             <span>Runs</span>
         </a>

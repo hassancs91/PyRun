@@ -549,6 +549,21 @@ class ConsoleTests(_Fixture, TestCase):
         edit = self.client.get(reverse("cpanel:maintenance_edit", args=[w.pk]))
         self.assertContains(edit, "Next occurrence:")
         self.assertContains(edit, w.format_local(start))
+        self.assertContains(edit, "Delete window")
+
+    def test_new_window_page_is_a_create_page(self):
+        # Found in the 2.5 test pass: the UUID pk default made the unsaved
+        # window look saved (blank title, "Edit", a Delete card to a 404).
+        self.client.force_login(self.admin)
+        for url in (
+            reverse("cpanel:maintenance_create"),
+            reverse("cpanel:workspace_maintenance_create", args=[self.team.pk]),
+        ):
+            page = self.client.get(url)
+            self.assertContains(page, "<title>New maintenance window - ", html=False)
+            self.assertNotContains(page, "Next occurrence:")
+            self.assertNotContains(page, "Delete window")
+            self.assertNotContains(page, "/delete/")
 
     def test_one_off_times_are_read_in_the_chosen_time_zone(self):
         self.client.force_login(self.admin)
