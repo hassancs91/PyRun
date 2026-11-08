@@ -265,6 +265,7 @@ class BackupService:
             "retention_count": settings_obj.retention_count,
             "auto_cleanup_enabled": settings_obj.auto_cleanup_enabled,
             "schedules_paused": settings_obj.schedules_paused,
+            "api_writes_enabled": settings_obj.api_writes_enabled,
         }
 
     @classmethod
@@ -1424,6 +1425,8 @@ class BackupService:
         settings_obj.retention_count = data.get("retention_count", 0)
         settings_obj.auto_cleanup_enabled = data.get("auto_cleanup_enabled", False)
         settings_obj.schedules_paused = data.get("schedules_paused", False)
+        # Only a literal true turns writes on; an older backup leaves them off.
+        settings_obj.api_writes_enabled = data.get("api_writes_enabled") is True
         settings_obj.save()
 
     @classmethod

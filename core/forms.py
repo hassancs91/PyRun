@@ -2271,6 +2271,18 @@ class DataStoreEntryForm(forms.Form):
 # =============================================================================
 
 
+class PermissionCheckboxes(forms.CheckboxSelectMultiple):
+    """Permission checkboxes; the values in ``disabled_values`` can't be ticked."""
+
+    disabled_values = frozenset()
+
+    def create_option(self, name, value, *args, **kwargs):
+        option = super().create_option(name, value, *args, **kwargs)
+        if value in self.disabled_values:
+            option["attrs"]["disabled"] = True
+        return option
+
+
 class APITokenForm(forms.ModelForm):
     """Form for creating API tokens (datastore, all-datastores, or plugin scope)."""
 
@@ -2283,7 +2295,7 @@ class APITokenForm(forms.ModelForm):
         widget=forms.Select(attrs={"class": INPUT_CLASS}),
     )
     permissions = forms.MultipleChoiceField(
-        choices=APIToken.API_PERMISSIONS, required=False, widget=forms.CheckboxSelectMultiple,
+        choices=APIToken.API_PERMISSIONS, required=False, widget=PermissionCheckboxes,
     )
     kind = forms.ChoiceField(choices=APIToken.Kind.choices, required=False,
                              widget=forms.Select(attrs={"class": INPUT_CLASS}))
@@ -2356,6 +2368,16 @@ class APITokenForm(forms.ModelForm):
         self.fields["plugin_slug"].choices = [("", "Select a plugin…")] + [
             (p.slug, f"{p.name} ({p.slug})") for p in sorted(all_plugins(), key=lambda p: p.slug)
         ]
+        # Plan D8: write permissions show, disabled with the reason, while API
+        # writes are off; the model refuses them too (a crafted POST).
+        from core.api.registry import registry, writes_enabled
+
+        self.fields["permissions"].choices = APIToken.API_PERMISSIONS
+        write_perms = {p for p, _ in APIToken.API_PERMISSIONS} & registry.write_permissions()
+        self.writes_off_reason = ""
+        if write_perms and not writes_enabled():
+            self.fields["permissions"].widget.disabled_values = frozenset(write_perms)
+            self.writes_off_reason = APIToken.WRITES_OFF_GRANT
 
     def clean(self):
         cleaned = super().clean()

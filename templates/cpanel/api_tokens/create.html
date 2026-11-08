@@ -48,8 +48,9 @@
             <div>
                 <label class="block text-[13px] font-medium text-text mb-1.5">Permissions</label>
                 {% for checkbox in form.permissions %}
-                <label class="flex items-center gap-2 text-sm text-text">{{ checkbox.tag }}<span>{{ checkbox.choice_label }}</span></label>
+                <label class="flex items-center gap-2 text-sm {% if checkbox.data.attrs.disabled %}text-faint{% else %}text-text{% endif %}">{{ checkbox.tag }}<span>{{ checkbox.choice_label }}{% if checkbox.data.attrs.disabled %} (writes are off){% endif %}</span></label>
                 {% endfor %}
+                {% if form.writes_off_reason %}<p class="mt-1.5 text-xs text-faint">{{ form.writes_off_reason }}</p>{% endif %}
                 {% include "cpanel/_field_errors.html" with field=form.permissions %}
             </div>
             <div>

@@ -48,7 +48,7 @@ class MCPTests(TestCase):
         @endpoint(
             "fixture.write",
             title="Write",
-            permission="brain:write",
+            permission="fixture:write",
             access="write",
             input={"type": "object"},
         )

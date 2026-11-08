@@ -24,7 +24,8 @@ notes. Disabling, expiring or revoking a token takes effect on subsequent checks
 
 ## REST
 
-Read-only endpoints accept GET query parameters or POST JSON. Writes require POST.
+Read endpoints accept GET query parameters or POST JSON. Run and write endpoints
+require POST (see [Endpoint classes](#endpoint-classes-and-api-writes)).
 Do not combine a JSON body with query parameters. Use HTTPS outside local testing.
 
 ```sh
@@ -47,6 +48,34 @@ field. Keep `X-Request-ID` for debugging; never include tokens in bug reports.
 | `/api/v1/_health` | Authenticated API status |
 | `/api/v1/_catalog` | Only endpoints permitted for this token, including schemas |
 | `/api/v1/_openapi.json` | Generated OpenAPI document, directly without the REST envelope |
+
+## Endpoint classes and API writes
+
+Each endpoint has an `access` class, shown in `_catalog`:
+
+| Class | Meaning | Available |
+|---|---|---|
+| `read` | Changes nothing | With its permission |
+| `run` | Acts without changing stored data, for example `brain.propose-feed` (a proposal waits for human approval) | With its permission |
+| `write` | Changes stored data | With its permission, and only while API writes are on |
+
+**API writes** is an instance setting, off by default. A superuser turns it on in
+**Settings → API & MCP**. **Connect** shows the current mode. While it is off:
+
+- write endpoints are left out of `_catalog`, `_openapi.json`, MCP `tools/list` and
+  Py AI's tools;
+- calling one returns 403 `writes_disabled` over REST, and a `tools/call` result
+  with `isError: true` and the same code over MCP;
+- write permissions can't be added to a token: the token form shows them disabled
+  with the reason.
+
+Turned on, a write permission can be granted per token, and only tokens that hold
+it can call the matching write endpoints. A token that got a write permission while
+writes were on keeps it after they are turned off, but its write calls are refused
+until they are on again. A token without the permission gets 403 `forbidden`
+either way. MCP marks `run` and `write` tools with `readOnlyHint: false`. Settings
+lists the write endpoints this instance has. There are none yet; data writes come
+with the datastore, table and vector endpoints.
 
 ## Brain operations
 

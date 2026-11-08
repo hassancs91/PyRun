@@ -136,6 +136,22 @@ begins tracking at the current release; earlier history is in the git log.
   checked too. A bad value (an invalid time or day, a repeat, a list the mode
   doesn't use, an unknown mode) raises `ValueError` naming it, and nothing is
   saved. Guide: "Scheduling from a plugin" in `docs/scheduling.md`.
+- **API writes switch.** Every Unified API / MCP endpoint is now one of three
+  classes: `read`, `run` (acts without changing stored data, always available
+  with its permission) or `write` (changes stored data). A new superuser
+  setting, **Allow API writes** in **Settings → API & MCP** (the API tab is
+  renamed), is off by default. While it is off, write endpoints are left out of
+  `_catalog`, `_openapi.json`, MCP `tools/list` and Py AI, a call to one gets
+  403 `writes_disabled`, and the token form shows write permissions disabled
+  with the reason. Turned on, write permissions can be granted per token. A
+  token that already holds one keeps it, but its write calls are refused while
+  the switch is off. **Connect** shows the current mode. No write endpoint
+  ships yet; data writes arrive with the datastore, table and vector
+  endpoints. `brain.propose-feed` is a `run` endpoint (a proposal waits for
+  approval), so it works whatever the switch says, and the catalog now lists
+  its `access` as `run` instead of `write`. Backups include the switch; an
+  older backup leaves it off. Guide: "Endpoint classes and API writes" in
+  `docs/api.md`.
 
 ## [2.0.0] — October 23, 2026
 

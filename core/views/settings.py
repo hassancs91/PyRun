@@ -48,6 +48,7 @@ def render_settings(request: HttpRequest, tab: str = "", **bound) -> HttpRespons
     typed values stay. The page then renders at the POST URL, like any refused
     Django form.
     """
+    from core.api.registry import registry
     from core.services.backup_schedule_service import BackupScheduleService
 
     settings = GlobalSettings.get_settings()
@@ -73,6 +74,7 @@ def render_settings(request: HttpRequest, tab: str = "", **bound) -> HttpRespons
             "backup_schedule_status": BackupScheduleService.get_schedule_status(),
             "nproc_not_enforced": _scripts_run_as_root(),
             "effective_retry": _effective_retry(settings),
+            "api_write_endpoints": registry.writes(),
         }
     )
     return render(request, "cpanel/settings.html", context)
@@ -321,6 +323,20 @@ def execution_isolation_settings_view(request: HttpRequest) -> HttpResponse:
         return render_settings(request, "isolation", isolation_form=form)
 
     return settings_tab("isolation")
+
+
+@login_required
+@superuser_required
+@require_POST
+def api_writes_settings_view(request: HttpRequest) -> HttpResponse:
+    """Turn API writes (write-class registry endpoints, plan D8) on or off."""
+    enabled = request.POST.get("enabled") == "on"
+    settings = GlobalSettings.get_settings()
+    settings.api_writes_enabled = enabled
+    settings.save(update_fields=["api_writes_enabled", "updated_at"])
+    logger.warning("api.writes %s by user=%s", "enabled" if enabled else "disabled", request.user.pk)
+    messages.success(request, "API writes turned on." if enabled else "API writes turned off.")
+    return settings_tab("api")
 
 
 @login_required

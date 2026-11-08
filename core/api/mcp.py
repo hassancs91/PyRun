@@ -134,7 +134,9 @@ def _result(method, params, ctx, version):
             params.get("arguments", {}), dict
         ):
             raise ProtocolError(-32602, "Expected a tool name and object arguments.")
-        spec = next((e for e in registry.visible(ctx) if e.mcp_name == params["name"]), None)
+        # Resolve against every permitted tool, so a write the token holds while
+        # writes are off answers writes_disabled instead of "unknown tool".
+        spec = next((e for e in registry.permitted(ctx) if e.mcp_name == params["name"]), None)
         if spec is None:
             raise ProtocolError(-32602, "Unknown tool.")
         try:

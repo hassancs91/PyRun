@@ -44,6 +44,13 @@ class GlobalSettings(models.Model):
         help_text="Allow expiring, read-only MCP credentials in connector URLs.",
     )
 
+    # Plan D8: write-class API endpoints (data writes over REST/MCP) are
+    # hidden and refused while this is off; run endpoints don't depend on it.
+    api_writes_enabled = models.BooleanField(
+        default=False,
+        help_text="Allow API and MCP tokens to call write endpoints and be granted write permissions.",
+    )
+
     # Email notification settings
     email_backend = models.CharField(
         max_length=20,

@@ -18,7 +18,7 @@
         <button type="button" onclick="showTab('isolation')" id="tab-isolation" class="tab-btn px-4 py-2 text-sm font-medium rounded-lg text-muted hover:text-text hover:bg-panel-hi/50 transition-colors">Isolation</button>
         <button type="button" onclick="showTab('system')" id="tab-system" class="tab-btn px-4 py-2 text-sm font-medium rounded-lg text-muted hover:text-text hover:bg-panel-hi/50 transition-colors">System</button>
         <button type="button" onclick="showTab('backup')" id="tab-backup" class="tab-btn px-4 py-2 text-sm font-medium rounded-lg text-muted hover:text-text hover:bg-panel-hi/50 transition-colors">Backup</button>
-        <button type="button" onclick="showTab('api')" id="tab-api" class="tab-btn px-4 py-2 text-sm font-medium rounded-lg text-muted hover:text-text hover:bg-panel-hi/50 transition-colors">API</button>
+        <button type="button" onclick="showTab('api')" id="tab-api" class="tab-btn px-4 py-2 text-sm font-medium rounded-lg text-muted hover:text-text hover:bg-panel-hi/50 transition-colors">API &amp; MCP</button>
     </div>
 </div>
 
@@ -796,6 +796,23 @@
                 <p><span class="text-info">POST</span> /mcp</p>
             </div>
         </div>
+
+        {# API writes switch (plan D8) #}
+        <form method="post" action="{% url 'cpanel:api_writes_settings' %}" id="api-writes" class="lg:col-span-7 bg-panel border border-line rounded-2xl p-6">
+            {% csrf_token %}
+            <div class="flex items-center justify-between gap-3 mb-1">
+                <h3 class="text-base font-semibold text-text">API writes</h3>
+                {% if settings.api_writes_enabled %}<span class="px-2 py-0.5 bg-warn/10 text-warn rounded-md text-xs">On</span>{% else %}<span class="px-2 py-0.5 bg-panel-hi text-muted rounded-md text-xs">Off</span>{% endif %}
+            </div>
+            <p class="text-sm text-muted mb-3">Lets Unified API and MCP tokens change stored data. Off by default. While off, endpoints that write data are hidden from the catalog, OpenAPI, MCP tool lists and Py AI, calls to them fail with <code>writes_disabled</code>, and write permissions can't be added to tokens. When on, only tokens you grant a write permission can write.</p>
+            <p class="text-sm text-muted mb-3">Reads, and actions that don't change stored data, such as a Brain proposal (it waits for your approval), work the same either way. A token that already holds a write permission keeps it, but its write calls are refused while this is off.</p>
+            <p class="text-sm text-muted mb-4">Write endpoints on this instance:
+                {% for endpoint in api_write_endpoints %}<code class="text-xs">{{ endpoint.slug }}</code>{% if not forloop.last %}, {% endif %}{% empty %}none yet.{% endfor %}</p>
+            <label class="flex items-center gap-2 text-sm text-text"><input type="checkbox" name="enabled" class="w-4 h-4 rounded text-ok bg-ink border-line focus:ring-ok/40 focus:ring-2" {% if settings.api_writes_enabled %}checked{% endif %}>Allow API writes on this instance</label>
+            <div class="flex justify-end mt-5 pt-4 border-t border-line-soft">
+                <button type="submit" class="text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">Save</button>
+            </div>
+        </form>
     </div>
 </div>
 {# Restore Preview Modal #}

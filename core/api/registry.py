@@ -16,6 +16,24 @@ from .schema import check_schema, validate
 logger = logging.getLogger(__name__)
 SLUG = re.compile(r"^[a-z][a-z0-9_-]*\.[a-z][a-z0-9_-]*$")
 
+# Endpoint classes (plan D8). ``read`` changes nothing; ``run`` acts without
+# changing stored data (brain.propose-feed: a proposal waits for human
+# approval) and is always available with its permission; ``write`` changes
+# stored data and is available only while the superuser setting
+# ``GlobalSettings.api_writes_enabled`` is on.
+ACCESS_CLASSES = ("read", "run", "write")
+WRITES_DISABLED = (
+    "API writes are turned off on this instance. A superuser can turn them on "
+    "in Settings → API & MCP."
+)
+
+
+def writes_enabled():
+    """Whether write endpoints are on (one settings read, done only when needed)."""
+    from core.models import GlobalSettings
+
+    return bool(GlobalSettings.get_settings().api_writes_enabled)
+
 
 @dataclass(frozen=True)
 class Endpoint:
@@ -51,8 +69,18 @@ class Registry:
     def register(self, spec):
         if not SLUG.fullmatch(spec.slug) or len(spec.slug) > 64:
             raise ValueError("Endpoint slug must be a namespace.name of at most 64 characters")
-        if spec.access not in {"read", "write"} or not spec.permission:
-            raise ValueError("Endpoint access and permission are required")
+        if spec.access not in ACCESS_CLASSES or not spec.permission:
+            raise ValueError("Endpoint access (read, run or write) and permission are required")
+        # A write permission unlocks writes and nothing else, so refusing it
+        # while writes are off never takes a read or run endpoint away.
+        writes = {e.permission for e in self._endpoints.values() if e.access == "write"}
+        others = {e.permission for e in self._endpoints.values() if e.access != "write"}
+        if spec.access == "write" and (
+            not spec.permission.endswith(":write") or spec.permission in others
+        ):
+            raise ValueError("A write endpoint needs its own <namespace>:write permission")
+        if spec.access != "write" and spec.permission in writes:
+            raise ValueError("A write permission can only guard write endpoints")
         if len(spec.rate) != 2 or any(type(v) is not int or v <= 0 for v in spec.rate):
             raise ValueError("Endpoint rate must be (positive calls, positive seconds)")
         check_schema(spec.input)
@@ -65,12 +93,30 @@ class Registry:
     def get(self, slug):
         return self._endpoints.get(slug)
 
-    def visible(self, ctx):
+    def permitted(self, ctx):
+        """Endpoints this caller holds the permission for, writes included."""
         return [
             e
             for e in sorted(self._endpoints.values(), key=lambda e: e.slug)
             if e.permission in ctx.permissions
         ]
+
+    def visible(self, ctx):
+        """What a caller may list: its permitted endpoints, minus writes while off."""
+        permitted = self.permitted(ctx)
+        if any(e.access == "write" for e in permitted) and not writes_enabled():
+            return [e for e in permitted if e.access != "write"]
+        return permitted
+
+    def write_permissions(self):
+        """Permissions that guard write endpoints (not grantable while writes are off)."""
+        return frozenset(e.permission for e in self._endpoints.values() if e.access == "write")
+
+    def writes(self):
+        """The registered write endpoints, by slug."""
+        return sorted(
+            (e for e in self._endpoints.values() if e.access == "write"), key=lambda e: e.slug
+        )
 
     def call(self, slug, ctx, params):
         started, ok = time.monotonic(), False
@@ -81,6 +127,8 @@ class Registry:
                 raise ApiError("not_found", "Unknown endpoint.", status=404)
             if ctx.workspace is None or spec.permission not in ctx.permissions:
                 raise ApiError("forbidden", "Permission denied.", status=403)
+            if spec.access == "write" and not writes_enabled():
+                raise ApiError("writes_disabled", WRITES_DISABLED, status=403)
             if ctx.transport in {"rest", "mcp"}:
                 key = f"api_call_{ctx.principal}_{ctx.principal_id}_{slug}"
                 if rate_limit_exceeded(key, *spec.rate):

@@ -94,9 +94,11 @@ get_raw = register_read(
 )
 
 
+# A proposal waits for a human to approve it, so it is a "run" (always available
+# with brain:write and a proposing grant), not a write behind the writes toggle.
 @endpoint("brain.propose-feed", title="Propose brain memory",
           description="Capture a source for extraction and human approval. Does not change notes.",
-          input=brain_input(INTAKE_PROPERTIES), access="write", permission="brain:write", rate=(20, 60))
+          input=brain_input(INTAKE_PROPERTIES), access="run", permission="brain:write", rate=(20, 60))
 def propose_feed(ctx, params):
     return propose(ctx, params)
 

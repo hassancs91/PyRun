@@ -55,6 +55,18 @@
                 {% for endpoint in endpoints %}<div class="text-sm"><code class="break-all">{{ endpoint.slug }}</code><p class="text-muted">{{ endpoint.description }}</p></div>{% empty %}<p class="text-sm text-muted">No endpoints available for this token.</p>{% endfor %}
             {% endif %}
         </div>
+        <div id="api-writes-mode" class="rounded-2xl border border-line bg-panel p-6 space-y-3">
+            <div class="flex items-center justify-between gap-3">
+                <h2 class="font-semibold">API writes</h2>
+                {% if writes_enabled %}<span class="px-2 py-0.5 bg-warn/10 text-warn rounded-md text-xs">On</span>{% else %}<span class="px-2 py-0.5 bg-panel-hi text-muted rounded-md text-xs">Off</span>{% endif %}
+            </div>
+            {% if writes_enabled %}
+            <p class="text-sm text-muted">Writes are on: tokens granted a write permission can change stored data over REST and MCP.</p>
+            {% else %}
+            <p class="text-sm text-muted">Writes are off: this instance is read and run only. Write endpoints are hidden from the catalog and MCP tool lists, calls to them return <code>writes_disabled</code>, and write permissions can't be granted.</p>
+            {% endif %}
+            {% if user.is_superuser %}<a href="{% url 'cpanel:settings' %}#api" class="text-sm text-ok">Change in Settings → API &amp; MCP</a>{% else %}<p class="text-sm text-muted">A superuser can change this in Settings → API &amp; MCP.</p>{% endif %}
+        </div>
         <div class="rounded-2xl border border-line bg-panel p-6 space-y-3">
             <h2 class="font-semibold">Call capacity</h2>
             <p class="text-sm text-muted">Each MCP call uses a web worker thread, with a {{ budget }} second budget. The configured Gunicorn pool has {{ parallel_calls }} slots shared with console and API requests. Actual capacity depends on how this instance is launched. Budget checks are cooperative; slow tools must pass the remaining time to their backend.</p>

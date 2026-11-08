@@ -38,6 +38,12 @@ class APIToken(models.Model):
 
     API_PERMISSIONS = (("brain:read", "Read brains"), ("brain:write", "Propose brain updates"))
     TIERS = (("public", "Public"), ("agents-only", "Agents only"), ("private", "Private"))
+    # Which permissions are write permissions comes from the registry: those
+    # guarding write-class endpoints (core.api.registry.write_permissions).
+    WRITES_OFF_GRANT = (
+        "API writes are turned off, so write permissions can't be granted. "
+        "A superuser can turn them on in Settings → API & MCP."
+    )
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
@@ -228,6 +234,27 @@ class APIToken(models.Model):
                 raise ValidationError({"permissions": "URL tokens allow read permissions only."})
         if self.brain_id and self.workspace_id != self.brain.workspace_id:
             raise ValidationError({"brain": "Unknown brain."})
+        self._refuse_write_grants()
+
+    def _refuse_write_grants(self):
+        """Plan D8: no write permission is granted while API writes are off.
+
+        Only a NEW grant is refused: a token that already holds one (granted
+        while writes were on) keeps it, and saves such as deactivating it still
+        work. Its write calls are refused at call time instead.
+        """
+        from core.api.registry import registry, writes_enabled
+
+        wanted = set(self.permissions) & registry.write_permissions()
+        if not wanted or writes_enabled():
+            return
+        if not self._state.adding:
+            stored = (
+                APIToken.objects.filter(pk=self.pk).values_list("permissions", flat=True).first()
+            )
+            wanted -= set(stored or [])
+        if wanted:
+            raise ValidationError({"permissions": self.WRITES_OFF_GRANT})
 
     @staticmethod
     def digest(raw):

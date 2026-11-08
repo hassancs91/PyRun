@@ -27,13 +27,15 @@ def connect_view(request):
             raise Http404("Unknown token.") from exc
         selected = get_object_or_404(tokens, pk=token_id)
         endpoints = registry.visible(token_context(selected))
+    global_settings = GlobalSettings.get_settings()
     return render(
         request,
         "cpanel/connect.html",
         {
             "mcp_url": request.build_absolute_uri("/mcp"),
             "api_url": request.build_absolute_uri("/api/v1"),
-            "url_tokens_enabled": GlobalSettings.get_settings().mcp_url_tokens_enabled,
+            "url_tokens_enabled": global_settings.mcp_url_tokens_enabled,
+            "writes_enabled": global_settings.api_writes_enabled,
             "parallel_calls": settings.MCP_PARALLEL_CALLS,
             "budget": settings.MCP_CALL_BUDGET_SECONDS,
             "tokens": tokens,
