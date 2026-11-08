@@ -8,7 +8,7 @@
 <span>Run</span>
 {% endblock %}
 {% block heading %}Run {{ script.name }}{% endblock %}
-{% block subtitle %}Fill in this script's inputs. Each text, number and yes/no value reaches the script as an <span class="font-mono">INPUT_&lt;NAME&gt;</span> environment variable.{% endblock %}
+{% block subtitle %}Fill in this script's inputs. Each text, number and yes/no value reaches the script as an <span class="font-mono">INPUT_&lt;NAME&gt;</span> environment variable, and the script reads all of them with <span class="font-mono">pyrunner_run.inputs()</span>.{% endblock %}
 
 {% block page %}
 <form method="post" action="{% url 'cpanel:script_run' pk=script.pk %}" class="max-w-2xl">

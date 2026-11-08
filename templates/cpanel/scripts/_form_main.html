@@ -51,7 +51,7 @@
     {# Declared inputs: the field builder writes the JSON Schema into the textarea, which is what gets saved #}
     <div id="editor-panel-inputs" role="tabpanel" aria-labelledby="editor-tab-inputs" class="pt-4 space-y-4" data-inputs-editor {% if not inputs_first %}hidden{% endif %}>
         <div class="flex flex-wrap items-start justify-between gap-3">
-            <p class="text-xs text-faint max-w-xl">What this script takes. <span class="text-muted">Run now</span> asks for these, and the values are checked before a run is created. Each text, number and yes/no value reaches the script as <span class="font-mono text-muted">INPUT_&lt;NAME&gt;</span>; JSON values are kept on the run.</p>
+            <p class="text-xs text-faint max-w-xl">What this script takes. <span class="text-muted">Run now</span> asks for these, and the values are checked before a run is created. Each text, number and yes/no value reaches the script as <span class="font-mono text-muted">INPUT_&lt;NAME&gt;</span>; every value, JSON included, is in <span class="font-mono text-muted">pyrunner_run.inputs()</span>.</p>
             <div class="inline-flex rounded-lg border border-line p-0.5 flex-shrink-0" role="group" aria-label="Inputs editor mode">
                 <button type="button" data-inputs-mode="fields" aria-pressed="true" class="px-2.5 py-1 text-xs rounded-md transition-colors aria-pressed:bg-panel-hi aria-pressed:text-text text-muted hover:text-text">Fields</button>
                 <button type="button" data-inputs-mode="raw" aria-pressed="false" class="px-2.5 py-1 text-xs rounded-md transition-colors aria-pressed:bg-panel-hi aria-pressed:text-text text-muted hover:text-text">Raw JSON</button>

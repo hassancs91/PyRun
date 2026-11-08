@@ -67,6 +67,18 @@
                     {% endif %}
                 </table>
 
+                {% if result_excerpt %}
+                {# Result the script set with pyrunner_run.set_result() (secrets masked, excerpt) #}
+                <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 20px;">
+                    <tr>
+                        <td style="padding: 15px; background-color: rgba(88, 166, 255, 0.08); border: 1px solid rgba(88, 166, 255, 0.3); border-radius: 6px;">
+                            <p style="margin: 0 0 10px 0; color: #58a6ff; font-weight: 600; font-size: 14px;">Result:</p>
+                            <pre style="margin: 0; padding: 10px; background-color: #0d1117; border-radius: 4px; font-family: monospace; font-size: 12px; color: #e6edf3; white-space: pre-wrap; word-wrap: break-word; overflow-x: auto;">{{ result_excerpt }}</pre>
+                        </td>
+                    </tr>
+                </table>
+                {% endif %}
+
                 {% if error_excerpt %}
                 {# Error Excerpt #}
                 <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 20px;">

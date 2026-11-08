@@ -5,7 +5,8 @@
 
 {% block extra_head %}
 {% if run.status == 'pending' or run.status == 'running' %}
-<meta http-equiv="refresh" content="5">
+{# The script below polls the run's status; without JavaScript, reload the page instead. #}
+<noscript><meta http-equiv="refresh" content="5"></noscript>
 {% endif %}
 {% endblock %}
 
@@ -35,13 +36,27 @@
 {% block page %}
 {# Live banner #}
 {% if run.status == 'pending' or run.status == 'running' %}
-<div class="p-4 rounded-xl bg-warn/10 border border-warn/30 flex items-center justify-between gap-3">
-    <div class="flex items-center gap-3">
-        <svg class="w-5 h-5 text-warn animate-spin" fill="none" viewBox="0 0 24 24">
+<div id="run-live" data-status-url="{% url 'cpanel:run_status' pk=run.pk %}" data-status="{{ run.status }}"
+     class="p-4 rounded-xl bg-warn/10 border border-warn/30 flex items-center justify-between gap-3">
+    <div class="flex items-center gap-3 min-w-0 flex-1">
+        <svg class="w-5 h-5 text-warn animate-spin flex-shrink-0" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
         </svg>
-        <span class="text-sm text-warn font-medium">{% if run.status == 'pending' %}Queued and waiting for a worker…{% else %}Running… auto-refreshing every 5s{% endif %}</span>
+        <div class="min-w-0 flex-1">
+            <span class="text-sm text-warn font-medium">{% if run.status == 'pending' %}Queued and waiting for a worker…{% else %}Running…{% endif %}</span>
+            {# Live progress from pyrunner_run.progress(); kept current by the script below #}
+            <div id="run-progress" class="mt-2 max-w-xl" {% if not progress %}hidden{% endif %} aria-live="polite">
+                <div class="flex items-baseline justify-between gap-3 text-xs">
+                    <span id="run-progress-message" class="text-text truncate">{{ progress.message }}</span>
+                    <span id="run-progress-pct" class="font-mono tnum text-warn flex-shrink-0">{% if progress.pct is not None %}{{ progress.pct }}%{% endif %}</span>
+                </div>
+                <div id="run-progress-track" class="mt-1.5 h-1.5 rounded-full bg-warn/20 overflow-hidden" {% if progress.pct is None %}hidden{% endif %}
+                     role="progressbar" aria-label="Run progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{% firstof progress.pct 0 %}">
+                    <div id="run-progress-bar" class="h-full bg-warn rounded-full transition-all duration-500" style="width: {% firstof progress.pct 0 %}%"></div>
+                </div>
+            </div>
+        </div>
     </div>
     <div class="flex items-center gap-2">
         {% if run.status == 'running' and run.task_id %}
@@ -55,6 +70,26 @@
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
     {# Left: output #}
     <div class="lg:col-span-2 space-y-5">
+        {# Result the script set with pyrunner_run.set_result() (secrets masked when stored) #}
+        {% if result_text %}
+        <section class="rounded-2xl border border-info/30 bg-panel overflow-hidden" aria-labelledby="run-result-heading">
+            <div class="flex items-center justify-between px-4 h-11 border-b border-line-soft bg-info/10">
+                <span id="run-result-heading" class="text-[13px] font-medium flex items-center gap-2">
+                    <svg class="w-4 h-4 text-info" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/></svg>
+                    Result
+                </span>
+                <span class="flex items-center gap-3">
+                    <span class="eyebrow text-faint">{{ result_bytes|filesizeformat }}</span>
+                    <a href="{% url 'cpanel:run_result_download' pk=run.pk %}" class="text-xs text-info hover:underline">Download</a>
+                </span>
+            </div>
+            <div class="bg-ink max-h-[28rem] overflow-auto">
+                <pre class="text-text font-mono text-[13px] leading-relaxed whitespace-pre-wrap break-words p-4">{{ result_text }}</pre>
+            </div>
+            <p class="px-4 py-2 text-xs text-faint border-t border-line-soft">Set by the script with <span class="font-mono">pyrunner_run.set_result()</span>. Secret values are masked.</p>
+        </section>
+        {% endif %}
+
         {# stdout #}
         <section class="rounded-2xl border border-line bg-panel overflow-hidden">
             <div class="flex items-center justify-between px-4 h-11 border-b border-line-soft bg-panel-hi/40">
@@ -162,6 +197,12 @@
                     <dt class="text-muted">Triggered by</dt>
                     <dd class="text-text truncate">{% if run.triggered_by %}{{ run.triggered_by.email }}{% else %}<span class="text-faint">System</span>{% endif %}</dd>
                 </div>
+                {% if progress and run.is_finished %}
+                <div class="flex items-start justify-between gap-3">
+                    <dt class="text-muted flex-shrink-0">Last progress</dt>
+                    <dd class="text-text text-right min-w-0 break-words">{% if progress.pct is not None %}<span class="font-mono tnum">{{ progress.pct }}%</span>{% if progress.message %} · {% endif %}{% endif %}{{ progress.message }}</dd>
+                </div>
+                {% endif %}
                 {% if isolation_note %}
                 <div class="flex items-start justify-between gap-3">
                     <dt class="text-muted flex-shrink-0">Isolation</dt>
@@ -273,5 +314,48 @@ function stopRun(taskId) {
     })
     .catch(error => { alert('Error: ' + error.message); });
 }
+
+// While the run is live: poll its status, keep the progress line current, and
+// reload once the status changes (started, finished). If polling fails, fall
+// back to reloading the page, which is what this page did before.
+(function () {
+    const live = document.getElementById('run-live');
+    if (!live) return;
+    const url = live.dataset.statusUrl;
+    const shownStatus = live.dataset.status;
+    const box = document.getElementById('run-progress');
+    const message = document.getElementById('run-progress-message');
+    const pct = document.getElementById('run-progress-pct');
+    const track = document.getElementById('run-progress-track');
+    const bar = document.getElementById('run-progress-bar');
+
+    function render(progress) {
+        box.hidden = !progress;
+        if (!progress) return;
+        message.textContent = progress.message || '';
+        const hasPct = progress.pct !== null && progress.pct !== undefined;
+        pct.textContent = hasPct ? progress.pct + '%' : '';
+        track.hidden = !hasPct;
+        if (hasPct) {
+            bar.style.width = progress.pct + '%';
+            track.setAttribute('aria-valuenow', progress.pct);
+        }
+    }
+
+    function poll() {
+        fetch(url, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+            .then(response => {
+                if (!response.ok || response.redirected) throw new Error('status ' + response.status);
+                return response.json();
+            })
+            .then(data => {
+                if (data.status !== shownStatus) { window.location.reload(); return; }
+                render(data.progress);
+                setTimeout(poll, 2000);
+            })
+            .catch(() => { setTimeout(() => window.location.reload(), 5000); });
+    }
+    setTimeout(poll, 2000);
+})();
 </script>
 {% endblock %}

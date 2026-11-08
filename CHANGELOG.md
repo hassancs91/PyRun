@@ -21,6 +21,20 @@ begins tracking at the current release; earlier history is in the git log.
   turned on while a required input has no default, and a webhook call to such
   a script gets a 400 that names the inputs. Scripts without inputs work
   exactly as before.
+- **Run results and live progress.** The new `pyrunner_run` script helper
+  reads a run's inputs (all of them, JSON inputs included) and its id, and lets
+  the script report a structured result (`set_result({...})`, a JSON object up
+  to 256 KB) and its progress (`progress(40, "Fetching page 3")`). The run page
+  shows the result in a **Result** card with a download link, and the progress
+  bar updates while the run is live without reloading the page. The result is
+  also in the plugin SDK's `RunView` (with `inputs` and `progress`), in webhook
+  notification payloads (`result`, `result_too_large` over 16 KB) and as an
+  excerpt in email and chat notifications. Secret values are masked before the
+  result or progress message is stored. Every run now gets
+  `PYRUNNER_RUN_FILE` (a `run.json` with the run, script, trigger and inputs)
+  and `PYRUNNER_RUN_ID`, `PYRUNNER_SCRIPT_ID` and `PYRUNNER_SCRIPT_NAME`; the
+  three ids used to be set only when an AI provider was configured. Guide:
+  `docs/run-context.md`.
 
 ## [2.0.0] — October 23, 2026
 

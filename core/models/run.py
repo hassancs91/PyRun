@@ -122,6 +122,26 @@ class Run(models.Model):
         help_text="Inputs stamped at queue time (validated against the script's inputs_schema).",
     )
 
+    # What the script reported through pyrunner_run while it ran (2.5, T02).
+    # Both are written only by the internal loopback endpoints, only while the
+    # run is RUNNING, and with secret values already masked, so every reader
+    # (run page, RunView, notifications, backups) gets the masked copy.
+    # ``result``: the JSON object the script passed to set_result(), capped at
+    # core.services.run_reports.RESULT_MAX_BYTES. ``progress``: the latest
+    # {"pct", "message", "updated_at"}. NULL = the script never set one.
+    result = models.JSONField(
+        null=True,
+        blank=True,
+        default=None,
+        help_text="JSON object the script set with pyrunner_run.set_result() (secrets masked).",
+    )
+    progress = models.JSONField(
+        null=True,
+        blank=True,
+        default=None,
+        help_text="Latest pyrunner_run.progress() update: {pct, message, updated_at}.",
+    )
+
     # Who triggered the run
     triggered_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

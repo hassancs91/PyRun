@@ -199,11 +199,51 @@ def remove_script_workdir(script_id) -> bool:
     return True
 
 
+def run_file_payload(run) -> dict:
+    """What ``run.json`` holds for a run: the run, its script, trigger and inputs.
+
+    Ids use ``.hex``, the same form as ``PYRUNNER_RUN_ID``. ``inputs`` is every
+    stamped input (JSON ones too), ``{}`` when the script declares none.
+    """
+    return {
+        "run": {
+            "id": run.id.hex,
+            "created_at": run.created_at.isoformat() if run.created_at else None,
+            "started_at": run.started_at.isoformat() if run.started_at else None,
+        },
+        "script": {"id": run.script.id.hex, "name": run.script.name},
+        "trigger": {"type": str(run.trigger_type)},
+        "inputs": run.inputs or {},
+    }
+
+
+def _write_run_file(run, workdir: Path) -> str:
+    """Write the run's ``run.json`` into its working folder; return the path.
+
+    It sits next to the temp script file for the same reason: the sandbox
+    backend binds only the run's working folder, at the same path. The name is
+    unique per run because runs of one script share that folder. It holds raw
+    input values (the script needs them), so it is created private (0600) and
+    deleted when the run ends.
+    """
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        prefix=".pyrun-run-",
+        suffix=".json",
+        delete=False,
+        encoding="utf-8",
+        dir=str(workdir),
+    ) as fh:
+        json.dump(run_file_payload(run), fh, ensure_ascii=False)
+        return fh.name
+
+
 def _build_script_environment(
     webhook_data: dict | None = None,
     run: "Run | None" = None,
     secrets: "dict | None" = None,
     library_root: str | None = None,
+    run_file: str | None = None,
 ) -> dict:
     """
     Build the environment dict for script execution.
@@ -211,7 +251,9 @@ def _build_script_environment(
     Combines system environment with the run's declared inputs, secrets, webhook
     data, and DataStore access. Scalar inputs are added as INPUT_<NAME>.
     Precedence: system environment < inputs < secrets (a secret overrides a
-    same-named input or system variable).
+    same-named input or system variable). The run's own ids
+    (PYRUNNER_RUN_ID, PYRUNNER_SCRIPT_ID, PYRUNNER_SCRIPT_NAME) and
+    PYRUNNER_RUN_FILE are set after the secrets, so nothing can override them.
     Webhook data is added with WEBHOOK_ prefix.
 
     Args:
@@ -226,6 +268,8 @@ def _build_script_environment(
             can never shadow ``pyrunner_db``/``pyrunner_ai`` (the reserved-key ban
             on library keys is the second fence). None => no libraries, and
             PYTHONPATH is byte-for-byte what it was before this feature.
+        run_file: Optional path of the run's ``run.json`` (``_write_run_file``),
+            exported as PYRUNNER_RUN_FILE for ``pyrunner_run``.
 
     Returns:
         Environment dict to pass to subprocess
@@ -281,13 +325,17 @@ def _build_script_environment(
             env.pop(key, None)
         env.update(claude_env)
 
-        # Attribution so pyrunner_ai can record usage against this run/script.
-        # Use .hex to match Django's UUID storage on SQLite (no dashes).
-        if run is not None:
-            env["PYRUNNER_RUN_ID"] = run.id.hex
-            if run.script_id:
-                env["PYRUNNER_SCRIPT_ID"] = run.script.id.hex
-                env["PYRUNNER_SCRIPT_NAME"] = run.script.name
+    # The run's own identity, for every run (before 2.5 only when an AI
+    # provider was configured). pyrunner_ai attributes usage with it, plugins
+    # tie their progress to it. Use .hex to match Django's UUID storage on
+    # SQLite (no dashes). Set after the secrets so a secret can't spoof it.
+    if run is not None:
+        env["PYRUNNER_RUN_ID"] = run.id.hex
+        if run.script_id:
+            env["PYRUNNER_SCRIPT_ID"] = run.script.id.hex
+            env["PYRUNNER_SCRIPT_NAME"] = run.script.name
+    if run_file:
+        env["PYRUNNER_RUN_FILE"] = str(run_file)
 
     # DataStore + Claude-usage access for the script helpers.
     #
@@ -405,6 +453,31 @@ def mask_set_for_display(run) -> dict:
     resolved; callers then hide the data rather than show it unmasked.
     """
     return with_ai_credentials(resolve_secrets_for_run(run))
+
+
+def mask_run_inputs(run, mask_sets: dict | None = None):
+    """``run.inputs`` with secret values masked, for display; None when it has none.
+
+    Inputs are stored raw because the script needs the real values, so the run
+    page and the SDK's RunView mask them here. Raises SecretResolutionError when
+    a secret can't be resolved; callers then withhold the values. ``mask_sets``
+    caches each (workspace, script) set, or its failure, across one listing.
+    """
+    if not run.inputs:
+        return None
+    if mask_sets is None:
+        masks = mask_set_for_display(run)
+    else:
+        key = (run_workspace_id(run), run.script_id)
+        if key not in mask_sets:
+            try:
+                mask_sets[key] = mask_set_for_display(run)
+            except SecretResolutionError as e:
+                mask_sets[key] = e
+        masks = mask_sets[key]
+        if isinstance(masks, SecretResolutionError):
+            raise masks
+    return mask_secrets_in_value(run.inputs, masks)
 
 
 class ExecutorError(Exception):
@@ -816,6 +889,7 @@ def execute_run(run: Run, webhook_data: dict | None = None) -> None:
     run.refresh_from_db(fields=["status", "started_at"])
 
     script_file_path = None
+    run_file_path = None
     library_root = None
     backend = None
     handle = None
@@ -864,6 +938,16 @@ def execute_run(run: Run, webhook_data: dict | None = None) -> None:
             script_file.write(code)
             script_file_path = script_file.name
 
+        # Phase 2a: the run's run.json (PYRUNNER_RUN_FILE) for pyrunner_run.
+        try:
+            run_file_path = _write_run_file(run, workdir)
+        except OSError as e:
+            run.status = Run.Status.FAILED
+            run.exit_code = -1
+            run.stderr = f"Failed to write the run file: {e}"
+            logger.error("Run %s could not write its run file: %s", run.id, e)
+            return  # the finally block persists this FAILED state
+
         # Phase 2b: Materialize the libraries pinned on this run at queue time.
         # The staging dir lives UNDER the run's workdir, which the sandbox backend
         # already binds writable and whose PYTHONPATH entries it binds into the
@@ -910,7 +994,11 @@ def execute_run(run: Run, webhook_data: dict | None = None) -> None:
 
             # Build environment with secrets and webhook data injected
             script_env = _build_script_environment(
-                webhook_data, run=run, secrets=secrets, library_root=library_root
+                webhook_data,
+                run=run,
+                secrets=secrets,
+                library_root=library_root,
+                run_file=run_file_path,
             )
 
             # Also mask the injected AI credential in output, if any.
@@ -1053,12 +1141,14 @@ def execute_run(run: Run, webhook_data: dict | None = None) -> None:
             run.status = Run.Status.CANCELLED
         run.pid = None
 
-        # Cleanup temporary file
-        if script_file_path is not None:
+        # Cleanup temporary files (the script and its run.json)
+        for temp_path, what in ((script_file_path, "temp script file"), (run_file_path, "run file")):
+            if temp_path is None:
+                continue
             try:
-                os.unlink(script_file_path)
+                os.unlink(temp_path)
             except OSError as e:
-                logger.warning(f"Failed to delete temp script file: {e}")
+                logger.warning(f"Failed to delete {what}: {e}")
 
         # Cleanup the materialized library staging dir (same lifetime as the temp
         # script file). ignore_errors so a Windows lock on a just-imported .pyc

@@ -7,10 +7,11 @@ import uuid
 from django.shortcuts import render, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
-from django.db.models import Q
-from django.http import HttpRequest, HttpResponse
+from django.db.models import BooleanField, ExpressionWrapper, Q
+from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
 
 from core.models import Run, Script
+from core.services.run_reports import json_size, progress_for_display, result_text
 
 RUNS_PER_PAGE = 25
 SEARCH_MAX_LENGTH = 200
@@ -29,7 +30,9 @@ def run_list_view(request: HttpRequest) -> HttpResponse:
         .select_related("script", "triggered_by")
         # The list renders stderr (the inline error expander) but never stdout,
         # which is the far larger column. Deferring it keeps a page of runs small.
-        .defer("stdout")
+        # Same for the result (up to 256 KB): the list only marks that one exists.
+        .defer("stdout", "result", "progress")
+        .annotate(has_result=ExpressionWrapper(Q(result__isnull=False), output_field=BooleanField()))
         .order_by("-created_at")
     )
 
@@ -106,6 +109,7 @@ def run_detail_view(request: HttpRequest, pk) -> HttpResponse:
     )
 
     input_rows, inputs_hidden = run_input_rows(run)
+    has_result = run.result is not None
     return render(request, "cpanel/runs/detail.html", {
         "run": run,
         "isolation_note": isolation_note(run),
@@ -113,25 +117,55 @@ def run_detail_view(request: HttpRequest, pk) -> HttpResponse:
         "stderr_truncated": "[OUTPUT TRUNCATED" in (run.stderr or ""),
         "input_rows": input_rows,
         "inputs_hidden": inputs_hidden,
+        # Stored with secrets already masked (core.services.run_reports).
+        "result_text": result_text(run.result) if has_result else "",
+        "result_bytes": json_size(run.result) if has_result else 0,
+        "progress": progress_for_display(run.progress),
     })
+
+
+@login_required
+def run_status_view(request: HttpRequest, pk) -> JsonResponse:
+    """A run's status and progress, polled by its page while it is live."""
+    run = get_object_or_404(
+        Run.objects.only("id", "status", "progress"), pk=pk, workspace=request.workspace
+    )
+    return JsonResponse({
+        "status": run.status,
+        "is_finished": run.is_finished,
+        "progress": progress_for_display(run.progress),
+    })
+
+
+@login_required
+def run_result_download_view(request: HttpRequest, pk) -> HttpResponse:
+    """The run's result as a .json file (secrets already masked)."""
+    run = get_object_or_404(
+        Run.objects.only("id", "result"), pk=pk, workspace=request.workspace
+    )
+    if run.result is None:
+        raise Http404("This run has no result.")
+    response = HttpResponse(result_text(run.result), content_type="application/json; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="run-{run.pk}-result.json"'
+    return response
 
 
 def run_input_rows(run) -> tuple[list[dict], bool]:
     """The run's inputs for its Inputs card, secrets masked: (rows, hidden).
 
     Inputs are stored raw because the script needs the real values, so masking
-    happens here, with the same secret set execution uses. When a secret can't
-    be resolved the values can't be checked, so they are hidden, not shown.
-    Rows follow the script's declared order; anything else comes after, sorted
-    (PostgreSQL's jsonb doesn't keep key order).
+    happens here (``mask_run_inputs``), with the same secret set execution uses.
+    When a secret can't be resolved the values can't be checked, so they are
+    hidden, not shown. Rows follow the script's declared order; anything else
+    comes after, sorted (PostgreSQL's jsonb doesn't keep key order).
     """
     if not run.inputs:
         return [], False
-    from core.executor import mask_secrets_in_value, mask_set_for_display
+    from core.executor import mask_run_inputs
     from core.services.secret_backends import SecretResolutionError
 
     try:
-        masked = mask_secrets_in_value(run.inputs, mask_set_for_display(run))
+        masked = mask_run_inputs(run)
     except SecretResolutionError:
         return [], True
     declared = list((run.script.inputs_schema or {}).get("properties", {}))

@@ -300,9 +300,9 @@ nothing is cancellable.
 
 A **`RunView`** is an immutable, ORM-free snapshot — no live `Run` leaks past the
 SDK. Fields: `id, status, trigger_type, created_at, started_at, ended_at,
-duration, exit_code, pid, task_id, is_finished, is_running`. Its `.as_dict()`
-returns JSON-serializable values (datetimes → ISO 8601), so a status endpoint can
-return it directly:
+duration, exit_code, pid, task_id, is_finished, is_running, inputs, result,
+progress`. Its `.as_dict()` returns JSON-serializable values (datetimes → ISO
+8601), so a status endpoint can return it directly:
 
 ```python
 from django.http import JsonResponse
@@ -324,6 +324,16 @@ def backup_stop(request):
     stopped = ScriptAPI(OWNER).cancel_latest_run("backup")
     return JsonResponse({"stopped": stopped})
 ```
+
+`inputs`, `result` and `progress` (PyRun 2.5) are what the run started with and
+what its script reported with [`pyrunner_run`](run-context.md), all with secret
+values masked: `inputs` is the dict of the run's inputs (None when the script
+declares none, or when a secret can't be resolved, since the values can't be
+checked), `result` the dict the script passed to `pyrunner_run.set_result()`,
+and `progress` the latest `{"pct", "message", "updated_at"}` from
+`pyrunner_run.progress()`. Both are None until the script sets them. A worker
+script that calls `pyrunner_run.progress()` gets a progress bar on its run page
+for free; a plugin can show the same thing from `RunView.progress`.
 
 `worker_body.py` (the runtime script you provision) reads its credentials from the
 injected, masked env vars (clean names), opens datastores with the normal

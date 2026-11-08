@@ -18,6 +18,12 @@ from django.utils import timezone
 from core.netguard import is_safe_endpoint_url
 
 from .encryption_service import EncryptionService, EncryptionError
+from .run_reports import (
+    CHANNEL_RESULT_MAX_CHARS,
+    EMAIL_RESULT_MAX_CHARS,
+    notification_result,
+    result_excerpt,
+)
 
 if TYPE_CHECKING:
     from core.models import Run, GlobalSettings
@@ -187,6 +193,10 @@ class NotificationService:
             else:
                 lines.append(f"Duration: {int(secs // 60)}m {int(secs % 60)}s")
 
+        result = result_excerpt(run, CHANNEL_RESULT_MAX_CHARS)
+        if result:
+            lines.append(f"Result: {result}")
+
         if run.status in ("failed", "timeout") and run.stderr:
             excerpt = run.stderr.strip()[:300]
             lines.append(f"\n{excerpt}")
@@ -343,12 +353,19 @@ class NotificationService:
             "script": run.script,
             "status": run.status,
             "duration": duration_display,
+            "result_excerpt": result_excerpt(run, EMAIL_RESULT_MAX_CHARS, indent=2),
             "error_excerpt": run.stderr[:500] if run.stderr else None,
         }
 
     @classmethod
     def _build_webhook_payload(cls, run: "Run") -> dict:
-        """Build JSON payload for webhook notification."""
+        """Build JSON payload for webhook notification.
+
+        ``result`` is what the script set with ``pyrunner_run.set_result()``
+        (secrets masked), or None. A result over ``NOTIFY_RESULT_MAX_BYTES`` is
+        left out and ``result_too_large`` is True.
+        """
+        result, result_too_large = notification_result(run)
         return {
             "event_type": "run_completed",
             "script": {
@@ -366,6 +383,8 @@ class NotificationService:
                 "started_at": run.started_at.isoformat() if run.started_at else None,
                 "ended_at": run.ended_at.isoformat() if run.ended_at else None,
             },
+            "result": result,
+            "result_too_large": result_too_large,
             "error": run.stderr[:1000] if run.stderr and run.status in ["failed", "timeout"] else None,
         }
 

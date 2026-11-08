@@ -44,7 +44,12 @@ from core.views.scripts import (
     webhook_regenerate_view,
     scan_env_refs_view,
 )
-from core.views.runs import run_list_view, run_detail_view
+from core.views.runs import (
+    run_detail_view,
+    run_list_view,
+    run_result_download_view,
+    run_status_view,
+)
 from core.views.changelog import changelog_view
 from core.views.environments import (
     environment_list_view,
@@ -271,6 +276,8 @@ urlpatterns = [
     path("runs/", run_list_view, name="run_list"),
     path("runs/<uuid:pk>/", run_detail_view, name="run_detail"),
     path("runs/<uuid:pk>/rerun/", run_rerun_view, name="run_rerun"),
+    path("runs/<uuid:pk>/status/", run_status_view, name="run_status"),
+    path("runs/<uuid:pk>/result.json", run_result_download_view, name="run_result_download"),
 
     # Tasks
     path("tasks/", tasks_view, name="tasks"),

@@ -8,6 +8,11 @@ Run ID: {{ run.id }}
 Trigger: {{ run.trigger_type|title }}
 {% if run.exit_code is not None %}Exit Code: {{ run.exit_code }}{% endif %}
 
+{% if result_excerpt %}{% autoescape off %}
+Result:
+-------
+{{ result_excerpt }}
+{% endautoescape %}{% endif %}
 {% if error_excerpt %}
 Error Output:
 -------------

@@ -362,6 +362,13 @@ class RunView:
     core schema (the very coupling the "sdk-usage" doctor warn discourages).
     ``as_dict()`` returns only JSON-serializable values (datetimes → ISO 8601),
     so a plugin can hand it straight to ``JsonResponse``.
+
+    ``inputs``, ``result`` and ``progress`` (2.5) carry what the run started
+    with and what its script reported through ``pyrunner_run``, all with secret
+    values masked. ``inputs`` is None when the script declares none, and also
+    when a secret can't be resolved (the values can't be checked, so they are
+    withheld, as on the run page). ``result`` is the dict the script set;
+    ``progress`` is ``{"pct", "message", "updated_at"}``. Both None until set.
     """
 
     id: str
@@ -376,11 +383,18 @@ class RunView:
     task_id: str
     is_finished: bool
     is_running: bool
+    inputs: Optional[dict] = None
+    result: Optional[dict] = None
+    progress: Optional[dict] = None
 
     @classmethod
-    def _from_run(cls, run):
+    def _from_run(cls, run, masks=None):
         """Build a RunView from a Run instance (no module-top core import — the
-        instance carries its own ``Status`` choices, so we stay import-light)."""
+        instance carries its own ``Status`` choices, so we stay import-light).
+
+        ``masks`` is an optional dict shared across one listing, so runs of the
+        same script and workspace resolve their secret set once.
+        """
         return cls(
             id=str(run.id),
             status=str(run.status),
@@ -394,6 +408,9 @@ class RunView:
             task_id=run.task_id or "",
             is_finished=run.is_finished,
             is_running=run.status == run.Status.RUNNING,
+            inputs=_masked_run_inputs(run, masks if masks is not None else {}),
+            result=run.result,
+            progress=run.progress,
         )
 
     def as_dict(self) -> dict:
@@ -415,7 +432,25 @@ class RunView:
             "task_id": self.task_id,
             "is_finished": self.is_finished,
             "is_running": self.is_running,
+            "inputs": self.inputs,
+            "result": self.result,
+            "progress": self.progress,
         }
+
+
+def _masked_run_inputs(run, masks: dict):
+    """A run's inputs with secret values masked, or None (none, or can't check).
+
+    The same masking the run page's Inputs card applies; ``masks`` caches each
+    (workspace, script) secret set for the duration of one listing.
+    """
+    from core.executor import mask_run_inputs
+    from core.services.secret_backends import SecretResolutionError
+
+    try:
+        return mask_run_inputs(run, masks)
+    except SecretResolutionError:
+        return None
 
 
 # --------------------------------------------------------------------------- #
@@ -582,7 +617,8 @@ class ScriptAPI:
         ``limit`` caps the count (default 20); a non-positive limit yields []. The
         result is a list of plain RunViews — no ORM objects leak to the caller.
         """
-        return [RunView._from_run(r) for r in self._runs_qs(key)[: max(0, int(limit))]]
+        masks = {}
+        return [RunView._from_run(r, masks) for r in self._runs_qs(key)[: max(0, int(limit))]]
 
     def cancel_latest_run(self, key):
         """Cancel the latest pending/running run of the owned script ``key``.

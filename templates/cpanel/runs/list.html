@@ -75,6 +75,9 @@
                 <td data-label="Status" class="px-3 sm:px-6 py-3.5">
                     <div class="flex items-center gap-1.5">
                         {% include "cpanel/runs/_status_badge.html" %}
+                        {% if run.has_result %}
+                        <span class="text-[11px] font-medium px-1.5 py-0.5 rounded-md bg-info/10 text-info" title="The script set a result (pyrunner_run.set_result)">Result</span>
+                        {% endif %}
                         {% if run.stderr %}
                         <button type="button" data-error-toggle="run-err-{{ run.pk }}" aria-expanded="false"
                                 aria-controls="run-err-{{ run.pk }}" title="Show error output"

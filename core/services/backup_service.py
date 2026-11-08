@@ -135,6 +135,8 @@ class BackupService:
     # Next (1.14.0, bumped once for the whole 2.5 train): ``inputs_schema`` on
     # scripts and ``inputs`` on runs. Older backups omit both; restore leaves
     # them NULL (no declared inputs), which is how every pre-2.5 script runs.
+    # ``result`` and ``progress`` on runs (what pyrunner_run reported, stored
+    # masked); older backups omit them and restore leaves them NULL.
     BACKUP_VERSION = "1.13.0"
     MAX_BACKUP_SIZE_MB = 100
     # Default cap on a gzip backup's expanded size (F92, zip-bomb guard);
@@ -627,6 +629,9 @@ class BackupService:
                 # What the run started with (re-run reads it); raw, like the
                 # rest of a backup's run data.
                 "inputs": run.inputs,
+                # What the script reported (pyrunner_run); masked when stored.
+                "result": run.result,
+                "progress": run.progress,
                 "trigger_type": run.trigger_type,
                 "triggered_by_email": run.triggered_by.email if run.triggered_by else None,
                 "created_at": cls._serialize_datetime(run.created_at),
@@ -1878,6 +1883,8 @@ class BackupService:
                 code_snapshot=run_data.get("code_snapshot", ""),
                 library_versions=run_data.get("library_versions"),
                 inputs=run_data.get("inputs"),
+                result=run_data.get("result"),
+                progress=run_data.get("progress"),
                 trigger_type=run_data.get("trigger_type", "manual"),
                 triggered_by=triggered_by,
                 created_at=cls._deserialize_datetime(run_data.get("created_at")),
