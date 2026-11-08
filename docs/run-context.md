@@ -241,10 +241,13 @@ SIGTERM). How the run ended shows at the end of its stderr:
 A stopped run stays **running**, with a **stopping** chip, until the script has
 ended, then turns **cancelled** and keeps what the script printed. Its run page
 then offers **Kill now**: stopping a run that is already stopping kills it at
-once (also the way out when its worker is gone). With a grace period of 0 the
-script is killed at once, as before 2.5: the note is `[Killed by user]`, and a
-timeout shows only its TIMEOUT line. The run records when the stop was asked
-for (`stop_requested_at`, also on the plugin SDK's `RunView`).
+once, with the note `[Killed by user]`, and the run keeps what the script
+printed before the kill. It is also the way out when the run's worker is gone;
+the run then ends without its output, which only the worker had. With a grace
+period of 0 the script is killed at once, as before 2.5: the note is
+`[Killed by user]`, and a timeout shows only its TIMEOUT line. The run records
+when the stop was asked for (`stop_requested_at`, also on the plugin SDK's
+`RunView`).
 
 ---
 

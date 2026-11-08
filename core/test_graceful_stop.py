@@ -253,6 +253,36 @@ class StopARunTests(_Fixture, TestCase):
         self.assertTrue(run.stderr.endswith("[Killed by user after the 1 s grace period]"), run.stderr)
         self.assertGreaterEqual(run.ended_at - run.stop_requested_at, timedelta(seconds=1))
 
+    def test_kill_now_keeps_what_the_script_printed(self):
+        # Stop, then Kill now while the script ignores the stop: the web
+        # records the run CANCELLED and the worker adds the output (2.5 test
+        # pass, F2.5b-01: it used to end with stdout empty).
+        run = self._run(self._script(STUBBORN, stop_grace_seconds=20))
+        marker = self._marker(run.script)
+        presses = []
+
+        def factory(run_pk):
+            def poll():
+                if not os.path.exists(marker):
+                    return False
+                for _press in ("Stop", "Kill now"):
+                    presses.append(TaskService.force_stop_run(Run.objects.get(pk=run_pk)))
+                return True
+
+            return poll
+
+        started = time.monotonic()
+        with _fast_poll(), mock.patch("core.executor._stop_poll", side_effect=factory):
+            execute_run(run)
+        self.assertLess(time.monotonic() - started, 15)  # not the 20 s grace period
+        self.assertEqual(presses[1], (True, "Run stopped — the script process was killed."))
+        run.refresh_from_db()
+        self.assertEqual(run.status, Run.Status.CANCELLED)
+        self.assertIn("ignoring the stop", run.stdout)
+        self.assertTrue(run.stderr.endswith("[Killed by user]"), run.stderr)
+        self.assertNotIn("grace", run.stderr)
+        self.assertIsNone(run.pid)
+
     def test_without_a_grace_period_the_stop_kills_at_once(self):
         run = self._run(self._script(COOPERATIVE, stop_grace_seconds=0))
         with _fast_poll(), self._stop_when_ready(run):
@@ -383,6 +413,26 @@ class ForceStopTests(_Fixture, TestCase):
         self.assertIn("[Killed by user]", run.stderr)
         self.assertIsNone(run.pid)
         self.assertIsNotNone(run.ended_at)
+
+    def test_kill_now_on_a_run_that_finished_meanwhile_kills_nothing(self):
+        run = self._running()
+        TaskService.force_stop_run(run)
+        stopping = Run.objects.get(pk=run.pk)
+        # The worker recorded the end before Kill now reached the database.
+        Run.objects.filter(pk=run.pk).update(status=Run.Status.CANCELLED, stdout="out", pid=None)
+        self.assertEqual(TaskService.force_stop_run(stopping), (False, "The run has already finished."))
+        self.kill.assert_not_called()
+        run.refresh_from_db()
+        self.assertEqual(run.stdout, "out")
+
+    def test_the_worker_leaves_a_run_it_did_not_kill_alone(self):
+        from core.executor import _keep_output_after_kill
+
+        run = self._running()
+        Run.objects.filter(pk=run.pk).update(status=Run.Status.CANCELLED, stdout="kept", stderr="e")
+        _keep_output_after_kill(run, "other", "other err")
+        run.refresh_from_db()
+        self.assertEqual((run.stdout, run.stderr), ("kept", "e"))
 
     def test_a_run_that_finished_meanwhile_is_left_alone(self):
         run = self._running()

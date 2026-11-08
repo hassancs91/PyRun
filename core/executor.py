@@ -882,6 +882,34 @@ def _append_note(text: str, note: str) -> str:
     return f"{text}\n\n{note}" if text else note
 
 
+def _keep_output_after_kill(run: Run, stdout: str, stderr: str) -> None:
+    """Add the script's output to a run the web killed while it was stopping.
+
+    Kill now (``TaskService.force_stop_run`` on a run that is already
+    stopping) records the run CANCELLED itself, with only its note, so a run
+    whose worker is gone still ends. When this worker is alive it gets here
+    with what the script printed before the kill (already masked): keep the
+    web's outcome and note, and put the output in front of the note, as every
+    other stop does. Never raises: the run's outcome is already saved.
+    """
+    try:
+        row = (
+            Run.objects.filter(pk=run.pk, status=Run.Status.CANCELLED)
+            .values_list("stdout", "stderr")
+            .first()
+        )
+        # The web never writes stdout, so a row that has some isn't its flip.
+        if row is None or row[0]:
+            return
+        merged = _append_note(stderr, (row[1] or "").strip())
+        if Run.objects.filter(
+            pk=run.pk, status=Run.Status.CANCELLED, stdout="", stderr=row[1]
+        ).update(stdout=stdout, stderr=merged):
+            run.stdout, run.stderr = stdout, merged
+    except Exception:
+        logger.warning("Run %s: could not keep the killed run's output", run.pk, exc_info=True)
+
+
 # Seconds to wait between attempts to save a finished run when the database
 # connection fails. A PostgreSQL restart while a script runs kills the worker's
 # persistent connection, so the final save hit that dead connection and the run's
@@ -995,6 +1023,8 @@ def execute_run(run: Run, webhook_data: dict | None = None) -> None:
     backend = None
     handle = None
     wait_completed = False
+    # The script's own output, masked (stdout, stderr), once it has ended.
+    captured = None
 
     try:
 
@@ -1166,6 +1196,10 @@ def execute_run(run: Run, webhook_data: dict | None = None) -> None:
             result = backend.wait(handle, spec.timeout)
             wait_completed = True
             finished_at = timezone.now()
+            captured = (
+                _truncate_output(_mask_secrets_in_output(result.stdout or "", secrets)),
+                _truncate_output(_mask_secrets_in_output(result.stderr or "", secrets)),
+            )
 
             # Stopped from the web: either the backend saw the request while
             # waiting, or the script exited on the stop signal before it looked.
@@ -1176,12 +1210,7 @@ def execute_run(run: Run, webhook_data: dict | None = None) -> None:
 
             if result.timed_out:
                 run.status = Run.Status.TIMEOUT
-                run.stdout = _truncate_output(
-                    _mask_secrets_in_output(result.stdout or "", secrets)
-                )
-                run.stderr = _truncate_output(
-                    _mask_secrets_in_output(result.stderr or "", secrets)
-                )
+                run.stdout, run.stderr = captured
                 if run.stderr:
                     run.stderr += "\n\n[TIMEOUT: Script exceeded maximum execution time]"
                 else:
@@ -1200,11 +1229,9 @@ def execute_run(run: Run, webhook_data: dict | None = None) -> None:
                 # Stopped from the console or the SDK: CANCELLED, with what the
                 # script printed on its way out.
                 run.status = Run.Status.CANCELLED
-                run.stdout = _truncate_output(
-                    _mask_secrets_in_output(result.stdout or "", secrets)
-                )
+                run.stdout = captured[0]
                 run.stderr = _append_note(
-                    _truncate_output(_mask_secrets_in_output(result.stderr or "", secrets)),
+                    captured[1],
                     stop_note(
                         result.stop or STOP_GRACEFUL, spec.stop_grace, by_user=True
                     ),
@@ -1213,9 +1240,7 @@ def execute_run(run: Run, webhook_data: dict | None = None) -> None:
                 run.ended_at = finished_at
                 logger.info(f"Run {run.id} stopped by user ({result.stop or STOP_GRACEFUL})")
             else:
-                # Process results - mask secrets in output
-                run.stdout = _truncate_output(_mask_secrets_in_output(result.stdout, secrets))
-                run.stderr = _truncate_output(_mask_secrets_in_output(result.stderr, secrets))
+                run.stdout, run.stderr = captured
                 run.exit_code = result.exit_code
                 run.status = (
                     Run.Status.SUCCESS if result.exit_code == 0 else Run.Status.FAILED
@@ -1279,6 +1304,10 @@ def execute_run(run: Run, webhook_data: dict | None = None) -> None:
             # sure the now-dead PID is cleared so it can't be reused for a kill.
             Run.objects.filter(pk=run.pk).update(pid=None)
             run.status = Run.Status.CANCELLED
+            if captured is not None:
+                # Kill now: the web recorded the outcome, this worker has the
+                # output the script printed before the kill.
+                _keep_output_after_kill(run, *captured)
         run.pid = None
 
         # Cleanup temporary files (the script and its run.json)

@@ -547,12 +547,14 @@ class TaskService:
             run.refresh_from_db()
 
         if run.status == Run.Status.RUNNING:
-            # Already stopping: kill it now. Belt-and-suspenders: only kill
-            # while still RUNNING (avoids killing an unrelated, reused PID if
-            # the job just finished), and flip it in one conditional UPDATE so
-            # a worker finalizing at the same moment keeps its own outcome.
-            if run.pid:
-                _kill_process_tree(run.pid)
+            # Already stopping: kill it now. Record the outcome first, in one
+            # conditional UPDATE, and kill only if that won: a worker
+            # finalizing at the same moment keeps its own outcome, and a job
+            # that just finished (its PID maybe reused) is never killed. The
+            # worker, when it is alive, then finds the run CANCELLED and adds
+            # what the script printed (core.executor); when it is gone, the
+            # run still ends here.
+            pid = run.pid
             flipped = Run.objects.filter(pk=run.pk, status=Run.Status.RUNNING).update(
                 status=Run.Status.CANCELLED,
                 ended_at=timezone.now(),
@@ -561,6 +563,8 @@ class TaskService:
             )
             if not flipped:
                 return False, "The run has already finished."
+            if pid:
+                _kill_process_tree(pid)
             run.refresh_from_db()
             cls._release_queue(run)
             return True, "Run stopped — the script process was killed."
