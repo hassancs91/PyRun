@@ -1,4 +1,4 @@
-"""Scripts over REST and MCP, read side (2.5 Stage 2): metadata, never code.
+"""Scripts over REST and MCP (2.5 Stage 2): metadata, never code; and ``scripts.run``.
 
 A token bound to one script (``APIToken.script``) sees that script alone, here
 and in ``runs.*``. Every lookup is scoped to the token's workspace, and an id
@@ -162,3 +162,98 @@ def get_script(ctx, params):
         },
         "created_at": iso(script.created_at),
     }
+
+
+@endpoint(
+    "scripts.run",
+    title="Run script",
+    description=(
+        "Start a script, with `inputs` checked against its inputs schema. Returns the run id "
+        "and status at once, or with `wait` waits up to `wait_seconds` (at most 55) and returns "
+        "the result when the run ends in time. A run still going comes back with "
+        "is_finished false: poll runs.get with its run_id. "
+        "A token bound to one script may leave out `script`."
+    ),
+    input={
+        "type": "object",
+        "properties": {
+            "script": {"type": "string", "maxLength": 64, "description": "Script id"},
+            "inputs": {"type": "object", "additionalProperties": True,
+                       "description": "Values for the script's declared inputs"},
+            "wait": {"type": "boolean", "description": "Wait for the run to end (default false)"},
+            "wait_seconds": {"type": "integer", "minimum": 1, "maximum": 55,
+                             "description": "How long to wait, with wait (default and most 55)"},
+        },
+    },
+    access="run",
+    permission="scripts:run",
+    rate=(30, 60),
+    done="is_finished",
+)
+def run_script(ctx, params):
+    from contextlib import ExitStack
+
+    from django.utils import timezone
+
+    from core.models import Run
+    from core.services import run_wait
+    from core.services.maintenance import blocked_message
+    from core.services.run_events import api_event
+    from core.services.script_inputs import ScriptInputsError, prepare_inputs
+    from core.tasks import queue_script_run
+    from .runs import run_reply
+
+    wait = params.get("wait", False)
+    if "wait_seconds" in params and not wait:
+        raise ApiError("invalid_input", "$.wait_seconds: only with wait: true.")
+    script = resolve_script(ctx, params.get("script"))
+    if not script.is_enabled:
+        raise ApiError("script_disabled", "This script is disabled.", status=409)
+    try:
+        inputs = prepare_inputs(script, params.get("inputs"))
+    except ScriptInputsError as exc:
+        raise ApiError("invalid_input", exc.message) from None
+
+    with ExitStack() as stack:
+        waiter = None
+        if wait:
+            seconds = run_wait.budget(params.get("wait_seconds"), ctx.remaining_seconds())
+            try:
+                # Before the run exists: with no worker alive, no run is created.
+                waiter = stack.enter_context(run_wait.reserve(seconds))
+            except run_wait.WorkersUnavailable as exc:
+                raise ApiError(
+                    "workers_unavailable", exc.message, status=503, retry_after=exc.retry_after
+                ) from None
+        run = Run.objects.create(
+            script=script,
+            workspace_id=script.workspace_id,
+            status=Run.Status.PENDING,
+            trigger_type=Run.TriggerType.API,
+            code_snapshot=script.code,
+            inputs=inputs,
+            event=api_event(ctx.principal_id, ctx.transport),
+        )
+        try:
+            queue_script_run(run)
+        except ScriptInputsError as exc:
+            # The schema changed since the check above; the row is gone.
+            raise ApiError("invalid_input", exc.message) from None
+        except Exception as exc:
+            Run.objects.filter(pk=run.pk, status=Run.Status.PENDING).update(
+                status=Run.Status.FAILED,
+                ended_at=timezone.now(),
+                stderr=f"Failed to queue task: {exc}",
+            )
+            raise
+        if run.is_maintenance_skipped:
+            # As for a webhook: 503 + Retry-After; the run is listed as skipped.
+            block = run.maintenance_block
+            raise ApiError(
+                "maintenance",
+                blocked_message(run, block),
+                status=503,
+                retry_after=block.retry_after(),
+            )
+        waited = waiter.wait(run) if waiter is not None else None
+    return run_reply(run, waited)

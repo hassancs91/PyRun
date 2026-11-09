@@ -7,10 +7,11 @@ from django.core.exceptions import RequestDataTooBig
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
-from core.ratelimit import rate_limit_exceeded
+from core.ratelimit import client_ip, rate_limit_exceeded, seconds_to_window_reset
+from core.services import api_audit
 from core.views.api.decorators import add_cors_headers, cors_preflight_response
 from .context import token_context
-from .errors import ApiError, authenticate, error_response, rate_limited, touch_last_used
+from .errors import RATE_WINDOW, ApiError, authenticate, error_response, touch_last_used
 from .registry import registry
 from .openapi import document
 from .schema import loads, query_params
@@ -35,6 +36,7 @@ def dispatch(request, slug):
         return cors(failure)
     ctx = token_context(token)
     spec = None
+    code = ""
     try:
         if request.method not in {"GET", "POST"}:
             raise ApiError("method_not_allowed", "Use GET or POST.", status=405)
@@ -45,7 +47,12 @@ def dispatch(request, slug):
             if request.GET or (request.body and loads(request.body) != {}):
                 raise ApiError("invalid_input", "This endpoint takes no parameters.")
             if rate_limit_exceeded(f"api_meta_{token.pk}", 60, 60):
-                return cors(rate_limited("Rate limit exceeded.", unified=True))
+                raise ApiError(
+                    "rate_limited",
+                    "Rate limit exceeded.",
+                    status=429,
+                    retry_after=seconds_to_window_reset(RATE_WINDOW),
+                )
             data = (
                 document(ctx) if slug == "_openapi.json" else
                 {"endpoints": [e.catalog_entry() for e in registry.visible(ctx)]}
@@ -71,21 +78,35 @@ def dispatch(request, slug):
             # A text endpoint (runs.output) answers with that one field, as text.
             response = HttpResponse(data[spec.text], content_type="text/plain; charset=utf-8")
         else:
-            response = JsonResponse(data if slug == "_openapi.json" else {"ok": True, "data": data})
+            response = JsonResponse(
+                data if slug == "_openapi.json" else {"ok": True, "data": data},
+                # 202 Accepted while the work isn't done (scripts.run: a run still going).
+                status=202 if spec is not None and spec.done and not data.get(spec.done) else 200,
+            )
     except RequestDataTooBig:
-        response = error_response(413, "too_large", "Request body is too large.", unified=True)
+        code = "too_large"
+        response = error_response(413, code, "Request body is too large.", unified=True)
     except ApiError as exc:
+        code = exc.code
         response = error_response(
             exc.status, exc.code, exc.message, retry_after=exc.retry_after, unified=True
         )
     response["X-Request-ID"] = ctx.request_id
+    ms = int((time.monotonic() - started) * 1000)
+    ok = response.status_code < 400
+    # Every run/write call and every failure lands in ApiCall (the token's Activity).
+    if api_audit.should_record(spec.access if spec is not None else "read", ok):
+        api_audit.record(
+            token, slug=slug, ok=ok, status=response.status_code, code=code, ms=ms,
+            ip=client_ip(request), request_id=ctx.request_id,
+        )
     if slug in {"_catalog", "_health", "_openapi.json"}:
         logger.info(
             "api.call slug=%s principal=token:%s ms=%d ok=%s request_id=%s",
             slug,
             token.pk,
-            int((time.monotonic() - started) * 1000),
-            response.status_code < 400,
+            ms,
+            ok,
             ctx.request_id,
         )
     return cors(response)

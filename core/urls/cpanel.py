@@ -159,6 +159,7 @@ from core.views.api_tokens import (
     api_token_created_view,
     api_token_revoke_view,
     api_token_toggle_view,
+    api_token_activity_view,
     public_page_revoke_view,
 )
 from core.views.tasks import (
@@ -454,6 +455,7 @@ urlpatterns = [
     path("settings/api-tokens/<uuid:pk>/created/", api_token_created_view, name="api_token_created"),
     path("settings/api-tokens/<uuid:pk>/revoke/", api_token_revoke_view, name="api_token_revoke"),
     path("settings/api-tokens/<uuid:pk>/toggle/", api_token_toggle_view, name="api_token_toggle"),
+    path("settings/api-tokens/<uuid:pk>/activity/", api_token_activity_view, name="api_token_activity"),
     path("settings/api-tokens/public-pages/<uuid:pk>/revoke/", public_page_revoke_view, name="public_page_revoke"),
 
     # Services

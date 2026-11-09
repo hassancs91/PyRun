@@ -167,6 +167,24 @@ begins tracking at the current release; earlier history is in the git log.
   run page; API and MCP callers see who started a manual run by user id only,
   never the email (scripts and the console still get the email). Connect gains
   curl and Claude Code examples. Guide: "Scripts and runs" in `docs/api.md`.
+- **Run and stop scripts over the API and MCP.** `scripts.run` starts a script
+  with `inputs`, checked against its inputs schema (a bad input is refused and
+  no run is created). With `"wait": true` it waits up to `wait_seconds` (at most
+  55) and returns the result when the run ends in time; otherwise, or past the
+  wait, it answers HTTP 202 with the run id to poll with `runs.get`. A wait
+  fails fast with 503 `workers_unavailable` when no worker is running, and at
+  most 4 calls wait at once (`PYRUNNER_SYNC_WAIT_SLOTS`), so waiting calls can't
+  take the console's web threads: past the cap a call is queued and answered at
+  once. A maintenance window that blocks API runs answers 503 with
+  `Retry-After`, as for a webhook. `runs.stop` is the run page's Stop: the
+  script gets its grace period, and a second call kills it (runs on this
+  container's workers only in 2.5). New token permissions **Run scripts**
+  (`scripts:run`) and **Stop runs** (`runs:stop`), never on MCP URL tokens;
+  each endpoint takes 30 calls a minute per token. Every run and stop, and
+  every failed call made with a token, is recorded (endpoint, status, time, IP,
+  request id) and listed on the token's new **Activity** page in Settings →
+  API Tokens; records are kept 30 days, deleted by a new daily housekeeping
+  task. Guide: "Running and stopping scripts" in `docs/api.md`.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

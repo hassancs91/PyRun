@@ -24,12 +24,14 @@ UPDATE_SCHEDULE_NAME = "pyrunner-update-check"
 BACKUP_SCHEDULE_NAME = "pyrunner-scheduled-backup"
 CLEANUP_SCHEDULE_NAME = "pyrunner-auto-cleanup"
 RESYNC_SCHEDULE_NAME = "pyrunner-schedule-resync"
+HOUSEKEEPING_SCHEDULE_NAME = "pyrunner-housekeeping"
 INFRA_SCHEDULE_NAMES = (
     HEARTBEAT_SCHEDULE_NAME,
     UPDATE_SCHEDULE_NAME,
     BACKUP_SCHEDULE_NAME,
     CLEANUP_SCHEDULE_NAME,
     RESYNC_SCHEDULE_NAME,
+    HOUSEKEEPING_SCHEDULE_NAME,
 )
 
 
@@ -796,6 +798,7 @@ class ScheduleService:
         cls.ensure_heartbeat_schedule()
         cls.ensure_update_check_schedule()
         cls.ensure_resync_schedule()
+        cls.ensure_housekeeping_schedule()
         BackupScheduleService.sync_schedule()
         if settings.auto_cleanup_enabled:
             RetentionService.enable_auto_cleanup()
@@ -850,6 +853,28 @@ class ScheduleService:
             next_run=timezone.now(),  # Runs on first worker tick, then daily
         )
         logger.info("Created update check schedule")
+        return True
+
+    @classmethod
+    def ensure_housekeeping_schedule(cls) -> bool:
+        """
+        Ensure the daily housekeeping schedule exists (``daily_housekeeping_task``:
+        the 30-day purge of API audit rows).
+
+        Returns:
+            bool: True if schedule was created, False if it already exists
+        """
+        if QSchedule.objects.filter(name=HOUSEKEEPING_SCHEDULE_NAME).exists():
+            return False
+
+        QSchedule.objects.create(
+            name=HOUSEKEEPING_SCHEDULE_NAME,
+            func="core.tasks.daily_housekeeping_task",
+            schedule_type=QSchedule.DAILY,
+            repeats=-1,  # Run forever
+            next_run=timezone.now(),  # Runs on first worker tick, then daily
+        )
+        logger.info("Created housekeeping schedule")
         return True
 
     @classmethod

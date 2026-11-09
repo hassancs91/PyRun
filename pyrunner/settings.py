@@ -716,6 +716,17 @@ MCP_CALL_BUDGET_SECONDS = max(1, min(
 MCP_PARALLEL_CALLS = max(1, int(os.environ.get("GUNICORN_WORKERS", "2"))) * max(
     1, int(os.environ.get("GUNICORN_THREADS", "4"))
 )
+# How many API calls may wait for a run's result at once (scripts.run with
+# wait), across every web process (core.services.run_wait). Each wait holds a
+# web thread for up to 55 s, so the cap always leaves at least one thread of
+# the pool above for the console. 0 = never wait (always answer with the run id).
+SYNC_WAIT_SLOTS = max(0, min(
+    int(os.environ.get("PYRUNNER_SYNC_WAIT_SLOTS", "4")),
+    MCP_PARALLEL_CALLS - 1,
+))
+# A wait (at most 55 s) ends 10 s inside the gunicorn timeout, which would
+# otherwise kill the thread mid-wait.
+SYNC_WAIT_MAX_SECONDS = max(0, min(55, int(os.environ.get("GUNICORN_TIMEOUT", "120")) - 10))
 MCP_ALLOWED_ORIGINS = [
     value.strip().rstrip("/") for value in os.environ.get("MCP_ALLOWED_ORIGINS", "").split(",")
     if value.strip()

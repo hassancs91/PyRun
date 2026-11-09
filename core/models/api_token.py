@@ -43,6 +43,8 @@ class APIToken(models.Model):
         ("scripts:read", "Read scripts (metadata and inputs, never code)"),
         ("runs:read", "Read runs (status, inputs, result, event)"),
         ("runs:output", "Read run output (stdout and stderr, secrets masked)"),
+        ("scripts:run", "Run scripts (with inputs; can wait for the result)"),
+        ("runs:stop", "Stop runs"),
     )
     TIERS = (("public", "Public"), ("agents-only", "Agents only"), ("private", "Private"))
     # Which permissions are write permissions comes from the registry: those

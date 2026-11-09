@@ -13,7 +13,8 @@ from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from core.models import GlobalSettings
-from core.ratelimit import rate_limit_exceeded
+from core.ratelimit import client_ip, rate_limit_exceeded
+from core.services import api_audit
 from core.views.api.decorators import add_cors_headers
 from pyrunner.version import __version__
 from .context import token_context
@@ -142,10 +143,13 @@ def _result(method, params, ctx, version):
         try:
             data = registry.call(spec.slug, ctx, params.get("arguments", {}))
             is_error, status, retry_after = False, 200, None
+            # For the audit row: the status the same call gets over REST.
+            call = (spec, True, 202 if spec.done and not data.get(spec.done) else 200, "")
         except ApiError as exc:
             data = {"error": exc.as_dict()}
             is_error = True
             status, retry_after = (429 if exc.status == 429 else 200), exc.retry_after
+            call = (spec, False, exc.status, exc.code)
         return (
             {
                 "content": [{"type": "text", "text": json.dumps(data, cls=DjangoJSONEncoder)}],
@@ -154,8 +158,25 @@ def _result(method, params, ctx, version):
             },
             status,
             retry_after,
+            call,
         )
     raise ProtocolError(-32601, "Method not found.", status=404)
+
+
+def _audit(request, token, ctx, started, method, call, http_status, code):
+    """The ApiCall row: a tool call's own outcome, else a failed request's."""
+    if call is not None:
+        spec, ok, status, code = call
+        slug, access = spec.slug, spec.access
+    else:
+        ok, status = http_status < 400, http_status
+        slug, access = f"mcp:{method}" if isinstance(method, str) else "mcp", "read"
+    if api_audit.should_record(access, ok):
+        api_audit.record(
+            token, slug=slug, ok=ok, status=status, code=code,
+            ms=int((time.monotonic() - started) * 1000),
+            ip=client_ip(request), request_id=ctx.request_id,
+        )
 
 
 @csrf_exempt
@@ -179,11 +200,16 @@ def dispatch(request, url_token=None):
         token, failure = authenticate(request, scope="api")
     if failure is not None:
         return cors(failure)
+    started = time.monotonic()
     ctx = token_context(
-        token, transport="mcp", deadline=time.monotonic() + settings.MCP_CALL_BUDGET_SECONDS
+        token, transport="mcp", deadline=started + settings.MCP_CALL_BUDGET_SECONDS
     )
     request_id = None
     version = None
+    method = None
+    # (endpoint, ok, status, error code) of a tools/call that reached the registry.
+    call = None
+    code = ""
     try:
         if request.content_type != "application/json":
             raise ProtocolError(-32600, "Use application/json.", status=415)
@@ -212,15 +238,18 @@ def dispatch(request, url_token=None):
         version = _version(request, method, params)
         touch_last_used(token)
         if method != "tools/call" and rate_limit_exceeded(f"api_meta_{token.pk}", 60, 60):
-            return cors(rate_limited("Rate limit exceeded.", unified=True))
-        if request_id is None:
+            code = "rate_limited"
+            response = rate_limited("Rate limit exceeded.", unified=True)
+        elif request_id is None:
             # A notification must never invoke a tool, particularly a write.
             if not method.startswith("notifications/"):
                 raise ProtocolError(-32600, "Requests require an id.")
             response = HttpResponse(status=202)
         else:
             result = _result(method, params, ctx, version)
-            data, status, retry_after = result if isinstance(result, tuple) else (result, 200, None)
+            data, status, retry_after, call = (
+                result if isinstance(result, tuple) else (result, 200, None, None)
+            )
             if version == MODERN:
                 data.update(resultType="complete", _meta={META + "serverInfo": SERVER_INFO})
                 if method in {"tools/list", "server/discover"}:
@@ -237,12 +266,15 @@ def dispatch(request, url_token=None):
             ctx.request_id,
         )
     except RequestDataTooBig:
+        code = "too_large"
         response = rpc_error(
             ProtocolError(-32600, "Request body is too large.", status=413), request_id
         )
     except ProtocolError as exc:
+        code = f"jsonrpc:{exc.code}"
         response = rpc_error(exc, request_id)
     response["X-Request-ID"] = ctx.request_id
+    _audit(request, token, ctx, started, method, call, response.status_code, code)
     if version is not None:
         response["MCP-Protocol-Version"] = version
     return cors(response)

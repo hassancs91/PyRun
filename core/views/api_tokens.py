@@ -144,6 +144,29 @@ def api_token_toggle_view(request: HttpRequest, pk) -> HttpResponse:
     return redirect("cpanel:api_token_list")
 
 
+# The Activity page lists at most this many of a token's newest audit rows.
+ACTIVITY_LIMIT = 200
+
+
+@login_required
+def api_token_activity_view(request: HttpRequest, pk) -> HttpResponse:
+    """A unified API token's audited calls: runs, stops, writes and failures."""
+    from core.services.api_audit import RETENTION_DAYS
+
+    token = get_object_or_404(APIToken, _token_scope(request), pk=pk, scope=APIToken.Scope.API)
+    calls = list(token.api_calls.order_by("-created_at", "-id")[:ACTIVITY_LIMIT])
+    return render(
+        request,
+        "cpanel/api_tokens/activity.html",
+        {
+            "token": token,
+            "calls": calls,
+            "limit": ACTIVITY_LIMIT,
+            "retention_days": RETENTION_DAYS,
+        },
+    )
+
+
 @login_required
 @require_POST
 def public_page_revoke_view(request: HttpRequest, pk) -> HttpResponse:

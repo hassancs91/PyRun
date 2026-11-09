@@ -26,6 +26,11 @@ def document(ctx):
                 "default": {"description": "Error: {ok: false, error: {code, message}}"},
             },
         }
+        if spec.done:
+            common["responses"]["202"] = {
+                "description": f"Accepted, not finished yet (`{spec.done}` is false): "
+                "{ok: true, data: object}"
+            }
         methods = {
             "post": {
                 **copy.deepcopy(common),

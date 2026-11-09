@@ -1,0 +1,63 @@
+{% extends "cpanel/layout.html" %}
+
+{% block title %}Activity: {{ token.name }} - {{ instance_name }}{% endblock %}
+
+{% block breadcrumbs %}{% if user.is_superuser %}
+<a href="{% url 'cpanel:settings' %}">Settings</a>
+{% endif %}
+<a href="{% url 'cpanel:api_token_list' %}">API Tokens</a>
+<span>Activity</span>
+{% endblock %}
+{% block heading %}Activity: {{ token.name }}{% endblock %}
+{% block subtitle %}Runs, stops and writes this token made, and every call that failed. Kept {{ retention_days }} days.{% endblock %}
+
+{% block page %}
+{% if calls %}
+<section class="rounded-2xl border border-line bg-panel overflow-hidden">
+    {# Phones: one card per call. #}
+    <ul class="sm:hidden divide-y divide-line-soft">
+        {% for call in calls %}
+        <li class="p-4 space-y-2.5">
+            <div class="flex items-start justify-between gap-3">
+                <span class="font-mono text-sm text-text break-all">{{ call.slug }}</span>
+                {% if call.ok %}<span class="flex-shrink-0 px-2 py-0.5 text-xs rounded-md bg-ok/10 text-ok">{{ call.status }}</span>{% else %}<span class="flex-shrink-0 px-2 py-0.5 text-xs rounded-md bg-fail/10 text-fail">{{ call.status }}{% if call.code %} {{ call.code }}{% endif %}</span>{% endif %}
+            </div>
+            <p class="text-xs text-faint">{{ call.created_at|date:"M d, Y H:i:s" }} · {{ call.ms }} ms · {{ call.ip|default:"unknown IP" }}</p>
+            <p class="font-mono text-xs text-faint break-all">{{ call.request_id }}</p>
+        </li>
+        {% endfor %}
+    </ul>
+    <div class="hidden sm:block overflow-x-auto">
+    <table class="w-full min-w-[720px]">
+        <thead>
+            <tr class="border-b border-line-soft text-left">
+                <th class="px-6 py-3 eyebrow text-faint font-normal">When</th>
+                <th class="px-6 py-3 eyebrow text-faint font-normal">Endpoint</th>
+                <th class="px-6 py-3 eyebrow text-faint font-normal">Result</th>
+                <th class="px-6 py-3 eyebrow text-faint font-normal text-right">Time</th>
+                <th class="px-6 py-3 eyebrow text-faint font-normal">IP</th>
+                <th class="px-6 py-3 eyebrow text-faint font-normal">Request ID</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-line-soft">
+            {% for call in calls %}
+            <tr>
+                <td class="px-6 py-3 text-xs text-muted whitespace-nowrap">{{ call.created_at|date:"M d, Y H:i:s" }}</td>
+                <td class="px-6 py-3 font-mono text-sm text-text">{{ call.slug }}</td>
+                <td class="px-6 py-3">{% if call.ok %}<span class="px-2 py-0.5 text-xs rounded-md bg-ok/10 text-ok">{{ call.status }}</span>{% else %}<span class="px-2 py-0.5 text-xs rounded-md bg-fail/10 text-fail">{{ call.status }}{% if call.code %} {{ call.code }}{% endif %}</span>{% endif %}</td>
+                <td class="px-6 py-3 text-right text-xs text-faint whitespace-nowrap">{{ call.ms }} ms</td>
+                <td class="px-6 py-3 font-mono text-xs text-faint">{{ call.ip|default:"unknown" }}</td>
+                <td class="px-6 py-3 font-mono text-xs text-faint">{{ call.request_id }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</section>
+{% if calls|length >= limit %}<p class="text-xs text-faint">Showing the newest {{ limit }} calls.</p>{% endif %}
+{% else %}
+<div class="rounded-2xl border border-line bg-panel p-8 text-center">
+    <p class="text-sm text-muted">No activity yet. Runs, stops and writes this token makes, and any call that fails, show up here for {{ retention_days }} days. Successful reads aren't listed; "Last used" on the token list covers them.</p>
+</div>
+{% endif %}
+{% endblock %}

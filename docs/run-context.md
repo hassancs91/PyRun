@@ -84,7 +84,8 @@ deleted when it ends:
 `run.attempt` is 1, or 2 and up for an automatic retry of a failed run (see
 [retries](scheduling.md#when-a-run-fails-retries)); a retry gets the same
 `inputs` and `event` as the attempt it retries.
-`trigger.type` is `manual`, `scheduled` or `api` (webhooks and chat channels).
+`trigger.type` is `manual`, `scheduled` or `api` (webhooks, chat channels and `scripts.run`
+over the API or MCP).
 `inputs` holds every input the run was started with, defaults filled in, JSON
 inputs included, and is `{}` for a script that declares none. `event` is
 described [below](#the-run-event).
@@ -105,7 +106,7 @@ the kind.
 | `webhook` | a call to the script's webhook URL | `method`, `query` (each name maps to a list of values), `content_type`; for a POST, `body` (the raw text) and, when the body is JSON, `body_json` |
 | `channel` | a chat message to a channel linked to the script | `channel` (its name), `channel_id`, `provider`, `text`, `sender`, `reply_ref`, `raw` (the provider's own payload) |
 | `plugin` | a plugin (`ScriptAPI.queue_run`) | `plugin`, `script_key`; `user` when the plugin passed one |
-| `api` | code that created the run itself | none |
+| `api` | `scripts.run` over the API or MCP; or code that created the run itself | `token_id` (the API token that started it) and `via` (`rest` or `mcp`) for `scripts.run`; none otherwise |
 
 ```python
 import pyrunner_run

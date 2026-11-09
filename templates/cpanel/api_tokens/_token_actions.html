@@ -1,3 +1,4 @@
+{% if token.scope == "api" %}<a href="{% url 'cpanel:api_token_activity' pk=token.pk %}" class="text-[13px] px-3 py-1.5 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Activity</a>{% endif %}
 <form method="post" action="{% url 'cpanel:api_token_toggle' pk=token.pk %}" class="inline">
     {% csrf_token %}
     <button type="submit" class="text-[13px] px-3 py-1.5 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">{% if token.is_active %}Disable{% else %}Enable{% endif %}</button>

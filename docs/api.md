@@ -56,7 +56,7 @@ Each endpoint has an `access` class, shown in `_catalog`:
 | Class | Meaning | Available |
 |---|---|---|
 | `read` | Changes nothing | With its permission |
-| `run` | Acts without changing stored data, for example `brain.propose-feed` (a proposal waits for human approval) | With its permission |
+| `run` | Acts without changing stored data: `scripts.run`, `runs.stop`, and `brain.propose-feed` (a proposal waits for human approval) | With its permission |
 | `write` | Changes stored data | With its permission, and only while API writes are on |
 
 **API writes** is an instance setting, off by default. A superuser turns it on in
@@ -151,7 +151,73 @@ returns that script alone, `scripts.get` may leave out `script`, and every
 `runs.*` call only reaches that script's runs. Any other script or run, like an
 unknown id or one in another workspace, answers 404 `not_found`. A token is
 bound to one Brain or one script, not both. Deleting the script deletes the
-tokens bound to it.
+tokens bound to it. A bound token also runs and stops that script only.
+
+### Running and stopping scripts
+
+| REST endpoint | Parameters | Permission |
+|---|---|---|
+| `scripts.run` | `script` (optional for a token bound to one script), `inputs` (an object), `wait` (default `false`), `wait_seconds` (1–55, default 55, only with `wait`) | `scripts:run` |
+| `runs.stop` | `run` | `runs:stop` |
+
+Both are POST only and take 30 calls a minute per token (each its own count);
+over that they answer 429 with `Retry-After`. MCP URL tokens can't hold
+either permission.
+
+```sh
+curl -H "Authorization: Bearer $PYRUN_TOKEN" -H "Content-Type: application/json" \
+  -d '{"script":"SCRIPT_ID","inputs":{"city":"Paris"},"wait":true,"wait_seconds":30}' \
+  https://pyrun.example/api/v1/scripts.run
+```
+
+`scripts.run` checks `inputs` against the script's inputs schema and fills in
+defaults, as **Run now** does. A bad input answers 400 `invalid_input` naming
+each one, and no run is created. A disabled script answers 409
+`script_disabled`. The run is an API run: its event is
+`{"kind": "api", "token_id": ..., "via": "rest"}` (or `"mcp"`), and maintenance
+windows that block API calls and the script's concurrency policy apply to it.
+
+The answer is the run's summary (`run_id`, `script`, `status`, timing,
+`exit_code`, `cancel_reason`), `is_finished`, `is_held`, `result`, and `wait`:
+
+| Case | HTTP | `wait` |
+|---|---|---|
+| No `wait`, run queued | 202 | `null` |
+| The run ended within the wait | 200, with `result` | `finished` |
+| The wait ran out; the run keeps going | 202 | `timeout` |
+| Every wait slot was taken; the run was queued, not waited for | 202 | `busy` |
+| Skipped: the script is already running and its concurrency policy is Skip | 200, `status: "cancelled"`, `cancel_reason: "concurrency_skip"` | as asked |
+| No worker is running (only with `wait`); no run is created | 503 `workers_unavailable`, `Retry-After: 60` | |
+| A maintenance window blocks API runs; the run is listed as skipped | 503 `maintenance`, `Retry-After` until it ends | |
+
+While `is_finished` is false the answer also has `next`, saying to poll
+`runs.get` with the `run_id`. Over MCP the tool result carries the same data
+(`scripts-run`); `_catalog` marks the endpoint `rest_accepted`.
+
+A wait holds one of the server's web threads, so it is limited: it fails fast
+when no worker has reported in the last 3 minutes, and at most 4 calls wait at
+once across the instance (set `PYRUNNER_SYNC_WAIT_SLOTS`; it is capped below
+`GUNICORN_WORKERS` × `GUNICORN_THREADS`, so the console always keeps a thread,
+and 0 turns waiting off). A wait also ends 10 seconds inside `GUNICORN_TIMEOUT`,
+and over MCP 3 seconds before the call's budget (`MCP_CALL_BUDGET_SECONDS`). A retry the script's retry policy
+starts after a failure is a new run: the wait returns the failed attempt.
+
+`runs.stop` is the run page's **Stop**. A running script gets the stop signal
+and its grace period (the script's `stop_grace_seconds`) to shut down: the
+answer says `status: "running"`, `is_stopping: true` with `stop_requested_at`,
+and the run ends as `cancelled` once the script has exited. Calling `runs.stop`
+again kills it at once (**Kill now**). A pending run is cancelled. A run that has
+already ended is left as it is and answers `changed: false`. In 2.5 the stop
+reaches runs on this PyRun container's workers only; it is single-container.
+
+**Activity.** Every `scripts.run`, `runs.stop` and write call made with a
+token, and every call made with a token that fails (an unknown endpoint, a
+refused permission, a bad input, a rate limit...), is recorded with the endpoint, status, error code, time taken, the
+caller's IP and the request id (`X-Request-ID`). **Settings → API Tokens →
+Activity** lists a token's records; they are kept 30 days. Successful reads
+aren't recorded (the token's **Last used** covers them), and neither is a call
+whose token is wrong, expired or disabled: it can't be tied to a token (those
+are throttled by IP instead).
 
 ## MCP clients
 
@@ -200,7 +266,9 @@ Disabling URL tokens or revoking a token closes that route immediately.
 ## Capacity and failures
 
 Calls have a cooperative budget; reader and vector backends receive bounded
-timeouts. Every inline MCP call occupies a web-worker slot. Connect shows the
+timeouts. Every inline MCP call occupies a web-worker slot, and so does a
+`scripts.run` that waits (capped, see
+[Running and stopping scripts](#running-and-stopping-scripts)). Connect shows the
 configured pool and budget. The console reader instead uses the existing worker
 queue and a polling result page. Authentication failures are throttled by IP;
 endpoint limits use the shared cache and principal ID.

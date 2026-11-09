@@ -25,7 +25,9 @@ channel    ``channel`` (name), ``channel_id``, ``provider``, ``text``,
            ``sender``, ``reply_ref``, ``raw`` (the provider's payload): the
            message behind the ``INBOUND_*`` variables
 plugin     ``plugin`` (its slug), ``script_key``, ``user`` when given
-api        none (``default_event`` for a run created with trigger type API)
+api        ``scripts.run`` over REST or MCP: ``token_id`` (the API token that
+           started it) and ``via`` (``rest`` or ``mcp``); none for a run
+           created with trigger type API and no event (``default_event``)
 ========== =================================================================
 
 The ``WEBHOOK_*`` / ``INBOUND_*`` variables are not built from the event: they
@@ -211,6 +213,11 @@ def plugin_event(plugin, script_key, user=None) -> dict:
     if user is not None:
         fields["user"] = _user(user)
     return build_event(KIND_PLUGIN, None, **fields)
+
+
+def api_event(token_id, via) -> dict:
+    """``scripts.run`` from an API token (``via``: ``rest`` or ``mcp``)."""
+    return build_event(KIND_API, None, token_id=str(token_id), via=str(via))
 
 
 _KIND_FOR_TRIGGER = {"manual": KIND_MANUAL, "scheduled": KIND_SCHEDULE, "api": KIND_API}

@@ -30,6 +30,9 @@ class Run(models.Model):
         TIMEOUT = "timeout", "Timeout"
         CANCELLED = "cancelled", "Cancelled"
 
+    # The statuses a run ends in (``is_finished``).
+    FINISHED_STATUSES = (Status.SUCCESS, Status.FAILED, Status.TIMEOUT, Status.CANCELLED)
+
     class TriggerType(models.TextChoices):
         MANUAL = "manual", "Manual"
         SCHEDULED = "scheduled", "Scheduled"
@@ -546,12 +549,7 @@ class Run(models.Model):
     @property
     def is_finished(self) -> bool:
         """Check if the run has completed (successfully or not)."""
-        return self.status in [
-            self.Status.SUCCESS,
-            self.Status.FAILED,
-            self.Status.TIMEOUT,
-            self.Status.CANCELLED,
-        ]
+        return self.status in self.FINISHED_STATUSES
 
     @property
     def is_held(self) -> bool:

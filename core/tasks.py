@@ -481,6 +481,28 @@ def cleanup_old_runs_task() -> dict:
         return {"success": False, "error": str(e)}
 
 
+def daily_housekeeping_task() -> dict:
+    """
+    Delete what PyRun keeps for a fixed time only. Called daily by django-q2.
+
+    Today: ``ApiCall`` audit rows older than 30 days
+    (``core.services.api_audit.RETENTION_DAYS``).
+
+    Returns:
+        dict: Result with how many audit rows were deleted.
+    """
+    from core.services import api_audit
+
+    try:
+        deleted = api_audit.purge()
+        if deleted:
+            logger.info(f"Housekeeping: deleted {deleted} API audit row(s) past retention")
+        return {"success": True, "api_calls_deleted": deleted}
+    except Exception as e:
+        logger.exception("Housekeeping task failed")
+        return {"success": False, "error": str(e)}
+
+
 def check_for_updates_task() -> dict:
     """
     Check GitHub for a newer PyRun release and store the result.

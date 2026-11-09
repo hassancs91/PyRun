@@ -18,7 +18,8 @@ SLUG = re.compile(r"^[a-z][a-z0-9_-]*\.[a-z][a-z0-9_-]*$")
 
 # Endpoint classes (plan D8). ``read`` changes nothing; ``run`` acts without
 # changing stored data (brain.propose-feed: a proposal waits for human
-# approval) and is always available with its permission; ``write`` changes
+# approval; scripts.run and runs.stop) and is always available with its
+# permission; ``write`` changes
 # stored data and is available only while the superuser setting
 # ``GlobalSettings.api_writes_enabled`` is on.
 ACCESS_CLASSES = ("read", "run", "write")
@@ -49,6 +50,9 @@ class Endpoint:
     # text/plain instead of the JSON envelope (runs.output). MCP and
     # in-process callers still get the whole dict.
     text: str = ""
+    # When set, REST answers 202 Accepted instead of 200 while this boolean
+    # field of the result is false (scripts.run: a run that hasn't ended).
+    done: str = ""
 
     @property
     def mcp_name(self):
@@ -66,6 +70,8 @@ class Endpoint:
         }
         if self.text:
             entry["rest_response"] = "text/plain"
+        if self.done:
+            entry["rest_accepted"] = f"202 while `{self.done}` is false"
         return entry
 
 
@@ -183,13 +189,16 @@ registry = Registry()
 
 
 def endpoint(
-    slug, *, title, description="", input, access="read", permission, rate=(60, 60), text=""
+    slug, *, title, description="", input, access="read", permission, rate=(60, 60), text="",
+    done="",
 ):
     def decorate(handler):
         schema = copy.deepcopy(input)
         schema.setdefault("additionalProperties", False)
         registry.register(
-            Endpoint(slug, handler, schema, title, description, access, permission, rate, text)
+            Endpoint(
+                slug, handler, schema, title, description, access, permission, rate, text, done
+            )
         )
         return handler
 

@@ -1,4 +1,4 @@
-"""Runs over REST and MCP, read side (2.5 Stage 2): status, result, masked output.
+"""Runs over REST and MCP (2.5 Stage 2): status, result, masked output; ``runs.stop``.
 
 What a token sees of a run is what the console shows, with two differences:
 no code snapshot, and the person behind a manual run (or a plugin run a user
@@ -208,4 +208,64 @@ def get_output(ctx, params):
         "text": text,
         "truncated": truncated,
         "tail_cut": cut,
+    }
+
+
+POLL_HINT = "The run hasn't ended yet: poll runs.get with this run_id until is_finished is true."
+
+
+def run_reply(run, waited=None):
+    """What ``scripts.run`` answers: the run's summary and, once it ended, its result.
+
+    ``waited``: ``None`` without ``wait``, else what ``run_wait`` reports
+    (``finished``, ``timeout``, or ``busy`` when every wait slot was taken).
+    The result is stored masked, as ``runs.get`` returns it.
+    """
+    data = {
+        "run_id": str(run.id),
+        **{key: value for key, value in run_summary(run).items() if key != "id"},
+        "is_finished": run.is_finished,
+        "is_held": run.is_held,
+        "result": run.result,
+        "wait": waited,
+    }
+    if not run.is_finished:
+        data["next"] = POLL_HINT
+    return data
+
+
+@endpoint(
+    "runs.stop",
+    title="Stop run",
+    description=(
+        "Stop a run. A running script gets the stop signal and its grace period to shut down: "
+        "the run stays running, with stop_requested_at set, until it has ended. Calling again "
+        "kills it at once. A pending run is cancelled. A run that has ended is left as it is "
+        "(changed: false). In 2.5 this reaches runs on this PyRun container's workers only."
+    ),
+    input={
+        "type": "object",
+        "properties": {"run": {"type": "string", "maxLength": 64, "description": "Run id"}},
+        "required": ["run"],
+    },
+    access="run",
+    permission="runs:stop",
+    rate=(30, 60),
+)
+def stop_run(ctx, params):
+    from core.services.task_service import TaskService
+
+    run = resolve_run(ctx, params["run"])
+    # The run page's Stop and Kill now: the first call on a running run is the
+    # graceful stop, a second one kills it.
+    changed, message = TaskService.force_stop_run(run)
+    run.refresh_from_db()
+    return {
+        "run_id": str(run.id),
+        "changed": changed,
+        "message": message,
+        "status": run.status,
+        "is_stopping": run.is_stopping,
+        "stop_requested_at": iso(run.stop_requested_at),
+        "is_finished": run.is_finished,
     }
