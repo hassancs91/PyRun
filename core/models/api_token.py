@@ -59,6 +59,7 @@ class APIToken(models.Model):
         ("libraries:read", "Read libraries (modules and attached scripts, never code)"),
         ("schedules:read", "Read schedules"),
         ("system:read", "Read system health"),
+        ("help:read", "Search the PyRun documentation bundled with this version"),
     )
     TIERS = (("public", "Public"), ("agents-only", "Agents only"), ("private", "Private"))
     # Which permissions are write permissions comes from the registry: those

@@ -262,6 +262,14 @@ begins tracking at the current release; earlier history is in the git log.
   libraries, schedules and system health but never code, secret names,
   providers or channels. Guide: "Workspace inventory and health" in
   `docs/api.md`.
+- **Py AI and the API search PyRun's own docs.** `help.search` (`help:read`)
+  finds the sections of the running version's documentation (the README, the
+  guides in `docs/`, the changelog) that answer a question, each with a snippet
+  and a link to that section at the running version's tag on GitHub. These docs
+  now ship in the Docker image, and the index is built in memory when the
+  server starts, with no new dependency. Asked "how do I…?", Py AI searches them
+  and answers with the link, on the console and on chat channels. Guide:
+  "Documentation search" in `docs/api.md`.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

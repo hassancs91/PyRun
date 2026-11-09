@@ -37,13 +37,16 @@ Desktop.ini
 data/
 nul
 # Internal docs stay local, except the public plugin author guide and the
-# user-facing guides.
+# user-facing guides. A new public guide also goes in .dockerignore's
+# exceptions and help.search's corpus (core/services/help_docs.py).
 docs/*
 !docs/plugins.md
 !docs/scheduling.md
 !docs/brain.md
 !docs/api.md
 !docs/run-context.md
+# Generated per-integration pages (2.5 Stage 6), bundled for help.search.
+!docs/integrations/
 
 # plugins/ = runtime install target AND the local workspace for private
 # plugins under development (they import natively as plugins.<slug>). Keep the

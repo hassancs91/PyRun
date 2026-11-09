@@ -31,10 +31,20 @@ data/
 # Logs
 *.log
 
-# Documentation (not needed in image)
+# Documentation: none in the image, except the public docs help.search
+# reads (2.5 T19; its CORPUS in core/services/help_docs.py and .gitignore's
+# docs exceptions list the same files).
 *.md
 docs/
 notes.md
+!README.md
+!CHANGELOG.md
+!docs/api.md
+!docs/brain.md
+!docs/plugins.md
+!docs/run-context.md
+!docs/scheduling.md
+!docs/integrations/*.md
 
 # Static files (collected during build)
 staticfiles/

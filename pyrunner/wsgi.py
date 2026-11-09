@@ -14,3 +14,9 @@ from django.core.wsgi import get_wsgi_application
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "pyrunner.settings")
 
 application = get_wsgi_application()
+
+# help.search's docs index, built once per web process at boot rather than on the
+# first question (2.5 T19). It never fails the boot.
+from core.services.help_docs import warm  # noqa: E402
+
+warm()

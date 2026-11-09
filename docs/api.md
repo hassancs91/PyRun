@@ -514,6 +514,36 @@ and runs are the token's workspace's.
   reads that script alone. Its binding doesn't narrow anything else, as for
   databases and vectors.
 
+## Documentation search
+
+`help.search` (`help:read`) searches the documentation of the running version:
+the README, the guides in `docs/` (`api.md`, `run-context.md`, `scheduling.md`,
+`plugins.md`, `brain.md`), the changelog and, when there are any, the
+integration pages in `docs/integrations/`. These files ship in the Docker image
+for it. Pass `query` (a few words or a question, up to 200 characters) and
+optionally `limit` (1 to 10, default 5).
+
+```sh
+curl -G -H "Authorization: Bearer $PYRUN_TOKEN" https://pyrun.example/api/v1/help.search \
+  --data-urlencode "query=webhook signature"
+```
+
+It returns `query`, `version` (the running version), `docs_bundled` and
+`results`, best first, each with `title` (the section's heading), `section`
+(the headings above it and its own, as in `Scheduling scripts › Maintenance
+windows`), `doc` (the file), `link` (that section on GitHub, at the running
+version's tag) and `snippet` (the section, or about 1,000 characters of it from
+the paragraph that matches best; `…` marks a cut).
+
+The search goes by words: a section ranks higher the more of the query's words
+it has, in its heading most of all, and plurals and singulars match each other.
+A changelog entry counts half, so a guide comes before the entry that announced
+its feature. The index is built once per process (the web server builds it when
+it starts, a worker on its first search) and kept in memory; it reads no
+database and nothing of the token's workspace. Where the docs aren't there (a
+checkout without them), `docs_bundled` is false, `results` is empty and the
+server logs it once.
+
 ## Py AI
 
 Py AI, the built-in read-only assistant, calls the registry's `read` endpoints
@@ -532,7 +562,7 @@ Each endpoint declares a Py AI tier:
 | Tier | Who | Endpoints |
 |---|---|---|
 | `console` | The console's Py AI, open to workspace owners and admins | Every read endpoint |
-| `channel` | Py AI on a chat channel (Telegram), whose approved senders need not be owners or admins | `scripts.list`, `scripts.get`, `runs.list`, `runs.get`, the four datastore reads, `databases.list`, `databases.tables`, `vectors.list`, `vectors.search`, `plugins.list`, `environments.list`, `libraries.list`, `schedules.list`, `system.health`, and the Brain reads |
+| `channel` | Py AI on a chat channel (Telegram), whose approved senders need not be owners or admins | `scripts.list`, `scripts.get`, `runs.list`, `runs.get`, the four datastore reads, `databases.list`, `databases.tables`, `vectors.list`, `vectors.search`, `plugins.list`, `environments.list`, `libraries.list`, `schedules.list`, `system.health`, `help.search`, and the Brain reads |
 
 So a chat channel can't read a run's output (`runs.output`), run a database
 query (`databases.query`), read a script's code (`scripts.code`) or list secret
@@ -546,7 +576,9 @@ Brain endpoints also need the agent's own Brain grant (`agent:pyai` for the
 console, `<provider>:<channel UUID>` for a channel). Like an API token, Py AI
 sees the person behind a manual run as `user: {"id"}`, never the email. Py AI's
 older tools (`list_scripts`, `query_datastore`, and on the console
-`get_run_error`...) keep working beside these.
+`get_run_error`...) keep working beside these. Asked how to do something in
+PyRun, Py AI searches the docs with `help.search` and gives the link of each
+section it answers from.
 
 ## MCP clients
 
@@ -587,7 +619,7 @@ permissions that guard read endpoints alone: `brain:read`, `scripts:read`,
 `scripts:read_code`, `runs:read`, `runs:output`, `datastores:read`,
 `databases:read`, `vectors:read`, `secrets:read_names`, `providers:read`,
 `channels:read`, `plugins:read`, `environments:read`, `libraries:read`,
-`schedules:read` and `system:read`, not `brain:write`. Its endpoint is
+`schedules:read`, `system:read` and `help:read`, not `brain:write`. Its endpoint is
 `POST /mcp/k/<url-token>/`. It cannot be used as a REST/bearer token. The URL itself
 is a credential: keep connector configuration private and redact that route from
 reverse-proxy access logs. Because the token travels in the request path, reverse
