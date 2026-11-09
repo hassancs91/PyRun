@@ -79,8 +79,9 @@ def _iso(when) -> str:
 
 
 def _clean_str(text: str) -> str:
-    # PostgreSQL's jsonb can't hold U+0000 or an unpaired surrogate (which a
-    # JSON body can spell as "\ud800"); SQLite would keep them. Replace both
+    # PostgreSQL can't hold U+0000 or an unpaired surrogate (which a JSON body
+    # can spell as "\ud800") in jsonb, or in text taken out of a json column
+    # (Run.event is json since T50); SQLite would keep them. Replace both
     # so an event is stored the same way on either engine and never fails the
     # INSERT.
     if "\x00" in text:
@@ -234,5 +235,5 @@ def kind_label(kind) -> str:
 
 
 def event_text(event) -> str:
-    """The event as indented JSON, keys sorted: the result's display form."""
+    """The event as indented JSON, keys in stored order: the result's display form."""
     return result_text(event)

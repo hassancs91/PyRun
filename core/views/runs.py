@@ -254,7 +254,7 @@ def run_input_rows(run, mask_sets: dict | None = None) -> tuple[list[dict], bool
     happens here (``mask_run_inputs``), with the same secret set execution uses.
     When a secret can't be resolved the values can't be checked, so they are
     hidden, not shown. Rows follow the script's declared order; anything else
-    comes after, sorted (PostgreSQL's jsonb doesn't keep key order).
+    comes after, in the order the run stored it.
     ``mask_sets``: a cache shared with the other cards of one page.
     """
     if not run.inputs:
@@ -267,7 +267,7 @@ def run_input_rows(run, mask_sets: dict | None = None) -> tuple[list[dict], bool
     except SecretResolutionError:
         return [], True
     declared = list((run.script.inputs_schema or {}).get("properties", {}))
-    names = [n for n in declared if n in masked] + sorted(n for n in masked if n not in declared)
+    names = [n for n in declared if n in masked] + [n for n in masked if n not in declared]
     rows = []
     for name in names:
         value = masked[name]

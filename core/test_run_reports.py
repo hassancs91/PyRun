@@ -562,7 +562,7 @@ class NotificationTests(_Fixture, TestCase):
         self.assertFalse(payload["result_too_large"])
 
     def test_channel_text_has_a_capped_excerpt(self):
-        # Keys are sorted, so "a" comes first and "z" is the part that's cut.
+        # Keys keep the order they were written in, so "z" is the part that's cut.
         run = self._run(status=Run.Status.SUCCESS, result={"a": 3, "z": "z" * 1000})
         text = NotificationService._build_channel_text(run)
         line = next(line for line in text.splitlines() if line.startswith("Result: "))

@@ -14,8 +14,8 @@ variable (``input_env``); objects and arrays stay on the run only.
 
 Names are restricted to identifier-like ASCII and must stay unique ignoring
 case, because ``INPUT_<NAME>`` upper-cases them. Every string in a schema or in
-inputs must be storable on both engines: no NUL (PostgreSQL ``jsonb`` refuses
-``\\u0000``) and valid Unicode.
+inputs must be storable on both engines: no NUL (PostgreSQL refuses
+``\\u0000`` in ``jsonb`` and in text taken out of ``json``) and valid Unicode.
 """
 
 import copy

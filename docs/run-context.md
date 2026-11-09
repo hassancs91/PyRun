@@ -269,6 +269,11 @@ when the stop was asked for (`stop_requested_at`, also on the plugin SDK's
   [plugins.md](plugins.md)).
 - **Backups** include the result, progress and event.
 
+Keys keep the order they were written in everywhere above, on SQLite and on
+PostgreSQL: the result as the script set it, the event as it arrived, the
+inputs in the order the script declares them (and the **Run now** form lists
+them in that order too).
+
 ---
 
 ## Secrets

@@ -10,6 +10,7 @@ from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 from .environment import Environment
+from .fields import OrderedJSONField
 from .workspace import WorkspaceScopedManager
 
 
@@ -104,7 +105,9 @@ class Script(models.Model):
     # checked by core.services.script_inputs.check_inputs_schema. NULL = the
     # script takes no inputs (every script before 2.5). Run now renders a form
     # from it; the values a run gets are validated and stamped on Run.inputs.
-    inputs_schema = models.JSONField(
+    # OrderedJSONField: the form lists inputs in the order they were declared,
+    # on PostgreSQL too.
+    inputs_schema = OrderedJSONField(
         null=True,
         blank=True,
         default=None,

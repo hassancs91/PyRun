@@ -9,6 +9,7 @@ import uuid
 from django.conf import settings
 from django.db import models
 
+from .fields import OrderedJSONField
 from .script import Script
 from .workspace import WorkspaceScopedManager
 
@@ -124,7 +125,9 @@ class Run(models.Model):
     # queue_script_run, so a duplicate task delivery reads the same values.
     # Stored raw, because the script needs the real values: anything that
     # displays them masks secrets first. NULL = the script declared no inputs.
-    inputs = models.JSONField(
+    # inputs, result and event are OrderedJSONFields: their keys come back in
+    # the order they were written, on PostgreSQL too.
+    inputs = OrderedJSONField(
         null=True,
         blank=True,
         default=None,
@@ -138,7 +141,7 @@ class Run(models.Model):
     # ``result``: the JSON object the script passed to set_result(), capped at
     # core.services.run_reports.RESULT_MAX_BYTES. ``progress``: the latest
     # {"pct", "message", "updated_at"}. NULL = the script never set one.
-    result = models.JSONField(
+    result = OrderedJSONField(
         null=True,
         blank=True,
         default=None,
@@ -158,7 +161,7 @@ class Run(models.Model):
     # caller that didn't). Stored raw, like inputs, because the script reads
     # it (pyrunner_run.event()): the run page masks secrets before showing it.
     # NULL = a run from before 2.5.
-    event = models.JSONField(
+    event = OrderedJSONField(
         null=True,
         blank=True,
         default=None,

@@ -21,6 +21,11 @@ begins tracking at the current release; earlier history is in the git log.
   turned on while a required input has no default, and a webhook call to such
   a script gets a 400 that names the inputs. Scripts without inputs work
   exactly as before.
+  The form lists inputs in the order the script declares them, and a run's
+  inputs, result and event keep the order they were written in, on PostgreSQL
+  as on SQLite. On PostgreSQL the upgrade stores these values as `json` (which
+  keeps key order) instead of `jsonb`, which rewrites the scripts and runs
+  tables once, so a long run history makes that migration take a little longer.
 - **Run results and live progress.** The new `pyrunner_run` script helper
   reads a run's inputs (all of them, JSON inputs included) and its id, and lets
   the script report a structured result (`set_result({...})`, a JSON object up

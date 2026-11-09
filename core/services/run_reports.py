@@ -196,8 +196,8 @@ def progress_for_display(progress) -> dict | None:
 
 
 def result_text(result) -> str:
-    """The result as indented JSON, keys sorted (PostgreSQL's jsonb reorders them)."""
-    return json.dumps(result, indent=2, ensure_ascii=False, sort_keys=True)
+    """The result as indented JSON, keys in the order the script wrote them."""
+    return json.dumps(result, indent=2, ensure_ascii=False)
 
 
 def _excerpt(text: str, max_chars: int) -> str:
@@ -222,7 +222,7 @@ def result_excerpt(run, max_chars: int, *, indent: int | None = None) -> str:
     if run.result is None:
         return ""
     if indent is None:
-        text = json.dumps(run.result, ensure_ascii=False, sort_keys=True)
+        text = json.dumps(run.result, ensure_ascii=False)
     else:
-        text = json.dumps(run.result, ensure_ascii=False, sort_keys=True, indent=indent)
+        text = json.dumps(run.result, ensure_ascii=False, indent=indent)
     return _excerpt(text, max_chars)
