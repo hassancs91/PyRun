@@ -1,7 +1,7 @@
 # Unified REST and MCP API
 
 PyRun defines each endpoint once. REST, MCP, script loopback, the plugin SDK and
-in-process Brain tools use the same handlers, schemas and grant checks.
+[Py AI's tools](#py-ai) use the same handlers, schemas and grant checks.
 
 ## Authentication and workspace
 
@@ -329,6 +329,36 @@ bound to it. It is read-only, and Unified API tokens don't work there. A datasto
 token whose workspace no longer exists is refused (403 `SCOPE_MISMATCH`). Before
 2.5 such a token could still read the data stores that belonged to no workspace,
 and any token could read one of those by its name.
+
+## Py AI
+
+Py AI, the built-in read-only assistant, calls the registry's `read` endpoints
+in-process, as tools named like their MCP tools (`scripts-get`, `runs-output`),
+with the same descriptions, input schemas and answers. It never gets a `run` or
+`write` endpoint, whether API writes are on or off; its one action is proposing
+a Brain memory (`remember`), which waits for approval (see `docs/plugins.md`).
+Every call is scoped to the workspace Py AI answers about, like a token without a
+binding, and isn't rate-limited or recorded on an Activity page. An answer over
+100,000 characters comes back as a `too_large` error instead, so Py AI asks again
+for less (`runs.output` with `tail`, `datastores.entries` with a smaller
+`page_size`).
+
+Each endpoint declares a Py AI tier:
+
+| Tier | Who | Endpoints |
+|---|---|---|
+| `console` | The console's Py AI, open to workspace owners and admins | Every read endpoint |
+| `channel` | Py AI on a chat channel (Telegram), whose approved senders need not be owners or admins | `scripts.list`, `scripts.get`, `runs.list`, `runs.get`, the four datastore reads, and the Brain reads |
+
+So a chat channel can't read a run's output (`runs.output`); the console can.
+The tier is checked again on every call, not only when the tools are listed.
+Datastore values reach both tiers as stored, unmasked, as Py AI's
+`query_datastore` tool already gave them to chat channels.
+Brain endpoints also need the agent's own Brain grant (`agent:pyai` for the
+console, `<provider>:<channel UUID>` for a channel). Like an API token, Py AI
+sees the person behind a manual run as `user: {"id"}`, never the email. Py AI's
+older tools (`list_scripts`, `query_datastore`, and on the console
+`get_run_error`...) keep working beside these.
 
 ## MCP clients
 

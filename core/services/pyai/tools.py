@@ -8,6 +8,10 @@ run's stderr, already secret-masked when the run was stored) is given to the
 console Py AI only, which is limited to workspace owners/admins — not to chat
 channels, whose approved senders need not be either. ORM access is wrapped in
 ``sync_to_async`` because handlers run inside the SDK's event loop.
+
+The runtime adds the registry read endpoints (``scripts-get``, ``runs-output``,
+``datastores-entries``...) through ``core.api.tools``, the bridge that tiers
+them the same way: console Py AI gets them all, chat channels the safe subset.
 """
 
 import json

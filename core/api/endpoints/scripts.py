@@ -107,6 +107,7 @@ def schedule_summary(script):
         },
     },
     permission="scripts:read",
+    pyai_tier="channel",
 )
 def list_scripts(ctx, params):
     offset, limit = params.get("offset", 0), params.get("limit", 100)
@@ -141,6 +142,7 @@ def list_scripts(ctx, params):
         "properties": {"script": {"type": "string", "maxLength": 64, "description": "Script id"}},
     },
     permission="scripts:read",
+    pyai_tier="channel",
 )
 def get_script(ctx, params):
     script = resolve_script(ctx, params.get("script"))

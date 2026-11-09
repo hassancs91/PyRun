@@ -30,6 +30,7 @@ def brain_input(properties=None, required=()):
         },
     },
     permission="brain:read",
+    pyai_tier="channel",
 )
 def list_brains(ctx, params):
     offset, limit = params.get("offset", 0), params.get("limit", 1000)
@@ -48,6 +49,7 @@ def list_brains(ctx, params):
     description="Check that this token can reach the brain; returns your tier.",
     input=brain_input(),
     permission="brain:read",
+    pyai_tier="channel",
 )
 def ping(ctx, params):
     _, access = resolve(ctx, params)
@@ -64,6 +66,7 @@ def register_read(operation, title, description, properties=None, required=()):
         description=description,
         input=brain_input(properties, required),
         permission="brain:read",
+        pyai_tier="channel",
     )(handler)
 
 
@@ -98,7 +101,8 @@ get_raw = register_read(
 # with brain:write and a proposing grant), not a write behind the writes toggle.
 @endpoint("brain.propose-feed", title="Propose brain memory",
           description="Capture a source for extraction and human approval. Does not change notes.",
-          input=brain_input(INTAKE_PROPERTIES), access="run", permission="brain:write", rate=(20, 60))
+          input=brain_input(INTAKE_PROPERTIES), access="run", permission="brain:write", rate=(20, 60),
+          pyai_tier="channel")
 def propose_feed(ctx, params):
     return propose(ctx, params)
 
@@ -106,7 +110,7 @@ def propose_feed(ctx, params):
 @endpoint("brain.assemble-context", title="Assemble brain context",
           description="Read a small set of visible notes and assemble a verified context pack.",
           input=brain_input({"task": string(8000), "lens": string(100)}, ("task",)),
-          permission="brain:read", rate=(10, 60))
+          permission="brain:read", rate=(10, 60), pyai_tier="channel")
 def assemble_context(ctx, params):
     from core.brain.reader import assemble
 
@@ -115,7 +119,7 @@ def assemble_context(ctx, params):
 
 @endpoint("brain.search", title="Search brain notes", description="Optional semantic recall at your visibility tier.",
           input=brain_input({"query": string(8000), "k": {"type": "integer", "minimum": 1, "maximum": 20}}, ("query",)),
-          permission="brain:read", rate=(20, 60))
+          permission="brain:read", rate=(20, 60), pyai_tier="channel")
 def search(ctx, params):
     from core.brain.recall import search as recall
 

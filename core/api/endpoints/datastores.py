@@ -84,6 +84,7 @@ def entry_data(entry):
     ),
     input={"type": "object", "properties": {}},
     permission="datastores:read",
+    pyai_tier="channel",
 )
 def list_datastores(ctx, params):
     stores = list(stores_for(ctx).annotate(n=Count("entries")).order_by("name"))
@@ -96,6 +97,7 @@ def list_datastores(ctx, params):
     description="One datastore's description, entry count and timestamps.",
     input=store_input(),
     permission="datastores:read",
+    pyai_tier="channel",
 )
 def get_datastore(ctx, params):
     store = resolve_store(ctx, params.get("name"))
@@ -115,6 +117,7 @@ def get_datastore(ctx, params):
         "page_size": {"type": "integer", "minimum": 1, "maximum": MAX_PAGE_SIZE},
     }),
     permission="datastores:read",
+    pyai_tier="channel",
 )
 def list_entries(ctx, params):
     store = resolve_store(ctx, params.get("name"))
@@ -139,6 +142,7 @@ def list_entries(ctx, params):
     description="One entry of a datastore by its key, with its value.",
     input=store_input({"key": KEY}, ("key",)),
     permission="datastores:read",
+    pyai_tier="channel",
 )
 def get_entry(ctx, params):
     store = resolve_store(ctx, params.get("name"))

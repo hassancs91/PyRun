@@ -96,6 +96,7 @@ def event_for(ctx, event):
         },
     },
     permission="runs:read",
+    pyai_tier="channel",
 )
 def list_runs(ctx, params):
     runs = runs_for(ctx)
@@ -133,6 +134,7 @@ def list_runs(ctx, params):
         "required": ["run"],
     },
     permission="runs:read",
+    pyai_tier="channel",
 )
 def get_run(ctx, params):
     from core.executor import mask_run_inputs, mask_run_value
@@ -191,6 +193,8 @@ def get_run(ctx, params):
     },
     permission="runs:output",
     text="text",
+    # Console only: a chat channel's approved senders need not be owners or admins.
+    pyai_tier="console",
 )
 def get_output(ctx, params):
     stream = params.get("stream", "stdout")

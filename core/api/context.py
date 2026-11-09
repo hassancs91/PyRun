@@ -19,6 +19,10 @@ class CallContext:
     # The one datastore a bound token may reach (APIToken.datastore_id; a
     # legacy single-store token's store); None = any in ``workspace``.
     datastore_id: object = None
+    # Py AI's tier for an in-process agent call (core.api.tools): "console" or
+    # "channel"; the registry refuses an endpoint the tier may not call.
+    # None for every other caller.
+    pyai_tier: str | None = None
     request_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     transport: str = "in-process"
     deadline: float | None = None

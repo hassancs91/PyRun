@@ -1,41 +1,31 @@
-"""Grant-filtered, in-process tools; each execution rechecks current grants."""
+"""Grant-filtered, in-process tools; each execution rechecks current grants.
 
-import json
+Built with the registry bridge (``core.api.tools``), which gives Py AI every
+other read endpoint its tier may call.
+"""
 
-from asgiref.sync import sync_to_async
-from claude_agent_sdk import tool
-
-from core.api.errors import ApiError
 from core.api.registry import registry
+from core.api.tools import as_tool, tier_for, with_tier
 from .access import accessible_brains, access_for, principal_context
 
 
 def build_tools(workspace, *, agent="pyai"):
-    ctx = principal_context(workspace, "agent", agent)
+    ctx = with_tier(principal_context(workspace, "agent", agent), agent)
     if not accessible_brains(ctx).exists():
         return []
     can_propose = any(access_for(ctx, brain).can_propose for brain in accessible_brains(ctx))
 
-    def wrap(spec, name=None):
-        @tool(name or spec.mcp_name, spec.description or spec.title, spec.input)
-        async def call(params):
-            try:
-                current = principal_context(workspace, "agent", agent)
-                data = await sync_to_async(registry.call)(spec.slug, current, params)
-            except ApiError as exc:
-                return {
-                    "isError": True,
-                    "content": [{"type": "text", "text": json.dumps({"error": exc.as_dict()})}],
-                }
-            return {"content": [{"type": "text", "text": json.dumps(data)}]}
+    def context():
+        return with_tier(principal_context(workspace, "agent", agent), agent)
 
-        return call
-
+    tier = tier_for(agent)
     result = [
-        wrap(spec)
+        as_tool(spec, context)
         for spec in registry.visible(ctx)
-        if spec.slug.startswith("brain.") and (spec.access == "read" or can_propose)
+        if spec.slug.startswith("brain.")
+        and (spec.access == "read" or can_propose)
+        and spec.allows_tier(tier)
     ]
     if can_propose:
-        result.append(wrap(registry.get("brain.propose-feed"), "remember"))
+        result.append(as_tool(registry.get("brain.propose-feed"), context, "remember"))
     return result

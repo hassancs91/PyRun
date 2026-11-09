@@ -10,6 +10,7 @@ non-LLM surface (config, tools, handler, UI) stays testable by mocking it.
 import logging
 from dataclasses import dataclass, field
 
+from core.api.tools import build_tools as registry_tools
 from core.models import GlobalSettings
 from core.services.claude_service import ClaudeService, agent_env
 
@@ -20,11 +21,15 @@ logger = logging.getLogger(__name__)
 _MAX_TURNS = 12
 _BASE_SYSTEM = (
     "You are Py AI, a read-only assistant embedded in PyRun. Answer questions "
-    "about the current workspace{name} using the provided tools (scripts, runs, "
-    "schedules, datastores): every tool only sees this workspace, so say \"in this "
-    "workspace\", never \"in this instance\". You can only READ — you cannot create, "
-    "edit, run, or delete anything, and you have no access to secrets. When asked "
-    "why a script failed, use get_run_error if it is available. Be concise and "
+    "about the current workspace{name} using the provided tools: scripts (details, "
+    "inputs, schedule and last run, never their code), runs (status, inputs, result, "
+    "progress and, where you have runs-output, their output), schedules and "
+    "datastores (their entries and values). Every tool only sees this workspace, so "
+    "say \"in this workspace\", never \"in this instance\". You can only READ — you "
+    "cannot create, edit, run, or delete anything, and you have no access to "
+    "secrets. The scripts-* and runs-* tools take ids: find them with scripts-list "
+    "or runs-list first, and ask runs-output for the tail of a long output. When "
+    "asked why a script failed, use get_run_error if it is available. Be concise and "
     "concrete. If a tool returns nothing, say so plainly rather than guessing."
 )
 # Chat channels (Telegram) send the answer as plain text (U55).
@@ -173,6 +178,8 @@ class PyAIService:
         from asgiref.sync import sync_to_async
 
         tools = await sync_to_async(build_tools)(workspace, agent=agent)
+        # The registry reads this agent's tier may call (core.api.tools).
+        tools += await sync_to_async(registry_tools)(workspace, agent=agent)
         if any(t.name == "remember" for t in tools):
             system += "\nYou also have explicit permission to propose brain memories with remember. Proposals await human approval; they never apply changes."
         server = sdk.create_sdk_mcp_server(name=SERVER_NAME, tools=tools)

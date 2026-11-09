@@ -221,6 +221,16 @@ begins tracking at the current release; earlier history is in the git log.
   belong to no workspace, and no token reaches one of those by its name any
   more. Deleting a datastore in the console now says how many API tokens bound
   to it go with it. Guide: "Datastores" in `docs/api.md`.
+- **Py AI reads scripts, runs and datastores through the API's endpoints.**
+  Py AI now gets the API's read endpoints as tools of its own (`scripts-get`,
+  `runs-get`, `runs-output`, `datastores-entries`...), with the same
+  descriptions, inputs and answers as over REST and MCP (secrets masked the
+  same way), so it can look at a script's inputs and schedule, a run's result
+  and progress, and any datastore entry. Each endpoint says which Py AI may
+  call it: the console's Py AI (workspace owners and admins) gets every read
+  endpoint, while Py AI on a chat channel such as Telegram can't read a run's
+  output. It still can't run, change or delete anything, and its older tools
+  keep working. Guide: "Py AI" in `docs/api.md`.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

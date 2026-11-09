@@ -27,6 +27,12 @@ WRITES_DISABLED = (
     "API writes are turned off on this instance. A superuser can turn them on "
     "in Settings → API & MCP."
 )
+# Py AI tiers (plan D9), declared per endpoint (``Endpoint.pyai_tier``). The
+# console Py AI, open to workspace owners and admins, may call every read
+# endpoint; a chat-channel agent (Telegram), whose approved senders need not
+# be either, only the ones declared ``channel``. ``core.api.tools`` builds the
+# tools; ``Registry.call`` checks the tier of a Py AI caller again.
+PYAI_TIERS = ("console", "channel")
 
 
 def writes_enabled():
@@ -53,6 +59,13 @@ class Endpoint:
     # When set, REST answers 202 Accepted instead of 200 while this boolean
     # field of the result is false (scripts.run: a run that hasn't ended).
     done: str = ""
+    # The Py AI tiers that may call it (PYAI_TIERS): ``console`` (the default)
+    # for the console only, ``channel`` for chat channels too.
+    pyai_tier: str = "console"
+
+    def allows_tier(self, tier):
+        """Whether a caller of Py AI ``tier`` may call this (``None``: not Py AI)."""
+        return tier in (None, "console") or self.pyai_tier == "channel"
 
     @property
     def mcp_name(self):
@@ -84,6 +97,8 @@ class Registry:
             raise ValueError("Endpoint slug must be a namespace.name of at most 64 characters")
         if spec.access not in ACCESS_CLASSES or not spec.permission:
             raise ValueError("Endpoint access (read, run or write) and permission are required")
+        if spec.pyai_tier not in PYAI_TIERS:
+            raise ValueError("Endpoint pyai_tier must be console or channel")
         # A write permission unlocks writes and nothing else, so refusing it
         # while writes are off never takes a read or run endpoint away.
         writes = {e.permission for e in self._endpoints.values() if e.access == "write"}
@@ -138,6 +153,12 @@ class Registry:
             (e for e in self._endpoints.values() if e.access == "write"), key=lambda e: e.slug
         )
 
+    def reads(self):
+        """The registered read endpoints, by slug."""
+        return sorted(
+            (e for e in self._endpoints.values() if e.access == "read"), key=lambda e: e.slug
+        )
+
     def call(self, slug, ctx, params):
         started, ok = time.monotonic(), False
         try:
@@ -145,7 +166,11 @@ class Registry:
             spec = self.get(slug)
             if spec is None:
                 raise ApiError("not_found", "Unknown endpoint.", status=404)
-            if ctx.workspace is None or spec.permission not in ctx.permissions:
+            if (
+                ctx.workspace is None
+                or spec.permission not in ctx.permissions
+                or not spec.allows_tier(ctx.pyai_tier)
+            ):
                 raise ApiError("forbidden", "Permission denied.", status=403)
             if spec.access == "write" and not writes_enabled():
                 raise ApiError("writes_disabled", WRITES_DISABLED, status=403)
@@ -190,14 +215,15 @@ registry = Registry()
 
 def endpoint(
     slug, *, title, description="", input, access="read", permission, rate=(60, 60), text="",
-    done="",
+    done="", pyai_tier="console",
 ):
     def decorate(handler):
         schema = copy.deepcopy(input)
         schema.setdefault("additionalProperties", False)
         registry.register(
             Endpoint(
-                slug, handler, schema, title, description, access, permission, rate, text, done
+                slug, handler, schema, title, description, access, permission, rate, text, done,
+                pyai_tier,
             )
         )
         return handler
