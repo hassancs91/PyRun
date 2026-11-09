@@ -246,6 +246,22 @@ begins tracking at the current release; earlier history is in the git log.
   and searches them but can't run a query. On an instance without a data server
   the databases are still listed, with the reason they can't be read. Guide:
   "Databases" and "Vectors" in `docs/api.md`.
+- **Py AI and the API know the rest of the workspace, and whether all is well.**
+  Nine new read endpoints, each with its own permission: `providers.list` (AI and
+  embedding providers, the default one and this workspace's AI usage today),
+  `secrets.names` (secret names and the scripts that get each one, or the
+  secrets one script gets), `channels.list`, `plugins.list`, `environments.list`
+  (with one environment's installed packages), `libraries.list`,
+  `schedules.list`, `scripts.code` (`scripts:read_code`, with the values of the
+  script's secrets masked) and `system.health` (worker, tasks waiting, paused
+  schedules, maintenance windows, the last scheduled backup, version and update,
+  plugins that failed to load, failed runs, and a list of issues). None returns
+  a secret value, a provider key or a channel token. Py AI can answer "is
+  everything OK?" and "does this script have a SERPER key?": the console's Py AI
+  gets all of them, while Py AI on a chat channel gets plugins, environments,
+  libraries, schedules and system health but never code, secret names,
+  providers or channels. Guide: "Workspace inventory and health" in
+  `docs/api.md`.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

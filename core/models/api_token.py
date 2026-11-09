@@ -41,6 +41,7 @@ class APIToken(models.Model):
         ("brain:read", "Read brains"),
         ("brain:write", "Propose brain updates"),
         ("scripts:read", "Read scripts (metadata and inputs, never code)"),
+        ("scripts:read_code", "Read script code (secret values masked)"),
         ("runs:read", "Read runs (status, inputs, result, event)"),
         ("runs:output", "Read run output (stdout and stderr, secrets masked)"),
         ("scripts:run", "Run scripts (with inputs; can wait for the result)"),
@@ -50,6 +51,14 @@ class APIToken(models.Model):
         ("databases:read", "Read databases (tables, and read-only SELECT queries)"),
         ("vectors:read", "Read vector collections (list, and similarity search)"),
         ("vectors:write", "Write vector points (upsert and delete)"),
+        ("secrets:read_names", "Read secret names and the scripts that get them (never values)"),
+        ("providers:read", "Read AI and embedding providers (names and models, never keys)"),
+        ("channels:read", "Read chat channels (handlers and members, never tokens)"),
+        ("plugins:read", "Read installed plugins"),
+        ("environments:read", "Read environments (and their installed packages)"),
+        ("libraries:read", "Read libraries (modules and attached scripts, never code)"),
+        ("schedules:read", "Read schedules"),
+        ("system:read", "Read system health"),
     )
     TIERS = (("public", "Public"), ("agents-only", "Agents only"), ("private", "Private"))
     # Which permissions are write permissions comes from the registry: those

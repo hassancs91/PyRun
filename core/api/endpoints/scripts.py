@@ -1,4 +1,9 @@
-"""Scripts over REST and MCP (2.5 Stage 2): metadata, never code; and ``scripts.run``.
+"""Scripts over REST and MCP (2.5 Stage 2): metadata, ``scripts.run``; code apart.
+
+``scripts.list`` and ``scripts.get`` never return code. ``scripts.code`` (2.5
+Stage 3, T18) does, under its own permission (``scripts:read_code``), with the
+values of the secrets the script gets masked, and only for the console's Py AI,
+never a chat channel's.
 
 A token bound to one script (``APIToken.script``) sees that script alone, here
 and in ``runs.*``. Every lookup is scoped to the token's workspace, and an id
@@ -163,6 +168,45 @@ def get_script(ctx, params):
             "ended_at": iso(last.ended_at),
         },
         "created_at": iso(script.created_at),
+    }
+
+
+@endpoint(
+    "scripts.code",
+    title="Get script code",
+    description=(
+        "One script's current code, as saved in the editor, with the values of the "
+        "secrets it gets masked as [NAME:MASKED]. A token bound to one script may "
+        "leave out `script`."
+    ),
+    input={
+        "type": "object",
+        "properties": {"script": {"type": "string", "maxLength": 64, "description": "Script id"}},
+    },
+    permission="scripts:read_code",
+)
+def script_code(ctx, params):
+    from core.executor import mask_run_value
+    from core.models import Run
+    from core.services.secret_backends import SecretResolutionError
+
+    script = resolve_script(ctx, params.get("script"))
+    code, withheld = script.code, []
+    # The mask set a run of this script would get (its secrets and the AI
+    # credential), through the run page's helper; nothing is saved.
+    unsaved_run = Run(script=script, workspace_id=script.workspace_id)
+    try:
+        code = mask_run_value(unsaved_run, code)
+    except SecretResolutionError:
+        code = None
+        withheld.append("code")
+    return {
+        "id": str(script.id),
+        "name": script.name,
+        "code": code,
+        "lines": None if code is None else len(script.code.splitlines()),
+        "updated_at": iso(script.updated_at),
+        "withheld": withheld,
     }
 
 

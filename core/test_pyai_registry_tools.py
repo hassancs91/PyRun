@@ -164,7 +164,9 @@ class BridgeToolsTests(_Fixture, TestCase):
         self.assertTrue(CONSOLE_TOOLS <= console, CONSOLE_TOOLS - console)
         self.assertTrue(CHANNEL_TOOLS <= channel, CHANNEL_TOOLS - channel)
         self.assertNotIn("runs-output", channel)
-        self.assertEqual(console - channel, {"runs-output", "databases-query"})
+        # T17 added databases-query, T18 code, secret names, providers and channels.
+        self.assertEqual(console - channel, {"runs-output", "databases-query", "scripts-code",
+                                             "secrets-names", "providers-list", "channels-list"})
         # Brain tools come from core.brain.tools (grant-checked), not from here.
         self.assertFalse(any(n.startswith("brain-") for n in console | channel))
 
@@ -341,7 +343,8 @@ class RuntimeTierTests(_Fixture, TestCase):
         for plain_text in (False, True):
             prompt = runtime.base_system_prompt(self.ws, plain_text=plain_text)
             self.assertIn("You can only READ", prompt)
-            self.assertIn("no access to secrets", prompt)
+            self.assertIn("never see secret values", prompt)
+            # T18: code only where the tier has scripts-code (the console).
             for area in ("scripts", "runs", "schedules", "datastores", "runs-output",
-                         "never their code"):
+                         "where you have scripts-code, their code"):
                 self.assertIn(area, prompt)

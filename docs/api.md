@@ -420,6 +420,100 @@ Search a workspace's vector collections and, while
   Errors keep the vector codes (`unsupported_filter`, `dimension_mismatch`,
   `embedding_failed` (502), `backend_unavailable` (503), `not_ready` (409)...).
 
+## Workspace inventory and health
+
+Describe the rest of a workspace, and the instance it runs on: providers, secret
+names, chat channels, plugins, environments, libraries, schedules, a script's
+code, and whether everything is OK. All are `read` endpoints, each with its own
+permission.
+
+| REST endpoint | Parameters | Permission |
+|---|---|---|
+| `providers.list` | None | `providers:read` |
+| `secrets.names` | Optional `script` (its id: only the secrets it gets) | `secrets:read_names` |
+| `channels.list` | None | `channels:read` |
+| `plugins.list` | None | `plugins:read` |
+| `environments.list` | Optional `environment` (a name or id: that one, with its installed packages) | `environments:read` |
+| `libraries.list` | None | `libraries:read` |
+| `schedules.list` | Optional `active` (only schedules that are on, or off) | `schedules:read` |
+| `scripts.code` | `script` (its id); optional for a token bound to one script | `scripts:read_code` |
+| `system.health` | None | `system:read` |
+
+```sh
+curl -H "Authorization: Bearer $PYRUN_TOKEN" https://pyrun.example/api/v1/system.health
+```
+
+None of them returns a secret value, a provider's key or base URL, a channel's
+bot token, inbound token or signing secret, or a library's code. AI and
+embedding providers, plugins and environments belong to the instance, so every
+workspace lists the same ones; usage, scripts, channels, libraries, schedules
+and runs are the token's workspace's.
+
+- `providers.list` returns `ai` (`enabled`: the AI switch in Services;
+  `default`: the provider scripts, Py AI and Brains use; `providers`, each with
+  `name`, `type`, `model`, `default` and `tested_at`; and `usage_today`: the
+  calls and tokens this workspace's scripts and Brains used since midnight in the
+  instance's time zone, by model; Py AI's own calls aren't counted) and
+  `embedding.providers` (`name`, `type`, `model`, `dimension`, `enabled`,
+  `tested_at`).
+- `secrets.names` returns `secrets`, each with `name`, `owner_plugin` (the
+  plugin that owns it, or null), `source` (`local` or `external`),
+  `description`, `scripts` (the scripts that get it as an environment variable,
+  up to 50) and `script_count`. The selection is the one a run makes: a script
+  in *All* mode gets every secret that no plugin owns, a script in *Selected*
+  mode its attached secrets and, for a plugin's script, the plugin's own; secrets
+  made before workspaces existed (with no workspace) reach every workspace's
+  scripts and are listed too. With `script` the list is that script's secrets
+  and `script` names it with its `injection_mode`: "does this script have a
+  SERPER key?". With no encryption key configured nothing is injected, so every
+  `script_count` is 0.
+- `channels.list` returns `channels`, each with `name`, `provider`, `enabled`,
+  `configured`, `inbound` (`enabled`, `handler`: `script` or `pyai`, the
+  `script` it runs, and `access`), `members` (counts by status:
+  `pending`, `approved`, `blocked`), `daily_reply_cap`, `daily_cap_reached`,
+  `last_error` (with the channel's own credentials masked), `last_tested_at`
+  and `last_inbound_at`. Members' ids and names aren't returned.
+- `plugins.list` returns `plugins`, each with `slug`, `name`, `version`, `status`
+  (`active`, `installed`, `disabled`, `errored`), `source`, `summary`, `author`,
+  `installed_at` and `activated_at`.
+- `environments.list` returns `environments`, each with `id`, `name`,
+  `description`, `python_version`, `default`, `active`, `requirements` (the
+  saved requirements: PyRun stores the environment's `pip freeze` after every
+  package change) and `scripts` (how many of this workspace's scripts use it).
+  With `environment`, that one environment also has `packages` (`name`,
+  `version`), read from the environment itself (`pip list`, as the console's
+  environment page does); two environments with the same name answer 400
+  `invalid_input`: pass the id. It takes 30 calls a minute per token.
+- `libraries.list` returns `libraries`, each with `key` (its import name),
+  `name`, `description`, `owner_plugin`, `version`, `modules` (file names) and
+  `scripts` (the scripts it is attached to).
+- `schedules.list` returns `schedules` (scripts whose schedule isn't manual),
+  each with `script` (`id`, `name`, `enabled`), `mode`, `active`, `summary`,
+  `timezone`, `next_run` and `last_run_at`, and `paused`: the **Pause all**
+  switch in Settings, which stops every schedule while it is on.
+- `scripts.code` returns the script's `code` as saved, with the values of the
+  secrets it gets (and the AI credential its runs get) masked as
+  `[NAME:MASKED]`, and `lines`. When a secret can't be resolved (an external
+  provider is down), `code` is null and `withheld` says so. `scripts.get` still
+  never returns code.
+- `system.health` returns `ok`, `issues` (what needs attention, in sentences:
+  no worker running, schedules paused, a maintenance window on, the last
+  scheduled backup failed, plugins that failed to load, runs that failed or timed
+  out in this workspace in the last 24 hours) and the details: `worker`
+  (`alive`, `status`, `configured_workers`, `heartbeat_at`, `tasks_waiting`),
+  `schedules` (`paused`, `paused_at`), `maintenance` (the windows on now for this
+  workspace, `until`, `until_local`, `blocks`), `backup` (the last scheduled
+  backup: `scheduled`, `schedule`, `next_run`, `last_run_at`, `last_status`,
+  `last_size_bytes`; a backup downloaded from the console isn't recorded),
+  `version` (`running`, `latest`, `update_available`, `checked_at`, from the
+  daily update check), `plugins.errored` and `runs` (`running`, `waiting`,
+  `failed_last_24h`). Error texts aren't returned; the console's pages show them.
+- A token bound to one script sees that script only, wherever these name
+  scripts (`secrets.names`, `channels.list`, the `scripts` counts of
+  `environments.list`, `libraries.list`, `schedules.list`), and `scripts.code`
+  reads that script alone. Its binding doesn't narrow anything else, as for
+  databases and vectors.
+
 ## Py AI
 
 Py AI, the built-in read-only assistant, calls the registry's `read` endpoints
@@ -438,10 +532,12 @@ Each endpoint declares a Py AI tier:
 | Tier | Who | Endpoints |
 |---|---|---|
 | `console` | The console's Py AI, open to workspace owners and admins | Every read endpoint |
-| `channel` | Py AI on a chat channel (Telegram), whose approved senders need not be owners or admins | `scripts.list`, `scripts.get`, `runs.list`, `runs.get`, the four datastore reads, `databases.list`, `databases.tables`, `vectors.list`, `vectors.search`, and the Brain reads |
+| `channel` | Py AI on a chat channel (Telegram), whose approved senders need not be owners or admins | `scripts.list`, `scripts.get`, `runs.list`, `runs.get`, the four datastore reads, `databases.list`, `databases.tables`, `vectors.list`, `vectors.search`, `plugins.list`, `environments.list`, `libraries.list`, `schedules.list`, `system.health`, and the Brain reads |
 
-So a chat channel can't read a run's output (`runs.output`) or run a database
-query (`databases.query`); the console can.
+So a chat channel can't read a run's output (`runs.output`), run a database
+query (`databases.query`), read a script's code (`scripts.code`) or list secret
+names (`secrets.names`), providers (`providers.list`) or channels
+(`channels.list`); the console can.
 The tier is checked again on every call, not only when the tools are listed.
 Datastore values reach both tiers as stored, unmasked, as Py AI's
 `query_datastore` tool already gave them to chat channels; so do vector points.
@@ -488,8 +584,10 @@ For clients that can only accept a URL, an instance administrator can enable
 **MCP URL tokens** in Connect. Create a separate token of that kind with read-only
 permissions and a mandatory expiry (90 days by default). Read-only means
 permissions that guard read endpoints alone: `brain:read`, `scripts:read`,
-`runs:read`, `runs:output`, `datastores:read`, `databases:read` and `vectors:read`,
-not `brain:write`. Its endpoint is
+`scripts:read_code`, `runs:read`, `runs:output`, `datastores:read`,
+`databases:read`, `vectors:read`, `secrets:read_names`, `providers:read`,
+`channels:read`, `plugins:read`, `environments:read`, `libraries:read`,
+`schedules:read` and `system:read`, not `brain:write`. Its endpoint is
 `POST /mcp/k/<url-token>/`. It cannot be used as a REST/bearer token. The URL itself
 is a credential: keep connector configuration private and redact that route from
 reverse-proxy access logs. Because the token travels in the request path, reverse
