@@ -9,9 +9,11 @@ from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
+from core.api import script_tools
 from core.api.context import token_context
 from core.api.registry import registry
 from core.models import APIToken, GlobalSettings
+from core.services import run_wait
 from core.views.decorators import superuser_required
 
 
@@ -20,13 +22,16 @@ def connect_view(request):
     tokens = APIToken.objects.filter(workspace=request.workspace, scope="api").order_by("name")
     selected = None
     endpoints = []
+    tools = []
     if request.GET.get("token"):
         try:
             token_id = uuid.UUID(request.GET["token"])
         except ValueError as exc:
             raise Http404("Unknown token.") from exc
         selected = get_object_or_404(tokens, pk=token_id)
-        endpoints = registry.visible(token_context(selected))
+        ctx = token_context(selected)
+        endpoints = registry.visible(ctx)
+        tools = list(script_tools.exposed(ctx, listed=True))
     global_settings = GlobalSettings.get_settings()
     return render(
         request,
@@ -38,9 +43,13 @@ def connect_view(request):
             "writes_enabled": global_settings.api_writes_enabled,
             "parallel_calls": settings.MCP_PARALLEL_CALLS,
             "budget": settings.MCP_CALL_BUDGET_SECONDS,
+            # How long a script tool call waits for its run (scripts.run's cap
+            # inside the MCP call budget).
+            "tool_wait": int(run_wait.budget(None, settings.MCP_CALL_BUDGET_SECONDS)),
             "tokens": tokens,
             "selected": selected,
             "endpoints": endpoints,
+            "script_tools": tools,
         },
     )
 

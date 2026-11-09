@@ -69,7 +69,7 @@
 </form>
 <form method="post" action="{% url 'cpanel:script_fork' pk=script.pk %}">
     {% csrf_token %}
-    <button type="submit" class="inline-grid place-items-center w-9 h-9 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors" title="Fork — duplicate this script (code, settings, tags, libraries; no webhook, schedule paused)">
+    <button type="submit" class="inline-grid place-items-center w-9 h-9 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors" title="Fork — duplicate this script (code, settings, tags, libraries; no webhook or MCP tool, schedule paused)">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V5a2 2 0 012-2h9a2 2 0 012 2v9a2 2 0 01-2 2h-2M5 9h9a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2v-8a2 2 0 012-2z"/></svg>
     </button>
 </form>
@@ -125,6 +125,10 @@
                 <div class="flex items-center justify-between gap-3">
                     <dt class="text-muted">Retries on failure</dt>
                     <dd class="text-text text-right">{% if script.retry_max_attempts %}Up to {{ script.retry_max_attempts }} · <span class="font-mono tnum">{{ script.retry_delay_seconds }}s</span>{% if script.retry_backoff_multiplier != 1 %} <span class="font-mono tnum">×{{ script.retry_backoff_multiplier|floatformat:"-1" }}</span>{% endif %}{% if script.retry_on_timeout %} · timeouts too{% endif %}{% else %}Off{% endif %}</dd>
+                </div>
+                <div class="flex items-center justify-between gap-3">
+                    <dt class="text-muted">MCP tool</dt>
+                    <dd class="min-w-0 text-text">{% if script.expose_as_tool %}<span class="font-mono text-xs break-all">{{ script.tool_name }}</span>{% else %}Off{% endif %}</dd>
                 </div>
                 <div class="flex items-start justify-between gap-3">
                     <dt class="text-muted flex-shrink-0">Env vars</dt>

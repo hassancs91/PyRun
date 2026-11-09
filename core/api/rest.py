@@ -10,6 +10,7 @@ from django.views.decorators.csrf import csrf_exempt
 from core.ratelimit import client_ip, rate_limit_exceeded, seconds_to_window_reset
 from core.services import api_audit
 from core.views.api.decorators import add_cors_headers, cors_preflight_response
+from . import script_tools
 from .context import token_context
 from .errors import RATE_WINDOW, ApiError, authenticate, error_response, touch_last_used
 from .registry import registry
@@ -55,7 +56,15 @@ def dispatch(request, slug):
                 )
             data = (
                 document(ctx) if slug == "_openapi.json" else
-                {"endpoints": [e.catalog_entry() for e in registry.visible(ctx)]}
+                {
+                    "endpoints": [e.catalog_entry() for e in registry.visible(ctx)],
+                    # Scripts offered as MCP tools (kind "script"); over REST
+                    # they run through scripts.run with their script id.
+                    "script_tools": [
+                        script_tools.catalog_entry(s)
+                        for s in script_tools.exposed(ctx, listed=True)
+                    ],
+                }
                 if slug == "_catalog"
                 else {"status": "ok"}
             )

@@ -6,7 +6,7 @@ import secrets
 import uuid
 
 from django.conf import settings
-from django.core.validators import MaxValueValidator, MinValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
 from django.db import models
 
 from .environment import Environment
@@ -239,6 +239,29 @@ class Script(models.Model):
         help_text="Unique token for webhook URL (auto-generated)",
     )
 
+    # Script as an MCP tool (2.5, T14; core.api.script_tools holds the rules).
+    # On: MCP tools/list shows the script as the tool ``tool_name`` to tokens
+    # that may run it, and calling the tool is scripts.run with wait. Exposed
+    # tool names are unique per workspace (constraint below). A name has no
+    # hyphen, so it can't clash with a registry tool (``<namespace>-<name>``).
+    # At most 40 characters: clients prefix MCP tool names (Claude Code:
+    # ``mcp__<server>__``) and many models cap a tool name at 64.
+    TOOL_NAME_MAX_LENGTH = 40
+    TOOL_NAME_PATTERN = r"^[a-z][a-z0-9_]*\Z"
+    TOOL_NAME_RULE = "Use lowercase letters, digits and underscores, starting with a letter."
+
+    expose_as_tool = models.BooleanField(
+        default=False,
+        help_text="Offer this script as a tool to MCP clients whose token may run it.",
+    )
+    tool_name = models.CharField(
+        max_length=TOOL_NAME_MAX_LENGTH,
+        blank=True,
+        default="",
+        validators=[RegexValidator(TOOL_NAME_PATTERN, TOOL_NAME_RULE)],
+        help_text="The MCP tool name: lowercase letters, digits and underscores.",
+    )
+
     # Notification settings
     class NotifyOn(models.TextChoices):
         NEVER = "never", "Never"
@@ -316,6 +339,21 @@ class Script(models.Model):
         verbose_name = "script"
         verbose_name_plural = "scripts"
         ordering = ["-updated_at"]
+        constraints = [
+            # An exposed script has a tool name, and no two exposed scripts in
+            # a workspace share one (archived ones included: unarchiving must
+            # not collide). A name kept while the switch is off holds nothing.
+            models.CheckConstraint(
+                condition=models.Q(expose_as_tool=False) | ~models.Q(tool_name=""),
+                name="script_exposed_tool_named",
+                violation_error_message="A script offered as an MCP tool needs a tool name.",
+            ),
+            models.UniqueConstraint(
+                fields=["workspace", "tool_name"],
+                condition=models.Q(expose_as_tool=True),
+                name="uniq_script_ws_tool_name",
+            ),
+        ]
 
     def __str__(self):
         if self.is_archived:

@@ -22,6 +22,10 @@ from core.services.script_inputs import (
     input_fields,
     prepare_inputs,
 )
+from core.api.script_tools import (
+    default_name as default_tool_name,
+    name_holder as tool_name_holder,
+)
 
 
 # Regex pattern for secret key validation (uppercase, numbers, underscores, must start with letter)
@@ -201,6 +205,8 @@ class ScriptForm(forms.ModelForm):
             "retry_backoff_multiplier",
             "retry_on_timeout",
             "is_enabled",
+            "expose_as_tool",
+            "tool_name",
             "isolation_mode",
             "injection_mode",
             "notify_on",
@@ -252,6 +258,15 @@ class ScriptForm(forms.ModelForm):
             ),
             "retry_on_timeout": forms.CheckboxInput(attrs={"class": CHECK_CLASS}),
             "is_enabled": forms.CheckboxInput(attrs={"class": CHECK_CLASS}),
+            "expose_as_tool": forms.CheckboxInput(attrs={"class": CHECK_CLASS}),
+            "tool_name": forms.TextInput(
+                attrs={
+                    "class": INPUT_CLASS + " font-mono",
+                    "placeholder": "weekly_report",
+                    "autocomplete": "off",
+                    "spellcheck": "false",
+                }
+            ),
             "isolation_mode": forms.Select(attrs={"class": INPUT_CLASS}),
             "injection_mode": forms.Select(attrs={"class": INPUT_CLASS}),
             "notify_on": forms.Select(attrs={"class": INPUT_CLASS}),
@@ -284,6 +299,8 @@ class ScriptForm(forms.ModelForm):
             "retry_backoff_multiplier": "Backoff multiplier",
             "retry_on_timeout": "Retry timeouts too",
             "is_enabled": "Enabled",
+            "expose_as_tool": "Expose as MCP tool",
+            "tool_name": "Tool name",
             "isolation_mode": "Execution Isolation",
             "injection_mode": "Secret injection",
             "notify_on": "Notify On",
@@ -311,10 +328,14 @@ class ScriptForm(forms.ModelForm):
             "injection_mode": "All = every workspace secret (default). Selected = only the secrets you attach below.",
             "notify_email": "Leave empty to use global default",
             "notify_webhook_url": "URL to POST notifications to when script completes",
+            "tool_name": "Lowercase letters, digits and underscores, up to "
+            f"{Script.TOOL_NAME_MAX_LENGTH} characters, unique in this workspace. "
+            "Leave it blank to use the script's name.",
         }
 
     def __init__(self, *args, workspace=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self._workspace = workspace
         # Only show active environments
         self.fields["environment"].queryset = Environment.objects.filter(is_active=True)
         # Preselect the default environment on the create form (the field is
@@ -429,6 +450,41 @@ class ScriptForm(forms.ModelForm):
         if timeout is not None and (timeout < 1 or timeout > 86400):
             raise forms.ValidationError("Timeout must be between 1 and 86400 seconds (24 hours).")
         return timeout
+
+    def clean_tool_name(self):
+        return (self.cleaned_data.get("tool_name") or "").strip()
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("expose_as_tool") and "tool_name" in cleaned:
+            self._clean_exposed_tool_name(cleaned)
+        return cleaned
+
+    def _clean_exposed_tool_name(self, cleaned):
+        """An exposed script's tool name: typed, or made from the script's
+        name when left blank, and not used by another exposed script in the
+        workspace (the unique constraint names the workspace, which isn't a
+        form field, so the form checks it here)."""
+        name, typed = cleaned["tool_name"], bool(cleaned["tool_name"])
+        if not typed:
+            name = default_tool_name(cleaned.get("name") or self.instance.name)
+            if not name:
+                self.add_error(
+                    "tool_name",
+                    "Give the tool a name: lowercase letters, digits and underscores, "
+                    "starting with a letter.",
+                )
+                return
+            cleaned["tool_name"] = name
+        workspace = self.instance.workspace_id or getattr(self._workspace, "pk", None)
+        holder = tool_name_holder(workspace, name, exclude_pk=self.instance.pk)
+        if holder is not None:
+            archived = " (archived)" if holder.archived_at else ""
+            which = "this tool name" if typed else f'the tool name "{name}"'
+            self.add_error(
+                "tool_name",
+                f'The script "{holder.name}"{archived} already uses {which}. Pick another.',
+            )
 
 
 class _NumberInputField(forms.Field):

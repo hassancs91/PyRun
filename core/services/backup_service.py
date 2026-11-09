@@ -162,6 +162,11 @@ class BackupService:
     # runs: an unfinished one never comes back half-stopped.
     # ``env_vars`` on scripts (older backups: none, ``{}``). Restore keeps only
     # the entries the editor would accept (core.services.script_env).
+    # ``expose_as_tool`` and ``tool_name`` on scripts (older backups: not a
+    # tool, no name). Restore drops a malformed name, and when two restored
+    # scripts in one workspace expose the same name the first keeps it and the
+    # second comes back unexposed (core.api.script_tools.restored_tool); an
+    # exposed script that loses its tool this way is named in the warnings.
     BACKUP_VERSION = "1.13.0"
     MAX_BACKUP_SIZE_MB = 100
     # Default cap on a gzip backup's expanded size (F92, zip-bomb guard);
@@ -453,6 +458,8 @@ class BackupService:
                 "retry_backoff_multiplier": script.retry_backoff_multiplier,
                 "retry_on_timeout": script.retry_on_timeout,
                 "is_enabled": script.is_enabled,
+                "expose_as_tool": script.expose_as_tool,
+                "tool_name": script.tool_name,
                 "webhook_token": script.webhook_token,
                 "notify_on": script.notify_on,
                 "notify_email": script.notify_email,
@@ -1273,7 +1280,7 @@ class BackupService:
             libraries_restored = cls._import_libraries(
                 backup_data.get("libraries", []), user_map, current_user, ws_map, default_ws
             )
-            script_map = cls._import_scripts(backup_data.get("scripts", []), env_map, user_map, current_user, ws_map, default_ws)
+            script_map = cls._import_scripts(backup_data.get("scripts", []), env_map, user_map, current_user, ws_map, default_ws, warnings)
             # Grants reference both Secrets (imported above) and Scripts (just
             # imported), so they go in their own pass. Old backups carry none.
             cls._import_secret_grants(backup_data.get("scripts", []), script_map)
@@ -1779,9 +1786,15 @@ class BackupService:
         return warnings
 
     @classmethod
-    def _import_scripts(cls, scripts_data: List[dict], env_map: dict, user_map: dict, current_user, ws_map: dict, default_ws) -> dict:
-        """Import scripts with proper foreign key mapping."""
+    def _import_scripts(cls, scripts_data: List[dict], env_map: dict, user_map: dict, current_user, ws_map: dict, default_ws, warnings: Optional[List[str]] = None) -> dict:
+        """Import scripts with proper foreign key mapping.
+
+        ``warnings`` collects what the restore couldn't keep (an MCP tool).
+        """
+        from core.api.script_tools import restored_tool
+
         script_map = {}
+        tool_names = set()  # (workspace id, tool name) exposed so far
 
         for script_data in scripts_data:
             old_id = script_data["id"]
@@ -1801,6 +1814,16 @@ class BackupService:
                 else None
             )
 
+            workspace = cls._resolve_workspace(script_data.get("workspace_id"), ws_map, default_ws)
+            expose_as_tool, tool_name = restored_tool(
+                script_data, getattr(workspace, "pk", None), tool_names
+            )
+            if script_data.get("expose_as_tool") is True and not expose_as_tool and warnings is not None:
+                warnings.append(
+                    f'Script "{script_data["name"]}" was restored without its MCP tool: its '
+                    "tool name is invalid or another restored script in its workspace uses it. "
+                    "Set a tool name in its editor."
+                )
             script = Script.objects.create(
                 id=old_id,  # Preserve UUID
                 name=script_data["name"],
@@ -1812,7 +1835,7 @@ class BackupService:
                     "concurrency_policy", Script.ConcurrencyPolicy.ALLOW
                 ),
                 environment=env,
-                workspace=cls._resolve_workspace(script_data.get("workspace_id"), ws_map, default_ws),
+                workspace=workspace,
                 owner_plugin=script_data.get("owner_plugin"),
                 owner_key=script_data.get("owner_key"),
                 injection_mode=script_data.get("injection_mode", "all"),
@@ -1824,6 +1847,8 @@ class BackupService:
                 retry_backoff_multiplier=script_data.get("retry_backoff_multiplier", 1.0),
                 retry_on_timeout=script_data.get("retry_on_timeout", False),
                 is_enabled=script_data.get("is_enabled", False),
+                expose_as_tool=expose_as_tool,
+                tool_name=tool_name,
                 webhook_token=script_data.get("webhook_token"),
                 notify_on=script_data.get("notify_on", "never"),
                 notify_email=script_data.get("notify_email", ""),

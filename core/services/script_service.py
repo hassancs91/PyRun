@@ -45,6 +45,8 @@ FORK_RESET_FIELDS = (
     "owner_plugin",  # the fork is user-owned; the plugin does not manage it
     "owner_key",
     "webhook_token",  # a token names exactly one script; the fork starts without
+    "expose_as_tool",  # a tool name names one script too: the fork isn't a tool
+    "tool_name",
     "archived_at",  # forking an archived script yields a live one
     "archived_by",
     "created_at",
@@ -116,8 +118,9 @@ def fork_script(source: Script, *, user, name: str | None = None) -> Script:
     """Duplicate ``source`` into its own workspace as a new user-owned script.
 
     Copies code, settings, tags, notification channels, secret grants and
-    library attachments. The webhook token and plugin ownership are cleared,
-    archive state is dropped, and the schedule (if any) is cloned inactive.
+    library attachments. The webhook token, the MCP tool switch and name, and
+    plugin ownership are cleared, archive state is dropped, and the schedule
+    (if any) is cloned inactive.
     Runs are never copied — history belongs to the original.
     """
     fork = Script(

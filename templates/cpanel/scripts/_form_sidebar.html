@@ -78,6 +78,31 @@
         </div>
     </section>
 
+    {# MCP tool (2.5): the script as a tool of its own for MCP clients #}
+    <section id="mcp-tool" class="rounded-2xl border border-line bg-panel">
+        <div class="flex items-center gap-2 px-5 py-4 border-b border-line-soft">
+            {% icon "plug-zap" class="w-4 h-4 text-faint" %}
+            <h3 class="text-sm font-semibold">MCP tool</h3>
+        </div>
+        <div class="p-5 space-y-4">
+            <label class="flex items-center gap-3 cursor-pointer">
+                {{ form.expose_as_tool }}
+                <span>
+                    <span class="block text-[13px] font-medium text-text">{{ form.expose_as_tool.label }}</span>
+                    <span class="block text-xs text-faint">MCP clients whose token may run this script list it as a tool. Its inputs are the tool's parameters; a call runs it and returns its result.</span>
+                </span>
+            </label>
+            {% include "cpanel/_field_errors.html" with field=form.expose_as_tool %}
+            <div>
+                <label for="id_tool_name" class="block text-[13px] font-medium text-text mb-1.5">{{ form.tool_name.label }}</label>
+                {{ form.tool_name }}
+                {% if form.tool_name.help_text %}<p class="mt-1.5 text-xs text-faint">{{ form.tool_name.help_text }}</p>{% endif %}
+                {% include "cpanel/_field_errors.html" with field=form.tool_name %}
+            </div>
+            <p class="text-xs text-faint">The token needs <code>scripts:run</code>. <a href="{% url 'cpanel:connect' %}#script-tools" class="text-info hover:underline">Connect a client</a></p>
+        </div>
+    </section>
+
     {# Tags #}
     <section class="rounded-2xl border border-line bg-panel">
         <div class="flex items-center gap-2 px-5 py-4 border-b border-line-soft">

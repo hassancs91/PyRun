@@ -17,6 +17,7 @@ from core.ratelimit import client_ip, rate_limit_exceeded
 from core.services import api_audit
 from core.views.api.decorators import add_cors_headers
 from pyrunner.version import __version__
+from . import script_tools
 from .context import token_context
 from .errors import ApiError, authenticate, error_response, rate_limited, touch_last_used
 from .registry import registry
@@ -129,6 +130,8 @@ def _result(method, params, ctx, version):
                 }
                 for spec in registry.visible(ctx)
             ]
+            # Scripts offered as tools, after the registry's (names can't clash).
+            + [script_tools.mcp_tool(script) for script in script_tools.exposed(ctx, listed=True)]
         }
     if method == "tools/call":
         if not isinstance(params.get("name"), str) or not isinstance(
@@ -138,10 +141,18 @@ def _result(method, params, ctx, version):
         # Resolve against every permitted tool, so a write the token holds while
         # writes are off answers writes_disabled instead of "unknown tool".
         spec = next((e for e in registry.permitted(ctx) if e.mcp_name == params["name"]), None)
+        script = None
         if spec is None:
-            raise ProtocolError(-32602, "Unknown tool.")
+            # A script tool: scripts.run with wait, recorded as scripts.run.
+            script = script_tools.find(ctx, params["name"])
+            if script is None:
+                raise ProtocolError(-32602, "Unknown tool.")
+            spec = registry.get(script_tools.RUN_SLUG)
         try:
-            data = registry.call(spec.slug, ctx, params.get("arguments", {}))
+            if script is not None:
+                data = script_tools.call(ctx, script, params.get("arguments", {}))
+            else:
+                data = registry.call(spec.slug, ctx, params.get("arguments", {}))
             is_error, status, retry_after = False, 200, None
             # For the audit row: the status the same call gets over REST.
             call = (spec, True, 202 if spec.done and not data.get(spec.done) else 200, "")

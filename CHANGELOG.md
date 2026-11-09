@@ -190,6 +190,21 @@ begins tracking at the current release; earlier history is in the git log.
   request id) and listed on the token's new **Activity** page in Settings →
   API Tokens; records are kept 30 days, deleted by a new daily housekeeping
   task. Guide: "Running and stopping scripts" in `docs/api.md`.
+- **Scripts as MCP tools.** Turn on **Expose as MCP tool** in a script's editor
+  (new **MCP tool** card) and the script shows up in MCP clients such as Claude
+  Code as a tool of its own, named by its tool name (lowercase letters, digits
+  and underscores, unique among the workspace's tools; left blank, it comes
+  from the script's name). The script's inputs are the tool's parameters.
+  Calling the tool runs the script as `scripts.run` with `wait` does and
+  returns its result, or, for a run still going after the wait, its run id to
+  poll with `runs.get`; tool calls count against the same 30 calls a minute and
+  are recorded on the token's Activity page. Only tokens that may run the script
+  see the tool: they need **Run scripts** (`scripts:run`), and a token bound to
+  one script sees that script's tool only. Disabled and archived scripts aren't
+  listed. `_catalog` lists the tools under `script_tools` (`kind: "script"`),
+  the script page shows the tool name, a fork is never a tool, and backups keep
+  the setting. Connect explains it with a Claude Code example. Guide: "Scripts
+  as MCP tools" in `docs/api.md`.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

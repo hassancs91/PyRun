@@ -46,7 +46,7 @@ field. Keep `X-Request-ID` for debugging; never include tokens in bug reports.
 | Discovery route | Result |
 |---|---|
 | `/api/v1/_health` | Authenticated API status |
-| `/api/v1/_catalog` | Only endpoints permitted for this token, including schemas |
+| `/api/v1/_catalog` | Only endpoints permitted for this token, including schemas, and its [script tools](#scripts-as-mcp-tools) |
 | `/api/v1/_openapi.json` | Generated OpenAPI document, directly without the REST envelope |
 
 ## Endpoint classes and API writes
@@ -218,6 +218,57 @@ Activity** lists a token's records; they are kept 30 days. Successful reads
 aren't recorded (the token's **Last used** covers them), and neither is a call
 whose token is wrong, expired or disabled: it can't be tied to a token (those
 are throttled by IP instead).
+
+### Scripts as MCP tools
+
+A script can be a tool of its own in MCP clients. In the script editor's **MCP
+tool** card, turn on **Expose as MCP tool** and set a **Tool name**: lowercase
+letters, digits and underscores, starting with a letter, up to 40 characters.
+Left blank, the name is made from the script's name (`Weekly report` becomes
+`weekly_report`). No two exposed scripts in a workspace share a name (archived
+ones included); a name kept with the switch off holds nothing. Tool names have
+no hyphen, so they never clash with the built-in tools (`scripts-run`, ...).
+
+`tools/list` then adds one tool per exposed script the token may run: the token
+needs `scripts:run`, sees its own workspace's scripts only, and a token bound to
+one script sees that script's tool only. Disabled and archived scripts aren't
+listed. Each tool has:
+
+| Field | Value |
+|---|---|
+| `name` | The tool name |
+| `title` | The script's name |
+| `description` | The script's description (or "Runs the PyRun script “name”.") |
+| `inputSchema` | The script's inputs schema, as declared and in its order; a script without inputs gets `{"type": "object", "properties": {}, "additionalProperties": false}` |
+| `annotations` | `readOnlyHint: false` |
+
+`tools/call` with a script tool is `scripts.run` with `"wait": true` and the
+call's `arguments` as `inputs`: the same inputs check (a bad input is a tool
+error, `invalid_input`, and no run is created), the same 30 calls a minute
+(shared with `scripts.run` over REST), and the same answer as
+[`scripts.run`](#running-and-stopping-scripts) in `structuredContent`: the
+result when the run ends within the wait (55 seconds at most), else the run id,
+`is_finished: false` and `next`, which tells the model to poll `runs.get`; give
+the token `runs:read` too so it can. The wait limits of `scripts.run` apply: a
+call made while every wait slot is taken gets the run id at once (`wait:
+"busy"`), and with no worker running the call fails with `workers_unavailable`
+and no run is created. A disabled script answers `script_disabled`; a tool the
+token can't see is an unknown tool (JSON-RPC error -32602). The Activity page
+records the call as `scripts.run`.
+
+Clients read the tool list when they connect, so reconnect the server after
+exposing a script or changing its inputs (in Claude Code, from `/mcp`). Claude Code shows a
+tool as `mcp__<server>__<tool name>`, so a script exposed as `weekly_report` on
+a server added as `pyrun` is `mcp__pyrun__weekly_report`.
+
+Over REST, run the same script with `scripts.run` and its id. `_catalog` lists a
+token's script tools under `script_tools`, next to `endpoints`:
+
+```json
+{"kind": "script", "mcp_name": "weekly_report", "title": "Weekly report",
+ "description": "...", "inputSchema": {...}, "script": "SCRIPT_ID",
+ "rest": "scripts.run", "access": "run", "permission": "scripts:run"}
+```
 
 ## MCP clients
 

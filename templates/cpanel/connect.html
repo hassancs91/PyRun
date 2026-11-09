@@ -35,6 +35,14 @@ curl -H "Authorization: Bearer YOUR_TOKEN" -H "Content-Type: application/json" -
 curl -H "Authorization: Bearer YOUR_TOKEN" -H "Content-Type: application/json" -d '{"run":"RUN_ID"}' "{{ api_url }}/runs.stop"</pre><button type="button" class="copy-btn flex-shrink-0 text-xs px-2.5 py-1.5 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors" aria-label="Copy the curl commands">Copy</button></div>
             <p class="text-sm text-muted"><code>runs.output</code> answers with plain text over REST (stdout unless you pass <code>stream=stderr</code>); output is written when the run ends.</p>
         </div>
+        <div id="script-tools" class="rounded-2xl border border-line bg-panel p-6 space-y-3">
+            <h2 class="font-semibold">Scripts as tools</h2>
+            <p class="text-sm text-muted">Turn on <strong>Expose as MCP tool</strong> in a script's editor and give it a tool name. An MCP client connected with a token that holds <code>scripts:run</code> then lists the script as a tool of its own: the script's inputs are the tool's parameters, and calling the tool runs the script and returns its result (what it passed to <code>pyrunner_run.set_result()</code>).</p>
+            <p class="text-sm text-muted">The call waits up to {{ tool_wait }} seconds for the run to end. A run still going then comes back with its run id, as does a call made while every wait slot is taken; give the token <code>runs:read</code> too, so the client can poll <code>runs-get</code>. Tool calls count against the same 30 calls a minute as <code>scripts.run</code>, a token bound to one script sees only that script's tool, and disabled scripts aren't listed. Clients read the tool list when they connect: reconnect after exposing a script.</p>
+            <h3 class="text-sm font-medium">Claude Code</h3>
+            <p class="text-sm text-muted">Add the MCP server above, then run <code>/mcp</code> in Claude Code to see the tools. A script exposed as <code>weekly_report</code> shows up as <code>mcp__pyrun__weekly_report</code>; ask for it by what it does:</p>
+            <div class="flex items-start gap-2"><pre class="copy-src flex-1 min-w-0 p-3 bg-ink rounded-lg text-xs whitespace-pre-wrap break-all">claude "Run my weekly_report tool for Paris and summarise what it returned."</pre><button type="button" class="copy-btn flex-shrink-0 text-xs px-2.5 py-1.5 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors" aria-label="Copy the Claude Code prompt for a script tool">Copy</button></div>
+        </div>
         <div class="rounded-2xl border border-line bg-panel p-6 space-y-3">
             <h2 class="font-semibold">claude.ai and URL-only clients</h2>
             <p class="text-sm text-muted">URL tokens are {% if url_tokens_enabled %}enabled{% else %}disabled{% endif %} on this instance. They require an expiry (90 days by default) and read-only permissions.</p>
@@ -69,6 +77,7 @@ curl -H "Authorization: Bearer YOUR_TOKEN" -H "Content-Type: application/json" -
             </form>
             {% if selected %}
                 {% for endpoint in endpoints %}<div class="text-sm"><code class="break-all">{{ endpoint.slug }}</code><p class="text-muted">{{ endpoint.description }}</p></div>{% empty %}<p class="text-sm text-muted">No endpoints available for this token.</p>{% endfor %}
+                {% for script in script_tools %}<div class="text-sm"><code class="break-all">{{ script.tool_name }}</code> <span class="text-xs text-faint">script tool</span><p class="text-muted">Runs {{ script.name }}</p></div>{% endfor %}
             {% endif %}
         </div>
         <div id="api-writes-mode" class="rounded-2xl border border-line bg-panel p-6 space-y-3">
