@@ -231,6 +231,21 @@ begins tracking at the current release; earlier history is in the git log.
   endpoint, while Py AI on a chat channel such as Telegram can't read a run's
   output. It still can't run, change or delete anything, and its older tools
   keep working. Guide: "Py AI" in `docs/api.md`.
+- **Databases and vector collections over the API, MCP and Py AI.** New read
+  endpoints list a workspace's managed databases (`databases.list`), their
+  tables and columns (`databases.tables`), and run one read-only `SELECT`
+  (`databases.query`: the database's own role, a read-only transaction, 5
+  seconds and 200 rows at most; anything but a single `SELECT` is refused), with
+  the new `databases:read` permission. `vectors.list` and `vectors.search` (a
+  similarity search by text, embedded with the collection's provider and counted
+  on it) take `vectors:read`, and, while API writes are on, `vectors.upsert` and
+  `vectors.delete` take `vectors:write`. A collection a Brain uses for search
+  isn't reachable through them. Py AI can now answer questions such as "how
+  many rows were added to leads this week?": the console's Py AI gets all the
+  reads, while Py AI on a chat channel lists databases, tables and collections
+  and searches them but can't run a query. On an instance without a data server
+  the databases are still listed, with the reason they can't be read. Guide:
+  "Databases" and "Vectors" in `docs/api.md`.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

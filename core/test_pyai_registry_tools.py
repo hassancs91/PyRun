@@ -164,7 +164,7 @@ class BridgeToolsTests(_Fixture, TestCase):
         self.assertTrue(CONSOLE_TOOLS <= console, CONSOLE_TOOLS - console)
         self.assertTrue(CHANNEL_TOOLS <= channel, CHANNEL_TOOLS - channel)
         self.assertNotIn("runs-output", channel)
-        self.assertEqual(console - channel, {"runs-output"})
+        self.assertEqual(console - channel, {"runs-output", "databases-query"})
         # Brain tools come from core.brain.tools (grant-checked), not from here.
         self.assertFalse(any(n.startswith("brain-") for n in console | channel))
 

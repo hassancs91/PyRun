@@ -38,3 +38,21 @@ class BackendUnavailable(StoreError):
     """The store cannot be reached or opened (missing file, server down, bad key)."""
 
     code = "backend_unavailable"
+
+
+# The HTTP status each ``VectorError`` code answers with, on every door that
+# speaks HTTP (the run loopback and the unified API).
+STATUS_FOR_CODE = {
+    "not_found": 404,
+    "invalid": 400,
+    "unsupported_filter": 400,
+    "dimension_mismatch": 400,
+    "unsupported": 400,
+    "credentials_not_allowed": 403,
+    "model_mismatch": 409,
+    "not_ready": 409,
+    "collection_full": 413,
+    "run_budget_exceeded": 429,
+    "embedding_failed": 502,
+    "backend_unavailable": 503,
+}

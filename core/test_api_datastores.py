@@ -481,6 +481,7 @@ class TokenBindingTests(_Fixture, TestCase):
         self.client.force_login(
             User.objects.create(email="t15-settings@example.com", is_superuser=True))
         page = self.client.get(reverse("cpanel:settings"))
-        self.assertContains(page, "/api/v1/brain.*, scripts.*, runs.*, datastores.*")
+        self.assertContains(page, "/api/v1/brain.*, scripts.*, runs.*, datastores.*, databases.*")
         self.assertContains(page, '<code class="text-xs">datastores.delete</code>')
-        self.assertEqual([e.slug for e in registry.writes()], sorted(WRITES))
+        datastore_writes = [e.slug for e in registry.writes() if e.slug.startswith("datastores.")]
+        self.assertEqual(datastore_writes, sorted(WRITES))

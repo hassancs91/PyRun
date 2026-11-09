@@ -48,6 +48,7 @@ from django.http import HttpRequest, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
+from core.vectors.errors import STATUS_FOR_CODE
 from core.views.api.decorators import internal_datastore_token_required
 
 logger = logging.getLogger(__name__)
@@ -62,21 +63,6 @@ RUN_TEXT_BYTES = 20 * 1024 * 1024
 RUN_POINTS = 200_000
 # The counters outlive the 24 h run token, so a run can never reset its budget.
 _BUDGET_TTL = 25 * 60 * 60
-
-STATUS_FOR_CODE = {
-    "not_found": 404,
-    "invalid": 400,
-    "unsupported_filter": 400,
-    "dimension_mismatch": 400,
-    "unsupported": 400,
-    "credentials_not_allowed": 403,
-    "model_mismatch": 409,
-    "not_ready": 409,
-    "collection_full": 413,
-    "run_budget_exceeded": 429,
-    "embedding_failed": 502,
-    "backend_unavailable": 503,
-}
 
 
 def _error(code: str, message: str) -> JsonResponse:

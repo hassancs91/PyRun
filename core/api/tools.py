@@ -40,7 +40,8 @@ GRANTED_PERMISSIONS = frozenset({"brain:read", "brain:write"})
 MAX_RESULT_CHARS = 100_000
 TOO_LARGE = (
     "The answer is {size} characters, more than Py AI reads at once ({limit}). "
-    "Ask for less: runs-output takes tail, datastores-entries takes page_size."
+    "Ask for less: runs-output takes tail, datastores-entries takes page_size, "
+    "databases-query a LIMIT and fewer columns."
 )
 
 

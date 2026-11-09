@@ -76,7 +76,8 @@ writes were on keeps it after they are turned off, but its write calls are refus
 until they are on again. A token without the permission gets 403 `forbidden`
 either way. MCP marks `run` and `write` tools with `readOnlyHint: false`. Settings
 lists the write endpoints this instance has: today
-[`datastores.set` and `datastores.delete`](#datastores). Every write call is recorded
+[`datastores.set`, `datastores.delete`](#datastores),
+[`vectors.upsert` and `vectors.delete`](#vectors). Every write call is recorded
 in the token's [Activity](#running-and-stopping-scripts).
 
 ## Brain operations
@@ -102,7 +103,8 @@ Brain. The [Brain guide](brain.md) explains grants, tiers and human review.
 `conversation`, `other`. Proposing requires agents-only or private access and
 `can_propose`. It returns a feed identifier, never a committed note. Approval
 remains a console owner/admin action. Endpoint discovery is authoritative for
-schemas and bounds; there are no `vectors.*` REST/MCP endpoints in this release.
+schemas and bounds. A Brain's vector collection is reached through `brain.search`
+only, never through the [`vectors.*` endpoints](#vectors).
 
 ## Scripts and runs
 
@@ -330,6 +332,94 @@ token whose workspace no longer exists is refused (403 `SCOPE_MISMATCH`). Before
 2.5 such a token could still read the data stores that belonged to no workspace,
 and any token could read one of those by its name.
 
+## Databases
+
+Read a workspace's managed databases (**Databases** in the console): list them,
+see their tables and columns, and run one read-only `SELECT`.
+
+| REST endpoint | Parameters | Permission |
+|---|---|---|
+| `databases.list` | None | `databases:read` |
+| `databases.tables` | `database`; optional `table` (that table, with its columns) | `databases:read` |
+| `databases.query` | `database`, `sql` (one statement, up to 20,000 characters) | `databases:read` |
+
+```sh
+curl -H "Authorization: Bearer $PYRUN_TOKEN" -H "Content-Type: application/json" \
+  -d '{"database":"leads","sql":"SELECT count(*) FROM leads WHERE created_at >= current_date - 7"}' \
+  https://pyrun.example/api/v1/databases.query
+```
+
+- `databases.list` returns `{"databases": [...], "count": n, "data_server": {...}}`,
+  each with `name`, `description`, `status`, `created_at` and `updated_at`.
+  `data_server.configured` says whether this instance has a data server
+  (`PYRUNNER_DATA_DB_URL`). Without one (a SQLite-only instance, say) the list
+  still shows the databases, `data_server.reason` says why they can't be read,
+  and `databases.tables` and `databases.query` answer 409 `not_configured`. A
+  database that isn't ready answers 409 `not_ready`.
+- `databases.tables` returns `tables`, each with `name`, `row_estimate`,
+  `row_exact` (false: the planner's estimate) and `size_bytes`. With `table`, it
+  returns that one table with its `columns` (`name`, `type`, `nullable`,
+  `default`).
+- `databases.query` runs `sql` as the database's own role, so tables are named
+  without a schema and nothing outside the database is reachable. It accepts one
+  statement that starts with `SELECT`, `WITH`, `VALUES` or `TABLE` (a trailing
+  semicolon is fine) and refuses anything else, and calls such as `set_config()`
+  or `pg_terminate_backend()`, with 400 `invalid_input`. The transaction is
+  read-only, so Postgres itself refuses any write. A statement stops after 5
+  seconds (400 `query_timeout`); a server error is 400 `query_failed` with
+  Postgres's message. It answers `columns`, `rows` (lists, in the order of
+  `columns`), `row_count`, `truncated` and `row_cap`: at most 200 rows come back,
+  and `truncated` says there were more. Count and filter in SQL. Values come back
+  as JSON: `numeric` as text, dates and times as ISO text, `bytea` as `\x` + hex.
+  It takes 30 calls a minute per token.
+- Rows are returned as stored, like datastore values: they aren't masked.
+- A token's binding (one Brain, script or datastore) narrows its own kind only:
+  a token with `databases:read` reads every database in its workspace, and one
+  with `vectors:read` or `vectors:write` reaches every collection, whatever the
+  token is bound to.
+- If the data server can't be reached, the answer is 503 `unavailable`; the
+  server's own message goes to PyRun's log, not to the caller.
+
+## Vectors
+
+Search a workspace's vector collections and, while
+[API writes](#endpoint-classes-and-api-writes) are on, upsert and delete points.
+
+| REST endpoint | Parameters | Permission |
+|---|---|---|
+| `vectors.list` | None | `vectors:read` |
+| `vectors.search` | `collection`, `query` (text); optional `k` (1–50, default 5), `filter` | `vectors:read` |
+| `vectors.upsert` | `collection`, `items` (up to 100) | `vectors:write` |
+| `vectors.delete` | `collection`, and `ids` (up to 1,000) or `filter` | `vectors:write` |
+
+- `vectors.list` returns `collections`, each with `name`, `description`,
+  `backend`, `status`, `points`, `dimension`, `metric`, `embedding_model`,
+  `text_search` (whether it can be searched by text), `created_at` and
+  `updated_at`.
+- `vectors.search` embeds `query` with the collection's own embedding provider
+  and returns `results` (`id`, `score`, `payload`, `text`; a higher score is
+  closer) and `count`. The embedding call is counted on the collection and its
+  provider, as on every other path (the Vectors and Services pages show the
+  totals). A collection without an embedding provider answers 400 `invalid`. It
+  takes 30 calls a minute per token.
+- `filter` uses the payload filter grammar of `pyrunner_vectors`:
+  `{"field": value}`, `{"field": {"$in": [...]}}`, `$gt`/`$gte`/`$lt`/`$lte`,
+  `$prefix`, and `{"must": [...], "must_not": [...]}` (see `docs/plugins.md`).
+- `vectors.upsert` inserts or replaces points by `id`. Give every item a `text`
+  (embedded with the collection's provider; the answer's `tokens` counts them)
+  or every item a `vector` of the collection's dimension (`text` is then
+  optional); `payload` is an optional object. `vectors.delete` deletes by `ids`
+  or by a non-empty `filter`, not both. Both answer the collection's `points`
+  after the write, take 30 calls a minute per token, and never create or delete a
+  collection: do that in the console.
+- A collection a Brain uses for semantic search isn't reachable here (404
+  `not_found`, as if it didn't exist): its points hold the Brain's notes at every
+  tier. Read them through the [Brain operations](#brain-operations), which check
+  the tier.
+- Points are returned as stored, like datastore values: they aren't masked.
+  Errors keep the vector codes (`unsupported_filter`, `dimension_mismatch`,
+  `embedding_failed` (502), `backend_unavailable` (503), `not_ready` (409)...).
+
 ## Py AI
 
 Py AI, the built-in read-only assistant, calls the registry's `read` endpoints
@@ -348,12 +438,14 @@ Each endpoint declares a Py AI tier:
 | Tier | Who | Endpoints |
 |---|---|---|
 | `console` | The console's Py AI, open to workspace owners and admins | Every read endpoint |
-| `channel` | Py AI on a chat channel (Telegram), whose approved senders need not be owners or admins | `scripts.list`, `scripts.get`, `runs.list`, `runs.get`, the four datastore reads, and the Brain reads |
+| `channel` | Py AI on a chat channel (Telegram), whose approved senders need not be owners or admins | `scripts.list`, `scripts.get`, `runs.list`, `runs.get`, the four datastore reads, `databases.list`, `databases.tables`, `vectors.list`, `vectors.search`, and the Brain reads |
 
-So a chat channel can't read a run's output (`runs.output`); the console can.
+So a chat channel can't read a run's output (`runs.output`) or run a database
+query (`databases.query`); the console can.
 The tier is checked again on every call, not only when the tools are listed.
 Datastore values reach both tiers as stored, unmasked, as Py AI's
-`query_datastore` tool already gave them to chat channels.
+`query_datastore` tool already gave them to chat channels; so do vector points.
+A `vectors.search` from Py AI embeds the query like any other call.
 Brain endpoints also need the agent's own Brain grant (`agent:pyai` for the
 console, `<provider>:<channel UUID>` for a channel). Like an API token, Py AI
 sees the person behind a manual run as `user: {"id"}`, never the email. Py AI's
@@ -396,7 +488,8 @@ For clients that can only accept a URL, an instance administrator can enable
 **MCP URL tokens** in Connect. Create a separate token of that kind with read-only
 permissions and a mandatory expiry (90 days by default). Read-only means
 permissions that guard read endpoints alone: `brain:read`, `scripts:read`,
-`runs:read`, `runs:output` and `datastores:read`, not `brain:write`. Its endpoint is
+`runs:read`, `runs:output`, `datastores:read`, `databases:read` and `vectors:read`,
+not `brain:write`. Its endpoint is
 `POST /mcp/k/<url-token>/`. It cannot be used as a REST/bearer token. The URL itself
 is a credential: keep connector configuration private and redact that route from
 reverse-proxy access logs. Because the token travels in the request path, reverse

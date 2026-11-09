@@ -47,6 +47,9 @@ class APIToken(models.Model):
         ("runs:stop", "Stop runs"),
         ("datastores:read", "Read datastores (entries and their values)"),
         ("datastores:write", "Write datastore entries (set and delete)"),
+        ("databases:read", "Read databases (tables, and read-only SELECT queries)"),
+        ("vectors:read", "Read vector collections (list, and similarity search)"),
+        ("vectors:write", "Write vector points (upsert and delete)"),
     )
     TIERS = (("public", "Public"), ("agents-only", "Agents only"), ("private", "Private"))
     # Which permissions are write permissions comes from the registry: those

@@ -2,7 +2,7 @@
 Database explorer service — the read paths behind the Databases Monitor + View
 UI (Stage 3), deliberately split from ``database_service`` (lifecycle).
 
-Two connection paths, by design:
+Two connection paths, by design, plus the API's query path:
 
 - **View (structure + data grid)** connects as the database's OWN scoped role
   inside a ``READ ONLY`` transaction — the viewer physically cannot write, and
@@ -17,6 +17,13 @@ Two connection paths, by design:
   the provisioner to hold ``pg_read_all_stats`` (the compose init script grants
   it); without it Postgres masks other roles' text as ``<insufficient
   privilege>`` and the page says why.
+
+- **Query (``databases.query``, 2.5)** runs ONE caller-written SELECT through
+  ``query()``: the View path's role and ``READ ONLY`` transaction, behind the
+  SELECT-only guard (``read_only_statement``), with a 5 s statement timeout and
+  200 rows read through a server-side cursor. It raises typed errors
+  (``QueryRefused``, ``QueryTimeout``, ``DatabaseUnavailable``) that the
+  endpoint maps to answers.
 
 Everything here degrades instead of raising: a down server, a missing
 ``pg_stat_statements`` extension, or a permission gap yields a result object
@@ -72,6 +79,132 @@ class QueryResult:
 
 class DatabaseExplorerError(Exception):
     """A viewer/monitor read failed (server down, bad table, timeout)."""
+
+
+# ``databases.query`` (2.5 Stage 3): one caller-written SELECT, read-only.
+QUERY_ROW_CAP = 200
+QUERY_TIMEOUT_MS = 5000
+_READ_STATEMENTS = ("select", "with", "values", "table")
+# Calls a read-only transaction still allows that reach outside the query:
+# session settings, other sessions, advisory locks and notifications.
+_DENIED_CALL = re.compile(
+    r"\b(set_config|pg_cancel_backend|pg_terminate_backend|pg_notify|pg_\w*advisory\w*)\s*\(",
+    re.IGNORECASE,
+)
+_DOLLAR_TAG = re.compile(r"\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$")
+
+
+class QueryRefused(DatabaseExplorerError):
+    """The text is not one read-only statement (the SELECT-only guard)."""
+
+
+class QueryTimeout(DatabaseExplorerError):
+    """The statement ran past its timeout."""
+
+
+class DatabaseUnavailable(DatabaseExplorerError):
+    """The data server could not be reached as the database's role."""
+
+
+def _is_word(char: str) -> bool:
+    return char.isalnum() or char in "_$"
+
+
+def _code_only(text: str) -> str:
+    """``text`` with comments and the inside of string literals blanked, the same length.
+
+    A literal keeps its quotes, so the end of the statement is still where it
+    was. Quoted identifiers keep their word characters (``"set_config"`` still
+    names the function); the rest is blanked. Raises ``QueryRefused`` on an
+    unterminated literal or comment, which Postgres would refuse anyway.
+    """
+    out, i, n = list(text), 0, len(text)
+
+    def blank(start, end):
+        out[start:end] = " " * (end - start)
+
+    while i < n:
+        if text.startswith("--", i):
+            end = text.find("\n", i)
+            end = n if end < 0 else end
+            blank(i, end)
+            i = end
+        elif text.startswith("/*", i):
+            depth, j = 1, i + 2
+            while j < n and depth:
+                if text.startswith("/*", j):
+                    depth, j = depth + 1, j + 2
+                elif text.startswith("*/", j):
+                    depth, j = depth - 1, j + 2
+                else:
+                    j += 1
+            if depth:
+                raise QueryRefused("The query has an unterminated comment.")
+            blank(i, j)
+            i = j
+        elif text[i] in "'\"":
+            quote = text[i]
+            # E'...' strings take backslash escapes; a plain 'e' ending a word doesn't.
+            escapes = (
+                quote == "'" and i > 0 and text[i - 1] in "eE"
+                and (i < 2 or not _is_word(text[i - 2]))
+            )
+            j = i + 1
+            while True:
+                if j >= n:
+                    raise QueryRefused("The query has an unterminated quoted text.")
+                if escapes and text[j] == "\\":
+                    j += 2
+                elif text[j] == quote and text[j + 1 : j + 2] == quote:
+                    j += 2
+                elif text[j] == quote:
+                    break
+                else:
+                    j += 1
+            if quote == "'":
+                blank(i + 1, j)
+            else:
+                # Keep the name's word characters; anything else (";") is a gap.
+                out[i : j + 1] = [c if _is_word(c) else " " for c in text[i : j + 1]]
+            i = j + 1
+        elif text[i] == "$" and not (i > 0 and _is_word(text[i - 1])):
+            tag = _DOLLAR_TAG.match(text, i)
+            if tag is None:
+                i += 1
+                continue
+            end = text.find(tag.group(0), tag.end())
+            if end < 0:
+                raise QueryRefused("The query has an unterminated $-quoted text.")
+            blank(tag.end(), end)
+            i = end + len(tag.group(0))
+        else:
+            i += 1
+    return "".join(out)
+
+
+def read_only_statement(text) -> str:
+    """``text`` as one read-only statement, or raise ``QueryRefused``.
+
+    The SELECT-only guard of ``databases.query``: one statement that starts
+    with SELECT, WITH, VALUES or TABLE, with no call from ``_DENIED_CALL``. A
+    trailing semicolon (and what follows it) is dropped. It is a guard, not
+    the boundary: the read-only transaction and the database's own role are
+    what Postgres enforces.
+    """
+    if not isinstance(text, str):
+        raise QueryRefused("Pass the query as text.")
+    code = _code_only(text).rstrip()
+    while code.endswith(";"):
+        code = code[:-1].rstrip()
+    if ";" in code:
+        raise QueryRefused("Send one statement at a time.")
+    first = re.match(r"[\s(]*([A-Za-z]+)", code)
+    if first is None or first.group(1).lower() not in _READ_STATEMENTS:
+        raise QueryRefused("Only a SELECT statement (SELECT, WITH, VALUES or TABLE) can run here.")
+    denied = _DENIED_CALL.search(code)
+    if denied:
+        raise QueryRefused(f"{denied.group(1).lower()}() can't be called from a read-only query.")
+    return text[: len(code)]
 
 
 class DatabaseExplorerService:
@@ -132,6 +265,53 @@ class DatabaseExplorerService:
             raise
         except Exception as e:
             raise DatabaseExplorerError(str(e)) from e
+
+    @classmethod
+    def query(
+        cls, database, text, *, row_cap=QUERY_ROW_CAP, timeout_ms=QUERY_TIMEOUT_MS
+    ) -> QueryResult:
+        """Run a caller-written SELECT as the database's OWN role (``databases.query``).
+
+        Three layers: ``read_only_statement`` refuses anything but one SELECT;
+        the transaction is ``READ ONLY`` before the first statement, so Postgres
+        rejects any write; and the database's role reaches its own schema only.
+        The rows come through a server-side cursor (one ``FETCH`` of
+        ``row_cap + 1``), so a query over a huge table never transfers more,
+        and the cursor's ``DECLARE`` goes over the extended protocol, which
+        takes a single statement. ``statement_timeout`` bounds each statement.
+
+        Raises ``QueryRefused``, ``DatabaseUnavailable`` (no connection),
+        ``QueryTimeout`` or ``DatabaseExplorerError`` (the server's message).
+        """
+        from psycopg.errors import QueryCanceled
+
+        statement = read_only_statement(text)
+        try:
+            conn = cls._scoped_connect(database)
+        except Exception as e:
+            raise DatabaseUnavailable(str(e)) from e
+        try:
+            with conn:
+                conn.read_only = True
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT set_config('statement_timeout', %s, false)",
+                        (str(int(timeout_ms)),),
+                    )
+                with conn.cursor(name="pyrun_query") as cur:
+                    cur.execute(statement)
+                    if cur.description is None:
+                        return QueryResult()
+                    columns = [d.name for d in cur.description]
+                    rows = cur.fetchmany(int(row_cap) + 1)
+        except QueryCanceled as e:
+            raise QueryTimeout(
+                f"The query ran longer than {int(timeout_ms) / 1000:g} seconds and was stopped."
+            ) from e
+        except Exception as e:
+            raise DatabaseExplorerError(str(e).strip()) from e
+        truncated = len(rows) > int(row_cap)
+        return QueryResult(columns, [list(r) for r in rows[: int(row_cap)]], truncated)
 
     # ------------------------------------------------------------------
     # View — structure + data, all through the scoped role
