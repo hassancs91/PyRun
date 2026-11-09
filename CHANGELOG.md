@@ -168,6 +168,16 @@ begins tracking at the current release; earlier history is in the git log.
   never the email (scripts and the console still get the email). Connect gains
   curl and Claude Code examples. Guide: "Scripts and runs" in `docs/api.md`.
 
+### Fixed
+- **A schedule time listed twice no longer runs the script twice.** The
+  schedule form accepted a repeated time in the daily, weekly and monthly
+  modes (`09:00, 9:00`), and each one became its own cron, so the script ran
+  twice at 09:00. The form now refuses it ("09:00 is listed twice."), as
+  `ScheduleAPI.sync` already did, and a schedule saved with a repeat before
+  this gets one cron per time from its next sync (the daily resync for a time
+  zone other than UTC; for UTC, edit the schedule, switch it off and on, or
+  Pause all and Resume all).
+
 ## [2.0.0] — October 23, 2026
 
 ### Upgrade notes (from 1.x)

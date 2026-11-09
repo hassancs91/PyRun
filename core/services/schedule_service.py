@@ -72,6 +72,20 @@ class ScheduleService:
         return utc_dt.hour, utc_dt.minute, (utc_dt.date() - local_date).days
 
     @staticmethod
+    def _distinct_times(times: list) -> list[tuple[str, int, int]]:
+        """A stored times list as ``(time_str, hour, minute)``, each time once.
+
+        The schedule form accepted a repeated time ("09:00, 9:00") before 2.5,
+        so a saved row can still hold one. Every time gets its own cron, so a
+        repeat would run the script twice at that time; it gets one cron here.
+        """
+        seen = {}
+        for time_str in times:
+            hour, minute = map(int, time_str.split(":"))
+            seen.setdefault((hour, minute), time_str)
+        return [(time_str, hour, minute) for (hour, minute), time_str in seen.items()]
+
+    @staticmethod
     def _shift_month_days(days: list, day_shift: int) -> list[str]:
         """Shift day-of-month values across the UTC midnight boundary.
 
@@ -178,9 +192,7 @@ class ScheduleService:
         q_schedule_ids = []
         tz = cls._schedule_tz(script_schedule)
 
-        for time_str in script_schedule.daily_times:
-            hour, minute = map(int, time_str.split(":"))
-
+        for time_str, hour, minute in cls._distinct_times(script_schedule.daily_times):
             # Convert the schedule-local time to UTC (django-q evaluates cron
             # in TIME_ZONE=UTC). A date shift is irrelevant for daily crons.
             utc_hour, utc_minute, _ = cls._local_time_to_utc(tz, hour, minute)
@@ -215,9 +227,7 @@ class ScheduleService:
 
         tz = cls._schedule_tz(script_schedule)
 
-        for time_str in script_schedule.weekly_times:
-            hour, minute = map(int, time_str.split(":"))
-
+        for time_str, hour, minute in cls._distinct_times(script_schedule.weekly_times):
             # Convert the schedule-local time to UTC; when it crosses UTC
             # midnight the weekday moves with it (Mon 00:30 Tokyo = Sun UTC).
             utc_hour, utc_minute, day_shift = cls._local_time_to_utc(tz, hour, minute)
@@ -262,9 +272,7 @@ class ScheduleService:
 
         tz = cls._schedule_tz(script_schedule)
 
-        for time_str in script_schedule.monthly_times:
-            hour, minute = map(int, time_str.split(":"))
-
+        for time_str, hour, minute in cls._distinct_times(script_schedule.monthly_times):
             # Convert the schedule-local time to UTC; day-of-month values move
             # with a date shift (see _shift_month_days for the corner cases).
             utc_hour, utc_minute, day_shift = cls._local_time_to_utc(tz, hour, minute)

@@ -14,6 +14,14 @@ are seven run modes:
 | **Yearly** | One calendar date (month + day) at one `HH:MM` time. 29 February runs only in leap years. |
 | **Cron expression** | Any standard 5-field cron expression. |
 
+In the daily, weekly and monthly modes you type the times separated by commas
+(`09:00, 18:00`). Each time can be listed once: `09:00, 9:00` is refused with
+"09:00 is listed twice.", since both mean 09:00. A schedule saved with a
+repeated time before PyRun refused one runs once at that time from its next
+sync: the daily resync does that for a time zone other than UTC; otherwise
+remove the repeat and save, switch the schedule off and on, or use Pause all
+and Resume all.
+
 Under the hood all non-manual modes compile to a
 [django-q2](https://django-q2.readthedocs.io/) schedule. The daily/weekly/monthly/yearly
 modes build a cron expression for you; **Cron expression** mode simply lets you

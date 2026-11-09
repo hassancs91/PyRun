@@ -12,6 +12,9 @@ What this pins, roughly in order of how much it would hurt to get wrong:
 - A bad list, a list the mode doesn't use, both forms of one kwarg or an
   unknown mode is a ValueError that names the problem, and nothing is saved:
   no new row, an existing schedule untouched, django-q2 never called.
+- A repeated time ("09:00, 9:00") is refused by the form and the SDK alike
+  (finding F2.5b-02 of the 2.5 test pass), and a row the form saved with one
+  before that still gets one cron per time, so the script runs once.
 """
 
 import uuid
@@ -127,6 +130,35 @@ class FormParityTests(_Fixture, TestCase):
         sdk_row = self._sdk_row(mode="yearly", month=6, day=15, times=["02:00"])
         self.assertSameRow(form_row, sdk_row)
 
+    def test_a_repeated_time_is_refused_by_both(self):
+        # Compared after normalizing: "9:00" repeats "09:00". The form used to
+        # save the repeat, and each time became a cron, so 09:00 ran twice.
+        script = Script.objects.create(name="form-repeat", code="print(1)", environment=self.env)
+        cases = [
+            ("daily_times_input", {"run_mode": "daily"}, {"mode": "daily"}),
+            ("weekly_times_input", {"run_mode": "weekly", "weekly_days_input": ["0"]},
+             {"mode": "weekly", "weekdays": [0]}),
+            ("monthly_times_input", {"run_mode": "monthly", "monthly_days_input": ["1"]},
+             {"mode": "monthly", "month_days": [1]}),
+        ]
+        for field, post, kwargs in cases:
+            with self.subTest(field=field):
+                form = ScheduleForm(
+                    {**BLANK_POST, "timezone": self.TZ, **post, field: "09:00, 18:00, 9:00"},
+                    instance=ScriptSchedule(script=script, workspace=self.ws),
+                )
+                self.assertFalse(form.is_valid())
+                self.assertEqual(form.errors[field], ["09:00 is listed twice."])
+
+                sdk_script = self._script()
+                with self.assertRaises(ValueError) as cm:
+                    ScheduleAPI(OWNER).sync(
+                        sdk_script, tz=self.TZ, times=["09:00", "18:00", "9:00"], **kwargs
+                    )
+                self.assertIn("times lists '09:00' twice", str(cm.exception))
+                self.assertFalse(ScriptSchedule.objects.filter(script=sdk_script).exists())
+        self.assertFalse(ScriptSchedule.objects.filter(script=script).exists())
+
     def test_switching_mode_clears_the_old_mode_fields(self):
         script = self._script()
         api = ScheduleAPI(OWNER)
@@ -139,6 +171,41 @@ class FormParityTests(_Fixture, TestCase):
         # tz defaults to UTC, so the cron is the local time as given.
         self.assertEqual(QSchedule.objects.get(id=sched.q_schedule_ids[0]).cron, "0 7 10 * *")
         self.assertFalse(QSchedule.objects.filter(cron__endswith="* * 2").exists())
+
+
+class StoredRepeatedTimeTests(_Fixture, TestCase):
+    """A row the form saved with a repeated time, before it refused one, gets
+    one django-q2 cron per distinct time; the row itself is left as it was."""
+
+    def _synced_row(self, **fields):
+        script = Script.objects.create(
+            name=f"stored-{uuid.uuid4().hex[:6]}", code="print(1)", environment=self.env
+        )
+        sched = ScriptSchedule.objects.create(
+            script=script, workspace=self.ws, timezone="Asia/Tokyo", is_active=True, **fields
+        )
+        ScheduleService.sync_schedule(sched)
+        return ScriptSchedule.objects.get(pk=sched.pk)
+
+    def test_one_cron_per_distinct_time(self):
+        cases = {
+            "daily": {"run_mode": Mode.DAILY},
+            "weekly": {"run_mode": Mode.WEEKLY, "weekly_days": [0, 2]},
+            "monthly": {"run_mode": Mode.MONTHLY, "monthly_days": [1, 15]},
+        }
+        for mode, fields in cases.items():
+            with self.subTest(mode=mode):
+                times_field = f"{mode}_times"
+                repeated = self._synced_row(**fields, **{times_field: ["09:00", "18:00", "09:00"]})
+                clean = self._synced_row(**fields, **{times_field: ["09:00", "18:00"]})
+                crons = [
+                    sorted(QSchedule.objects.filter(id__in=row.q_schedule_ids).values_list("cron", flat=True))
+                    for row in (repeated, clean)
+                ]
+                self.assertEqual(len(repeated.q_schedule_ids), 2)
+                self.assertEqual(crons[0], crons[1])
+                self.assertEqual(repeated.next_run, clean.next_run)
+                self.assertEqual(getattr(repeated, times_field), ["09:00", "18:00", "09:00"])
 
 
 class SingleValueKwargsTests(_Fixture, TestCase):

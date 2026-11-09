@@ -778,7 +778,8 @@ class ScheduleForm(forms.ModelForm):
             self.fields["yearly_time"].initial = self.instance.yearly_time
 
     def _parse_times(self, value):
-        """Parse and validate comma-separated times input."""
+        """Parse and validate comma-separated times input: each one HH:MM,
+        none listed twice."""
         if not value:
             return []
 
@@ -800,11 +801,18 @@ class ScheduleForm(forms.ModelForm):
                 hour, minute = int(parts[0]), int(parts[1])
                 if not (0 <= hour <= 23 and 0 <= minute <= 59):
                     raise ValueError
-                times.append(f"{hour:02d}:{minute:02d}")
             except ValueError:
                 raise forms.ValidationError(
                     f"Invalid time format: '{time_str}'. Use HH:MM (e.g., 09:00)"
                 )
+
+            # Compared after normalizing, so "09:00, 9:00" is a repeat. Each
+            # time becomes its own cron, so a repeat would run the script twice
+            # at that time. ScheduleAPI.sync refuses repeats the same way.
+            normalized = f"{hour:02d}:{minute:02d}"
+            if normalized in times:
+                raise forms.ValidationError(f"{normalized} is listed twice.")
+            times.append(normalized)
 
         return times
 
@@ -843,9 +851,11 @@ class ScheduleForm(forms.ModelForm):
                     "interval_minutes", "Interval is required for interval mode."
                 )
 
+        # A times field _parse_times refused (a bad or repeated time) already
+        # carries that error; "at least one time" is only for an empty field.
         elif run_mode == ScriptSchedule.RunMode.DAILY:
             daily_times = cleaned_data.get("daily_times_input", [])
-            if not daily_times:
+            if not daily_times and "daily_times_input" not in self.errors:
                 self.add_error(
                     "daily_times_input",
                     "At least one time is required for daily mode.",
@@ -859,7 +869,7 @@ class ScheduleForm(forms.ModelForm):
                     "weekly_days_input",
                     "At least one day is required for weekly mode.",
                 )
-            if not weekly_times:
+            if not weekly_times and "weekly_times_input" not in self.errors:
                 self.add_error(
                     "weekly_times_input",
                     "At least one time is required for weekly mode.",
@@ -873,7 +883,7 @@ class ScheduleForm(forms.ModelForm):
                     "monthly_days_input",
                     "At least one day is required for monthly mode.",
                 )
-            if not monthly_times:
+            if not monthly_times and "monthly_times_input" not in self.errors:
                 self.add_error(
                     "monthly_times_input",
                     "At least one time is required for monthly mode.",
