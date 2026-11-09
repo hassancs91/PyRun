@@ -20,7 +20,9 @@ In the daily, weekly and monthly modes you type the times separated by commas
 repeated time before PyRun refused one runs once at that time from its next
 sync: the daily resync does that for a time zone other than UTC; otherwise
 remove the repeat and save, switch the schedule off and on, or use Pause all
-and Resume all.
+and Resume all. Only the chosen mode's times are checked for a repeat: one
+left in the times of a mode the schedule no longer uses is dropped when you
+save.
 
 Under the hood all non-manual modes compile to a
 [django-q2](https://django-q2.readthedocs.io/) schedule. The daily/weekly/monthly/yearly

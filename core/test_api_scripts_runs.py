@@ -550,6 +550,15 @@ class TokenFormTests(_Fixture, TestCase):
         preview = self.client.get(reverse("cpanel:connect"), {"token": str(self.bound.pk)})
         self.assertEqual({e.slug for e in preview.context["endpoints"]}, set(SLUGS))
 
+    def test_settings_api_reference_names_scripts_and_runs(self):
+        # Settings -> API & MCP lists the Unified API's method families; it
+        # named only brain.* after T12 added scripts.* and runs.* (F2.5b-05).
+        self.client.force_login(
+            User.objects.create(email="t12-settings@example.com", is_superuser=True)
+        )
+        page = self.client.get(reverse("cpanel:settings"))
+        self.assertContains(page, "/api/v1/brain.*, scripts.*, runs.*")
+
 
 class RestorePreviewTests(_Fixture, TestCase):
     def test_script_bound_tokens_are_named_as_removed_by_a_restore(self):

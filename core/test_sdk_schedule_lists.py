@@ -159,6 +159,34 @@ class FormParityTests(_Fixture, TestCase):
                 self.assertFalse(ScriptSchedule.objects.filter(script=sdk_script).exists())
         self.assertFalse(ScriptSchedule.objects.filter(script=script).exists())
 
+    def test_a_stored_repeat_in_an_unused_mode_does_not_block_saving(self):
+        # The form keeps every mode's times, and the editor shows only the chosen
+        # mode's field. A repeat saved into the daily times before repeats were
+        # refused, on a schedule now weekly, came back prefilled in the hidden
+        # daily field and refused every save of the script with an error no one
+        # could see (finding F2.5b-04). Only the chosen mode's times refuse one.
+        script = Script.objects.create(name="hidden-repeat", code="print(1)", environment=self.env)
+        row = ScriptSchedule.objects.create(
+            script=script, workspace=self.ws, run_mode="weekly", timezone=self.TZ,
+            weekly_days=[0], weekly_times=["08:30"], daily_times=["09:00", "09:00"],
+        )
+        form = ScheduleForm(
+            {**BLANK_POST, "timezone": self.TZ, "run_mode": "weekly", "weekly_days_input": ["0"],
+             "weekly_times_input": "08:30", "daily_times_input": "09:00, 09:00"},
+            instance=row,
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.save().daily_times, ["09:00"])
+
+        # The chosen mode's own field still refuses it.
+        form = ScheduleForm(
+            {**BLANK_POST, "timezone": self.TZ, "run_mode": "weekly", "weekly_days_input": ["0"],
+             "weekly_times_input": "08:30, 8:30"},
+            instance=row,
+        )
+        self.assertFalse(form.is_valid())
+        self.assertEqual(form.errors["weekly_times_input"], ["08:30 is listed twice."])
+
     def test_switching_mode_clears_the_old_mode_fields(self):
         script = self._script()
         api = ScheduleAPI(OWNER)

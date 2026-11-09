@@ -777,9 +777,10 @@ class ScheduleForm(forms.ModelForm):
             self.fields["yearly_day"].initial = self.instance.yearly_day
             self.fields["yearly_time"].initial = self.instance.yearly_time
 
-    def _parse_times(self, value):
+    def _parse_times(self, value, *, refuse_repeats=True):
         """Parse and validate comma-separated times input: each one HH:MM,
-        none listed twice."""
+        none listed twice (a repeat is dropped instead when refuse_repeats is
+        False)."""
         if not value:
             return []
 
@@ -811,22 +812,44 @@ class ScheduleForm(forms.ModelForm):
             # at that time. ScheduleAPI.sync refuses repeats the same way.
             normalized = f"{hour:02d}:{minute:02d}"
             if normalized in times:
-                raise forms.ValidationError(f"{normalized} is listed twice.")
+                if refuse_repeats:
+                    raise forms.ValidationError(f"{normalized} is listed twice.")
+                continue
             times.append(normalized)
 
         return times
 
+    def _repeats_refused(self, mode):
+        """Refuse a repeated time only in the chosen mode's times field.
+
+        The form keeps every mode's times, but the editor shows only the chosen
+        mode's field. A repeat stored in another mode's times before repeats were
+        refused would otherwise block every save of the script with an error
+        under a hidden field, so those times drop the repeat instead. run_mode is
+        a model field, so it is cleaned before the times fields.
+        """
+        return self.cleaned_data.get("run_mode") == mode
+
     def clean_daily_times_input(self):
         """Parse and validate daily times input."""
-        return self._parse_times(self.cleaned_data.get("daily_times_input", ""))
+        return self._parse_times(
+            self.cleaned_data.get("daily_times_input", ""),
+            refuse_repeats=self._repeats_refused(ScriptSchedule.RunMode.DAILY),
+        )
 
     def clean_weekly_times_input(self):
         """Parse and validate weekly times input."""
-        return self._parse_times(self.cleaned_data.get("weekly_times_input", ""))
+        return self._parse_times(
+            self.cleaned_data.get("weekly_times_input", ""),
+            refuse_repeats=self._repeats_refused(ScriptSchedule.RunMode.WEEKLY),
+        )
 
     def clean_monthly_times_input(self):
         """Parse and validate monthly times input."""
-        return self._parse_times(self.cleaned_data.get("monthly_times_input", ""))
+        return self._parse_times(
+            self.cleaned_data.get("monthly_times_input", ""),
+            refuse_repeats=self._repeats_refused(ScriptSchedule.RunMode.MONTHLY),
+        )
 
     def clean_yearly_time(self):
         value = self.cleaned_data.get("yearly_time")
