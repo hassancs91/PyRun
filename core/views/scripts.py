@@ -16,9 +16,11 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 
 from core.models import Script, Run, ScriptSchedule, ScheduleHistory, Library, ScriptLibrary, Secret, SecretGrant, Tag
 from core.charts import DURATION_CHART_MAX_BARS, duration_chart
-from core.forms import ScriptForm, ScheduleForm, ScriptInputsForm
+from core.forms import ScriptForm, ScheduleForm, ScriptInputsForm, WebhookSettingsForm
 from core.services.maintenance import blocked_message
 from core.services.run_events import KIND_WEBHOOK, manual_event
+from core.services.webhook_signatures import header_for as signature_header_for
+from core.services.webhook_signatures import preset_headers as signature_preset_headers
 from core.tasks import queue_script_run
 from core.services.schedule_service import ScheduleService
 from core.services.script_env import editor_secret_names, env_var_collisions
@@ -357,6 +359,7 @@ def script_detail_view(request: HttpRequest, pk) -> HttpResponse:
         "script": script,
         "recent_runs": recent_runs,
         "webhook_deliveries": webhook_deliveries,
+        "webhook_signature_header": signature_header_for(script),
         "schedule": schedule,
         "duration_chart": duration_chart(chart_runs),
         "working_folder": str(script_workdir(script.pk)),
@@ -712,6 +715,30 @@ def webhook_regenerate_view(request: HttpRequest, pk) -> HttpResponse:
     messages.success(request, f'Webhook URL regenerated for "{script.name}". The old URL is now invalid.')
 
     return redirect("cpanel:script_detail", pk=pk)
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def webhook_settings_view(request: HttpRequest, pk) -> HttpResponse:
+    """The webhook's signature (preset + secret) and rate limits."""
+    script = get_object_or_404(Script, pk=pk, workspace=request.workspace)
+    if request.method == "POST":
+        form = WebhookSettingsForm(request.POST, instance=script)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'Webhook settings saved for "{script.name}".')
+            return redirect("cpanel:script_detail", pk=pk)
+        # A rejected form has written its values onto ``script``: reload so
+        # the page shows what is stored.
+        script.refresh_from_db()
+    else:
+        form = WebhookSettingsForm(instance=script)
+    return render(request, "cpanel/scripts/webhook_settings.html", {
+        "script": script,
+        "form": form,
+        "secret_saved": bool(script.webhook_signature_secret_encrypted),
+        "preset_headers": signature_preset_headers(),
+    })
 
 
 @login_required

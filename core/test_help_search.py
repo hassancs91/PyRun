@@ -301,6 +301,16 @@ class BundledDocsTests(SimpleTestCase):
         for result in results:
             self.assertTrue(result["link"].startswith(BASE + result["doc"]), result)
 
+    def test_acceptance_a_webhook_with_a_signature(self):
+        """T19's acceptance question, over the real docs (T21 wrote the section)."""
+        best = help_docs.search(SIGNATURE_QUESTION, index=self.index)["results"][0]
+        self.assertEqual(
+            (best["title"], best["doc"], best["link"]),
+            ("Webhook signatures", "docs/run-context.md",
+             BASE + "docs/run-context.md#webhook-signatures"),
+        )
+        self.assertIn("Signature and limits", best["snippet"])
+
 
 class MissingCorpusTests(SimpleTestCase):
     def test_no_docs_means_no_results_and_one_log_line(self):

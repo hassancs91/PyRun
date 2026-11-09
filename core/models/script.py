@@ -239,6 +239,77 @@ class Script(models.Model):
         help_text="Unique token for webhook URL (auto-generated)",
     )
 
+    # Webhook signature (2.5, T21; core.services.webhook_signatures holds the
+    # rules). A call is checked against it before any run exists; one that
+    # fails gets 401. The header, prefix, encoding and timestamp header are
+    # the custom HMAC-SHA256 preset's; the presets fix their own.
+    class WebhookSignature(models.TextChoices):
+        NONE = "none", "None"
+        STRIPE = "stripe", "Stripe"
+        GITHUB = "github", "GitHub"
+        SHOPIFY = "shopify", "Shopify"
+        HMAC_SHA256 = "hmac_sha256", "Custom HMAC-SHA256"
+
+    class WebhookSignatureEncoding(models.TextChoices):
+        HEX = "hex", "Hex"
+        BASE64 = "base64", "Base64"
+
+    MAX_WEBHOOK_SIGNATURE_TOLERANCE = 86400
+    MAX_WEBHOOK_RATE_PER_MINUTE = 10000
+
+    webhook_signature = models.CharField(
+        max_length=20,
+        choices=WebhookSignature.choices,
+        default=WebhookSignature.NONE,
+        help_text="Signature every webhook call must carry (none = the URL alone).",
+    )
+    webhook_signature_secret_encrypted = models.TextField(
+        blank=True,
+        help_text="The signing secret, encrypted with ENCRYPTION_KEY.",
+    )
+    webhook_signature_header = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Custom HMAC-SHA256: the header that carries the signature.",
+    )
+    webhook_signature_prefix = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text="Custom HMAC-SHA256: text before the signature in the header (e.g. sha256=).",
+    )
+    webhook_signature_encoding = models.CharField(
+        max_length=10,
+        choices=WebhookSignatureEncoding.choices,
+        default=WebhookSignatureEncoding.HEX,
+        help_text="Custom HMAC-SHA256: how the signature is written.",
+    )
+    webhook_signature_timestamp_header = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Custom HMAC-SHA256: a header holding the Unix time the call "
+        "was signed; when set, the signed text is '<timestamp>.<body>'.",
+    )
+    webhook_signature_tolerance = models.PositiveIntegerField(
+        default=300,
+        validators=[MinValueValidator(1), MaxValueValidator(MAX_WEBHOOK_SIGNATURE_TOLERANCE)],
+        help_text="Seconds a signed timestamp may differ from the server's clock "
+        "(Stripe, and custom HMAC-SHA256 with a timestamp header).",
+    )
+
+    # Per-script webhook rate limit (2.5, T21). Calls over either limit get
+    # 429 and no run; the per-IP limit in core.views.webhooks is only a
+    # scanning floor above these.
+    webhook_rate_per_minute = models.PositiveIntegerField(
+        default=60,
+        validators=[MinValueValidator(1), MaxValueValidator(MAX_WEBHOOK_RATE_PER_MINUTE)],
+        help_text="Webhook calls accepted per minute.",
+    )
+    webhook_rate_burst = models.PositiveIntegerField(
+        default=30,
+        validators=[MinValueValidator(1), MaxValueValidator(MAX_WEBHOOK_RATE_PER_MINUTE)],
+        help_text="Webhook calls accepted within any one second.",
+    )
+
     # Script as an MCP tool (2.5, T14; core.api.script_tools holds the rules).
     # On: MCP tools/list shows the script as the tool ``tool_name`` to tokens
     # that may run it, and calling the tool is scripts.run with wait. Exposed
@@ -438,3 +509,23 @@ class Script(models.Model):
     def has_webhook(self) -> bool:
         """Check if this script has a webhook token configured."""
         return bool(self.webhook_token)
+
+    def set_webhook_signature_secret(self, value: str) -> None:
+        """Encrypt and store the webhook signing secret ("" clears it)."""
+        from core.services import EncryptionService
+
+        self.webhook_signature_secret_encrypted = (
+            EncryptionService.encrypt(value) if value else ""
+        )
+
+    def get_webhook_signature_secret(self) -> str:
+        """The webhook signing secret in clear ("" when none is stored).
+
+        Raises EncryptionError when the stored value can't be decrypted
+        (ENCRYPTION_KEY changed since it was saved).
+        """
+        if not self.webhook_signature_secret_encrypted:
+            return ""
+        from core.services import EncryptionService
+
+        return EncryptionService.decrypt(self.webhook_signature_secret_encrypted)

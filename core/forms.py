@@ -4416,3 +4416,101 @@ class MaintenanceWindowForm(forms.ModelForm):
         if commit:
             window.save()
         return window
+
+
+class WebhookSettingsForm(forms.ModelForm):
+    """A script's webhook signature and rate limits (Script → Webhook card).
+
+    The signing secret is write-only: it is never shown again, a blank field
+    keeps the stored one, and choosing no signature clears it.
+    """
+
+    signature_secret = forms.CharField(
+        required=False,
+        max_length=500,
+        widget=forms.PasswordInput(attrs={"class": INPUT_CLASS, "autocomplete": "new-password"}),
+        label="Signing secret",
+    )
+
+    class Meta:
+        model = Script
+        fields = [
+            "webhook_signature",
+            "webhook_signature_header",
+            "webhook_signature_prefix",
+            "webhook_signature_encoding",
+            "webhook_signature_timestamp_header",
+            "webhook_signature_tolerance",
+            "webhook_rate_per_minute",
+            "webhook_rate_burst",
+        ]
+        widgets = {
+            "webhook_signature": forms.Select(attrs={"class": INPUT_CLASS}),
+            "webhook_signature_header": forms.TextInput(
+                attrs={"class": INPUT_CLASS, "placeholder": "X-Signature"}
+            ),
+            "webhook_signature_prefix": forms.TextInput(
+                attrs={"class": INPUT_CLASS, "placeholder": "sha256="}
+            ),
+            "webhook_signature_encoding": forms.Select(attrs={"class": INPUT_CLASS}),
+            "webhook_signature_timestamp_header": forms.TextInput(
+                attrs={"class": INPUT_CLASS, "placeholder": "X-Signature-Timestamp"}
+            ),
+            "webhook_signature_tolerance": forms.NumberInput(
+                attrs={"class": INPUT_CLASS, "min": 1, "max": Script.MAX_WEBHOOK_SIGNATURE_TOLERANCE}
+            ),
+            "webhook_rate_per_minute": forms.NumberInput(
+                attrs={"class": INPUT_CLASS, "min": 1, "max": Script.MAX_WEBHOOK_RATE_PER_MINUTE}
+            ),
+            "webhook_rate_burst": forms.NumberInput(
+                attrs={"class": INPUT_CLASS, "min": 1, "max": Script.MAX_WEBHOOK_RATE_PER_MINUTE}
+            ),
+        }
+        labels = {
+            "webhook_signature": "Signature",
+            "webhook_signature_header": "Signature header",
+            "webhook_signature_prefix": "Prefix",
+            "webhook_signature_encoding": "Encoding",
+            "webhook_signature_timestamp_header": "Timestamp header",
+            "webhook_signature_tolerance": "Timestamp tolerance (seconds)",
+            "webhook_rate_per_minute": "Calls per minute",
+            "webhook_rate_burst": "Calls per second (burst)",
+        }
+        help_texts = {
+            "webhook_signature_prefix": "Text before the signature in the header, if any.",
+            "webhook_signature_timestamp_header": "Optional. When set, the signed text is "
+            "<timestamp>.<body> and the timestamp (Unix seconds) must be recent.",
+            "webhook_signature_tolerance": "How far a signed timestamp may be from this "
+            "server's clock (Stripe, and a custom signature with a timestamp header).",
+            "webhook_rate_per_minute": "Calls over it get 429 and no run.",
+            "webhook_rate_burst": "The most calls taken within one second.",
+        }
+
+    def clean(self):
+        from core.services.webhook_signatures import HEADER_NAME_RE
+
+        cleaned = super().clean()
+        preset = cleaned.get("webhook_signature")
+        if preset and preset != Script.WebhookSignature.NONE:
+            if not cleaned.get("signature_secret") and not self.instance.webhook_signature_secret_encrypted:
+                self.add_error("signature_secret", "Enter the signing secret.")
+        if preset == Script.WebhookSignature.HMAC_SHA256:
+            if not cleaned.get("webhook_signature_header"):
+                self.add_error("webhook_signature_header", "Enter the header that carries the signature.")
+            # Checked only for this preset: the page hides these fields for
+            # the others, so an error there couldn't be seen.
+            for name in ("webhook_signature_header", "webhook_signature_timestamp_header"):
+                value = cleaned.get(name)
+                if value and not HEADER_NAME_RE.match(value):
+                    self.add_error(name, "Use letters, digits and hyphens only (e.g. X-Signature).")
+        return cleaned
+
+    def save(self, commit=True):
+        script = super().save(commit=False)
+        if script.webhook_signature == Script.WebhookSignature.NONE:
+            script.set_webhook_signature_secret("")
+        elif self.cleaned_data.get("signature_secret"):
+            script.set_webhook_signature_secret(self.cleaned_data["signature_secret"])
+        if commit:
+            script.save(update_fields=[*self.Meta.fields, "webhook_signature_secret_encrypted", "updated_at"])
+        return script

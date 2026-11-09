@@ -45,6 +45,18 @@ FORK_RESET_FIELDS = (
     "owner_plugin",  # the fork is user-owned; the plugin does not manage it
     "owner_key",
     "webhook_token",  # a token names exactly one script; the fork starts without
+    # The rest of the webhook's settings go with it: the fork's webhook, once
+    # enabled, starts unsigned with the default limits (a signing secret is
+    # one sender's, not something to copy around).
+    "webhook_signature",
+    "webhook_signature_secret_encrypted",
+    "webhook_signature_header",
+    "webhook_signature_prefix",
+    "webhook_signature_encoding",
+    "webhook_signature_timestamp_header",
+    "webhook_signature_tolerance",
+    "webhook_rate_per_minute",
+    "webhook_rate_burst",
     "expose_as_tool",  # a tool name names one script too: the fork isn't a tool
     "tool_name",
     "archived_at",  # forking an archived script yields a live one

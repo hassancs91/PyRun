@@ -286,8 +286,20 @@
                     </button>
                 </div>
             </div>
+            <dl class="space-y-2 text-sm" id="webhook-settings-summary">
+                <div class="flex items-center justify-between gap-3">
+                    <dt class="text-muted">Signature</dt>
+                    <dd class="text-text text-right">{% if script.webhook_signature != 'none' %}{{ script.get_webhook_signature_display }}{% if webhook_signature_header %} <span class="text-faint font-mono text-xs">{{ webhook_signature_header }}</span>{% endif %}{% else %}<span class="text-muted">None</span>{% endif %}</dd>
+                </div>
+                <div class="flex items-center justify-between gap-3">
+                    <dt class="text-muted">Rate limit</dt>
+                    <dd class="text-text font-mono tnum text-xs">{{ script.webhook_rate_per_minute }}/min · {{ script.webhook_rate_burst }}/s</dd>
+                </div>
+                <div><a href="{% url 'cpanel:webhook_settings' pk=script.pk %}" class="text-xs text-info hover:underline">Signature and limits</a></div>
+            </dl>
             <div>
                 <button type="button" id="curl-toggle-btn" onclick="toggleCurlExample()" class="text-xs text-info hover:underline">Show curl example</button>
+                {% if script.webhook_signature != 'none' %}<p class="text-xs text-faint mt-1">Calls must carry a valid {{ script.get_webhook_signature_display }} signature: an unsigned call like this example gets 401.</p>{% endif %}
                 <pre id="curl-example" class="hidden mt-2 p-3 bg-ink border border-line-soft rounded-lg text-xs font-mono text-muted overflow-x-auto">curl -X POST \
   -H "Content-Type: application/json" \
   -d '{"key": "value"}' \

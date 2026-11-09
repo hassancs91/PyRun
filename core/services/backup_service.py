@@ -176,6 +176,13 @@ class BackupService:
     # exposed script that loses its tool this way is named in the warnings.
     # ``response_code`` on runs (the status a webhook call got; older backups:
     # NULL, shown as unknown).
+    # Webhook signature and rate fields on scripts (``webhook_signature``,
+    # ``webhook_signature_secret_encrypted`` carried verbatim like the other
+    # encrypted values, header, prefix, encoding, timestamp header, tolerance,
+    # ``webhook_rate_per_minute``, ``webhook_rate_burst``; older backups: no
+    # signature and the default limits). A value that isn't valid falls back
+    # to its default (core.services.webhook_signatures.restored_settings); an
+    # unknown preset restores as none and is named in the warnings.
     BACKUP_VERSION = "1.13.0"
     MAX_BACKUP_SIZE_MB = 100
     # Default cap on a gzip backup's expanded size (F92, zip-bomb guard);
@@ -470,6 +477,15 @@ class BackupService:
                 "expose_as_tool": script.expose_as_tool,
                 "tool_name": script.tool_name,
                 "webhook_token": script.webhook_token,
+                "webhook_signature": script.webhook_signature,
+                "webhook_signature_secret_encrypted": script.webhook_signature_secret_encrypted,
+                "webhook_signature_header": script.webhook_signature_header,
+                "webhook_signature_prefix": script.webhook_signature_prefix,
+                "webhook_signature_encoding": script.webhook_signature_encoding,
+                "webhook_signature_timestamp_header": script.webhook_signature_timestamp_header,
+                "webhook_signature_tolerance": script.webhook_signature_tolerance,
+                "webhook_rate_per_minute": script.webhook_rate_per_minute,
+                "webhook_rate_burst": script.webhook_rate_burst,
                 "notify_on": script.notify_on,
                 "notify_email": script.notify_email,
                 "notify_webhook_url": script.notify_webhook_url,
@@ -1800,9 +1816,11 @@ class BackupService:
     def _import_scripts(cls, scripts_data: List[dict], env_map: dict, user_map: dict, current_user, ws_map: dict, default_ws, warnings: Optional[List[str]] = None) -> dict:
         """Import scripts with proper foreign key mapping.
 
-        ``warnings`` collects what the restore couldn't keep (an MCP tool).
+        ``warnings`` collects what the restore couldn't keep (an MCP tool, a
+        webhook signature).
         """
         from core.api.script_tools import restored_tool
+        from core.services.webhook_signatures import restored_settings as restored_webhook_settings
 
         script_map = {}
         tool_names = set()  # (workspace id, tool name) exposed so far
@@ -1835,6 +1853,13 @@ class BackupService:
                     "tool name is invalid or another restored script in its workspace uses it. "
                     "Set a tool name in its editor."
                 )
+            webhook_settings, signature_dropped = restored_webhook_settings(script_data)
+            if signature_dropped and warnings is not None:
+                warnings.append(
+                    f'Script "{script_data["name"]}" was restored without its webhook signature: '
+                    "the backup names a signature PyRun doesn't know. Set it again on the "
+                    "script's webhook settings."
+                )
             script = Script.objects.create(
                 id=old_id,  # Preserve UUID
                 name=script_data["name"],
@@ -1861,6 +1886,7 @@ class BackupService:
                 expose_as_tool=expose_as_tool,
                 tool_name=tool_name,
                 webhook_token=script_data.get("webhook_token"),
+                **webhook_settings,
                 notify_on=script_data.get("notify_on", "never"),
                 notify_email=script_data.get("notify_email", ""),
                 notify_webhook_url=script_data.get("notify_webhook_url", ""),

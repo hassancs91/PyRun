@@ -1,0 +1,118 @@
+{% extends "cpanel/layout.html" %}
+
+{% block title %}Webhook settings - {{ script.name }} - {{ instance_name }}{% endblock %}
+
+{% block breadcrumbs %}
+<a href="{% url 'cpanel:script_list' %}">Scripts</a>
+<a href="{% url 'cpanel:script_detail' pk=script.pk %}" class="hover:text-text transition-colors truncate max-w-[12rem]">{{ script.name }}</a>
+<span>Webhook settings</span>
+{% endblock %}
+{% block heading %}Webhook settings{% endblock %}
+{% block subtitle %}Signature and rate limits for {{ script.name }}'s webhook{% endblock %}
+
+{% block page %}
+<form method="post" class="rounded-2xl border border-line bg-panel p-6 space-y-5">
+    {% csrf_token %}
+    {% include "cpanel/_form_errors.html" %}
+
+    <div>
+        <h3 class="text-sm font-semibold">Signature</h3>
+        <p class="text-xs text-faint mt-1">PyRun checks every call's signature before it starts a run. A call with a missing or wrong signature gets 401 and no run.</p>
+    </div>
+
+    <div>
+        <label for="{{ form.webhook_signature.id_for_label }}" class="block text-sm font-medium text-text mb-1.5">{{ form.webhook_signature.label }}</label>
+        {{ form.webhook_signature }}
+        <p class="text-xs text-faint mt-1" id="signature-preset-help"></p>
+        {% include "cpanel/_field_errors.html" with field=form.webhook_signature %}
+    </div>
+
+    <div data-signature="any">
+        <label for="{{ form.signature_secret.id_for_label }}" class="block text-sm font-medium text-text mb-1.5">{{ form.signature_secret.label }}</label>
+        {{ form.signature_secret }}
+        <p class="text-xs text-faint mt-1">{% if secret_saved %}A secret is saved. Leave this blank to keep it.{% else %}The secret the sender signs with (Stripe: the endpoint's signing secret, whsec_...; GitHub: the webhook's secret; Shopify: the app's client secret).{% endif %} It is stored encrypted and never shown again.</p>
+        {% include "cpanel/_field_errors.html" with field=form.signature_secret %}
+    </div>
+
+    <div data-signature="hmac_sha256" class="space-y-5">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+                <label for="{{ form.webhook_signature_header.id_for_label }}" class="block text-sm font-medium text-text mb-1.5">{{ form.webhook_signature_header.label }}</label>
+                {{ form.webhook_signature_header }}
+                {% include "cpanel/_field_errors.html" with field=form.webhook_signature_header %}
+            </div>
+            <div>
+                <label for="{{ form.webhook_signature_prefix.id_for_label }}" class="block text-sm font-medium text-text mb-1.5">{{ form.webhook_signature_prefix.label }}</label>
+                {{ form.webhook_signature_prefix }}
+                <p class="text-xs text-faint mt-1">{{ form.webhook_signature_prefix.help_text }}</p>
+                {% include "cpanel/_field_errors.html" with field=form.webhook_signature_prefix %}
+            </div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+                <label for="{{ form.webhook_signature_encoding.id_for_label }}" class="block text-sm font-medium text-text mb-1.5">{{ form.webhook_signature_encoding.label }}</label>
+                {{ form.webhook_signature_encoding }}
+                {% include "cpanel/_field_errors.html" with field=form.webhook_signature_encoding %}
+            </div>
+            <div>
+                <label for="{{ form.webhook_signature_timestamp_header.id_for_label }}" class="block text-sm font-medium text-text mb-1.5">{{ form.webhook_signature_timestamp_header.label }}</label>
+                {{ form.webhook_signature_timestamp_header }}
+                <p class="text-xs text-faint mt-1">{{ form.webhook_signature_timestamp_header.help_text }}</p>
+                {% include "cpanel/_field_errors.html" with field=form.webhook_signature_timestamp_header %}
+            </div>
+        </div>
+    </div>
+
+    <div data-signature="stripe hmac_sha256">
+        <label for="{{ form.webhook_signature_tolerance.id_for_label }}" class="block text-sm font-medium text-text mb-1.5">{{ form.webhook_signature_tolerance.label }}</label>
+        {{ form.webhook_signature_tolerance }}
+        <p class="text-xs text-faint mt-1">{{ form.webhook_signature_tolerance.help_text }}</p>
+        {% include "cpanel/_field_errors.html" with field=form.webhook_signature_tolerance %}
+    </div>
+
+    <div class="pt-4 border-t border-line-soft">
+        <h3 class="text-sm font-semibold">Rate limit</h3>
+        <p class="text-xs text-faint mt-1">Calls over either limit get 429 with Retry-After and no run.</p>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+            <label for="{{ form.webhook_rate_per_minute.id_for_label }}" class="block text-sm font-medium text-text mb-1.5">{{ form.webhook_rate_per_minute.label }}</label>
+            {{ form.webhook_rate_per_minute }}
+            {% include "cpanel/_field_errors.html" with field=form.webhook_rate_per_minute %}
+        </div>
+        <div>
+            <label for="{{ form.webhook_rate_burst.id_for_label }}" class="block text-sm font-medium text-text mb-1.5">{{ form.webhook_rate_burst.label }}</label>
+            {{ form.webhook_rate_burst }}
+            <p class="text-xs text-faint mt-1">{{ form.webhook_rate_burst.help_text }}</p>
+            {% include "cpanel/_field_errors.html" with field=form.webhook_rate_burst %}
+        </div>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-2.5 pt-2">
+        <button type="submit" class="text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">Save</button>
+        <a href="{% url 'cpanel:script_detail' pk=script.pk %}" class="text-[13px] px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Cancel</a>
+    </div>
+</form>
+
+{{ preset_headers|json_script:"signature-preset-headers" }}
+<script>
+(function () {
+    // Show only the fields the chosen signature uses (the server ignores the others).
+    const select = document.getElementById('{{ form.webhook_signature.id_for_label }}');
+    const headers = JSON.parse(document.getElementById('signature-preset-headers').textContent);
+    const help = document.getElementById('signature-preset-help');
+    function sync() {
+        const preset = select.value;
+        document.querySelectorAll('[data-signature]').forEach(function (el) {
+            const wanted = el.dataset.signature.split(' ');
+            const show = preset !== 'none' && (wanted.indexOf('any') !== -1 || wanted.indexOf(preset) !== -1);
+            el.classList.toggle('hidden', !show);
+        });
+        help.textContent = headers[preset] ? 'Read from the ' + headers[preset] + ' header.' : '';
+    }
+    select.addEventListener('change', sync);
+    sync();
+})();
+</script>
+{% endblock %}

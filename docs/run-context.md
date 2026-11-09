@@ -218,9 +218,126 @@ than about 1,000 levels, or with a number over 4,300 digits, stays text only.
 **Recent deliveries.** The script page's Webhook card lists the last 20 calls:
 their run's status, how long it ran, and the HTTP status PyRun answered with
 (200 queued or skipped, 503 during a maintenance window, 500 if the run
-couldn't be queued). Calls refused before a run exists (a wrong URL, the rate
-limit, a disabled script, a required input with no default, 413) aren't listed. Retries of a failed run aren't calls and aren't listed
-either.
+couldn't be queued). Calls refused before a run exists (a wrong URL, a missing
+or wrong signature, a rate limit, a disabled script, a required input with no
+default, 413) aren't listed. Retries of a failed run aren't calls and aren't
+listed either.
+
+#### Webhook signatures
+
+The webhook URL is a secret: anyone who has it can start the script. To also
+make sure a call really comes from the service you expect, set a signature:
+on the script page, **Webhook → Signature and limits**. PyRun then verifies
+each call's signature over the body exactly as it was received, before it
+creates a run. A call whose signature is missing or wrong gets **401** and no
+run:
+
+```json
+{"error": "Invalid webhook signature", "reason": "mismatch"}
+```
+
+| `reason` | Meaning |
+|---|---|
+| `missing` | The signature header (or the custom timestamp header) isn't in the request. |
+| `malformed` | The header is there but can't be read (wrong prefix, not hex or base64, no `t=` or `v1=`). |
+| `expired` | The signature is right but its timestamp is further from the server's clock than the tolerance: an old call sent again, or a clock that is off. |
+| `mismatch` | The signature doesn't match the body: a different secret, or the body was changed on the way. |
+| `not_configured` | No secret is saved, or it can't be decrypted because `ENCRYPTION_KEY` changed: save the secret again. |
+
+A refused call also counts as an auth failure for the caller's address (see
+[Webhook rate limits](#webhook-rate-limits)).
+
+Every signature is HMAC-SHA256 keyed with the secret's UTF-8 bytes, and
+compared in constant time:
+
+| Signature | Header | Signed text | Secret |
+|---|---|---|---|
+| Stripe | `Stripe-Signature: t=<unix time>,v1=<hex>` | `<t>.<body>`, and `t` must be within the tolerance (default 300 seconds) | the endpoint's signing secret, `whsec_...`, used whole |
+| GitHub | `X-Hub-Signature-256: sha256=<hex>` | the body | the webhook's secret |
+| Shopify | `X-Shopify-Hmac-Sha256: <base64>` | the body | the app's client secret |
+| Custom HMAC-SHA256 | the header you name, with an optional prefix (`sha256=`), hex or base64 | the body; with a timestamp header, `<timestamp>.<body>` | yours |
+
+**Stripe.** In the Stripe dashboard, add a webhook endpoint whose URL is the
+script's webhook URL, then reveal the endpoint's signing secret and paste it
+into the script's webhook settings with the signature **Stripe**. Stripe sends
+`Stripe-Signature: t=1700000000,v1=…`; while it rolls a secret it sends two
+`v1` values, and either may match. `stripe listen --forward-to <webhook URL>`
+signs with its own secret (it prints it when it starts): use that one while
+you forward with the Stripe CLI.
+
+**GitHub.** In the repository (or organization), **Settings → Webhooks → Add
+webhook**: the payload URL is the script's webhook URL, the content type
+`application/json`, and the secret any long random string; save the same
+string with the signature **GitHub**. GitHub signs with `X-Hub-Signature-256`
+(the older SHA-1 `X-Hub-Signature` header is ignored). GitHub's own example:
+the secret `It's a Secret to Everybody` and the body `Hello, World!` give
+`sha256=757107ea0eb2509fc211221cce984b8a37570b6d7586c22c46f4379c8b043e17`.
+
+**Shopify.** A webhook an app subscribes to (the Admin API or the app's
+configuration) is signed with the app's client secret: choose **Shopify** and
+paste it. A webhook made in the Shopify admin (**Settings → Notifications →
+Webhooks**) is signed with the key shown under that list ("Your webhooks will
+be signed with …"): paste that one.
+
+**Custom HMAC-SHA256.** For your own senders, or a service that signs the same
+way: name the header, the prefix written before the signature (if any) and
+the encoding. With a timestamp header, the sender signs `<timestamp>.<body>`
+with the Unix time in seconds, and PyRun refuses a call whose timestamp is
+further off than the tolerance. A Python sender, for the header `X-Signature`,
+prefix `sha256=`, hex, and the timestamp header `X-Signature-Timestamp`:
+
+```python
+import hashlib, hmac, json, time, urllib.request
+
+secret = b"your signing secret"
+body = json.dumps({"order": 1042}).encode()
+timestamp = str(int(time.time()))
+signature = hmac.new(secret, timestamp.encode() + b"." + body, hashlib.sha256).hexdigest()
+urllib.request.urlopen(urllib.request.Request(
+    "https://pyrun.example.com/webhook/<token>/", data=body, method="POST",
+    headers={
+        "Content-Type": "application/json",
+        "X-Signature": "sha256=" + signature,
+        "X-Signature-Timestamp": timestamp,
+    },
+))
+```
+
+The same call from a shell, without the timestamp header:
+
+```bash
+body='{"order": 1042}'
+sig=$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$SECRET" | sed 's/^.* //')
+curl -X POST -H "Content-Type: application/json" -H "X-Signature: sha256=$sig" \
+  -d "$body" "https://pyrun.example.com/webhook/<token>/"
+```
+
+The script doesn't have to check the signature again. The signature headers
+are in the event's `headers` like the others (`x-hub-signature-256`,
+`stripe-signature`), so a script that wants to can, over the exact bytes in
+`PYRUNNER_EVENT_BODY_FILE`.
+
+#### Webhook rate limits
+
+By default each script's webhook takes at most **60 calls a minute** and **30
+calls in any one second**. Change both under **Webhook → Signature and
+limits**. A call over either limit gets **429** with a `Retry-After` header
+and no run. The
+windows are fixed and follow the clock (a minute starts at :00), so up to
+twice a limit can pass across the turn of a window.
+
+Two more limits apply per caller address, to every webhook call together:
+
+- **300 calls a minute**, whatever the script: a floor against scanning. A
+  script limit above 300 a minute only helps when the calls come from several
+  addresses.
+- **30 auth failures a minute**: a call to a URL that doesn't exist (404) or
+  with a missing or wrong signature (401) counts. After 30, every webhook call
+  from that address gets 429 until the minute is over.
+
+Behind a reverse proxy, set `RATELIMIT_TRUSTED_PROXY_DEPTH` so the address is
+the caller's and not the proxy's. Before 2.5 the only limit was 30 calls a
+minute per address.
 
 ---
 

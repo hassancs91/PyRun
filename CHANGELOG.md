@@ -283,6 +283,20 @@ begins tracking at the current release; earlier history is in the git log.
   instead of starting a run with an empty body. The script page's Webhook card
   lists the last 20 calls with their run's status, duration and the HTTP code
   PyRun answered. Guide: "Webhook calls" in `docs/run-context.md`.
+- **Webhooks can require a signature, and each script has its own rate limit.**
+  A script's webhook can require every call to be signed the way Stripe,
+  GitHub or Shopify sign theirs, or with an HMAC-SHA256 you describe (header,
+  prefix, hex or base64, an optional timestamp header and its tolerance).
+  PyRun checks it before any run exists: a missing or wrong signature gets 401
+  with a `reason` and no run. The signing secret is stored encrypted and never
+  shown again. Each script's webhook takes 60 calls a minute and 30 in any one
+  second by default, both adjustable; over that, 429 with `Retry-After` and no
+  run. The old limit of 30 calls a minute per address is now 300, a floor
+  against scanning, while wrong URLs and bad signatures from one address are
+  still cut off after 30 a minute. Set both under **Webhook → Signature and
+  limits** on the script page. Guide: "Webhook signatures" and "Webhook rate
+  limits" in `docs/run-context.md`, with recipes for Stripe, GitHub and
+  Shopify.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

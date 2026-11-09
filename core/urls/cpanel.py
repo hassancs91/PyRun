@@ -42,6 +42,7 @@ from core.views.scripts import (
     webhook_enable_view,
     webhook_disable_view,
     webhook_regenerate_view,
+    webhook_settings_view,
     scan_env_refs_view,
 )
 from core.views.runs import (
@@ -281,6 +282,7 @@ urlpatterns = [
     path("scripts/<uuid:pk>/webhook/enable/", webhook_enable_view, name="webhook_enable"),
     path("scripts/<uuid:pk>/webhook/disable/", webhook_disable_view, name="webhook_disable"),
     path("scripts/<uuid:pk>/webhook/regenerate/", webhook_regenerate_view, name="webhook_regenerate"),
+    path("scripts/<uuid:pk>/webhook/settings/", webhook_settings_view, name="webhook_settings"),
 
     # Runs
     path("runs/", run_list_view, name="run_list"),

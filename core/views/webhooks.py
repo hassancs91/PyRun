@@ -13,7 +13,8 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from core.models import Script, Run
-from core.ratelimit import client_ip, rate_limit_exceeded
+from core.ratelimit import client_ip, rate_limit_exceeded, rate_limit_over, seconds_to_window_reset
+from core.services import webhook_signatures
 from core.services.run_events import webhook_event
 from core.services.script_inputs import ScriptInputsError, prepare_inputs
 from core.services.webhook_request import BODY_BASE64, event_headers
@@ -21,9 +22,14 @@ from core.tasks import queue_script_run
 
 logger = logging.getLogger(__name__)
 
-# Rate limit: 30 requests per minute per IP
-WEBHOOK_RATE_LIMIT = 30
+# Per-IP scanning floor: every webhook call from one address, whatever the
+# script. Each script also has its own limit (Script.webhook_rate_per_minute
+# and webhook_rate_burst); one address never gets past this one.
+WEBHOOK_RATE_LIMIT = 300
 WEBHOOK_RATE_WINDOW = 60  # seconds
+# Per-IP auth failures (a wrong token, a bad signature). Once over it, the
+# address gets 429 for the rest of the window before any lookup.
+WEBHOOK_AUTHFAIL_LIMIT = 30
 
 
 @csrf_exempt
@@ -54,10 +60,14 @@ def webhook_trigger_view(request: HttpRequest, token: str) -> JsonResponse:
         - 400: The script has a required input with no default; ``inputs``
           maps each such input to the reason (no run is created). Also when
           the request body couldn't be read (the sender hung up mid-body).
+        - 401: The script requires a signature and the call's is missing or
+          wrong (``reason``); no run. Counts as an auth failure.
         - 403: Script is disabled
-        - 404: Invalid token
+        - 404: Invalid token (counts as an auth failure)
         - 413: The body is over DATA_UPLOAD_MAX_MEMORY_SIZE (no run)
-        - 429: Rate limit exceeded
+        - 429: Rate limit exceeded (``Retry-After``): the caller's address
+          sent over WEBHOOK_RATE_LIMIT calls or WEBHOOK_AUTHFAIL_LIMIT auth
+          failures this minute, or the script's own limit is reached
         - 500: Failed to queue
 
     When a run was created (200, 503, 500), the status sent is stored on it
@@ -71,20 +81,45 @@ def webhook_trigger_view(request: HttpRequest, token: str) -> JsonResponse:
         f"webhook_rate_{ip}", WEBHOOK_RATE_LIMIT, WEBHOOK_RATE_WINDOW
     ):
         logger.warning(f"Webhook rate limit exceeded for IP: {ip}")
-        return JsonResponse(
-            {"error": "Rate limit exceeded. Try again later."},
-            status=429,
-        )
+        return _rate_limited(seconds_to_window_reset(WEBHOOK_RATE_WINDOW))
+
+    # An address that keeps guessing tokens or signatures is cut off before
+    # it costs a lookup.
+    authfail_key = f"webhook_authfail_{ip}"
+    if rate_limit_over(authfail_key, WEBHOOK_AUTHFAIL_LIMIT, WEBHOOK_RATE_WINDOW):
+        return _rate_limited(seconds_to_window_reset(WEBHOOK_RATE_WINDOW))
 
     # Find script by token
     try:
         script = Script.objects.select_related("environment").get(webhook_token=token)
     except Script.DoesNotExist:
         logger.warning(f"Webhook trigger with invalid token: {token[:8]}...")
+        if rate_limit_exceeded(authfail_key, WEBHOOK_AUTHFAIL_LIMIT, WEBHOOK_RATE_WINDOW):
+            return _rate_limited(seconds_to_window_reset(WEBHOOK_RATE_WINDOW))
         return JsonResponse(
             {"error": "Invalid webhook token"},
             status=404,
         )
+
+    # A script that requires a signature checks it first, over the body
+    # exactly as received: a call without a valid one learns nothing more
+    # about the script and never gets a run.
+    if webhook_signatures.required(script):
+        try:
+            body = request.body
+        except (RequestDataTooBig, UnreadablePostError) as e:
+            return _body_refused(script, e)
+        failure = webhook_signatures.verify(script, request.headers, body)
+        if failure:
+            logger.warning(
+                f"Webhook signature refused ({failure}) for script {script.name} from {ip}"
+            )
+            if rate_limit_exceeded(authfail_key, WEBHOOK_AUTHFAIL_LIMIT, WEBHOOK_RATE_WINDOW):
+                return _rate_limited(seconds_to_window_reset(WEBHOOK_RATE_WINDOW))
+            return JsonResponse(
+                {"error": "Invalid webhook signature", "reason": failure},
+                status=401,
+            )
 
     # Check if script can run (enabled and not archived)
     if not script.can_run:
@@ -103,21 +138,19 @@ def webhook_trigger_view(request: HttpRequest, token: str) -> JsonResponse:
     except ScriptInputsError as e:
         return _inputs_rejected(e)
 
+    # The script's own limit: a call over it gets 429 and no run.
+    retry_after = _script_rate_limited(script)
+    if retry_after:
+        logger.info(f"Webhook rate limit of script {script.name} reached")
+        return _rate_limited(retry_after, "This script's webhook rate limit is reached. Try again later.")
+
     # Extract webhook data. It still reaches the task as before (the WEBHOOK_*
     # variables and the body file are built from it); the run's event carries
     # the same values plus the request's path, headers and address.
     try:
         webhook_data = _extract_webhook_data(request)
-    except RequestDataTooBig:
-        limit = settings.DATA_UPLOAD_MAX_MEMORY_SIZE
-        logger.info(f"Webhook body over {limit} bytes refused for script {script.name}")
-        return JsonResponse(
-            {"error": f"Request body too large: the limit is {limit} bytes."},
-            status=413,
-        )
-    except UnreadablePostError as e:
-        logger.warning(f"Webhook body for script {script.name} could not be read: {e}")
-        return JsonResponse({"error": "Could not read the request body."}, status=400)
+    except (RequestDataTooBig, UnreadablePostError) as e:
+        return _body_refused(script, e)
 
     # Create a new Run record. No user/session here — the run inherits its
     # workspace from the script (tenancy Stage 1). ``response_code`` is the
@@ -191,6 +224,45 @@ def webhook_trigger_view(request: HttpRequest, token: str) -> JsonResponse:
             {"error": "Failed to queue script execution"},
             status=500,
         )
+
+
+def _rate_limited(retry_after: int, message: str = "Rate limit exceeded. Try again later.") -> JsonResponse:
+    """429 with the seconds until the window that refused the call ends."""
+    response = JsonResponse({"error": message}, status=429)
+    response["Retry-After"] = str(retry_after)
+    return response
+
+
+def _script_rate_limited(script: Script) -> int | None:
+    """Count one call against the script's limits; the seconds to wait when
+    it is over one of them (None when the call may go on).
+
+    Two fixed windows: at most ``webhook_rate_burst`` calls in one second and
+    at most ``webhook_rate_per_minute`` in one minute. A call refused by the
+    burst doesn't use up the minute.
+    """
+    burst = min(script.webhook_rate_burst, script.webhook_rate_per_minute)
+    if rate_limit_exceeded(f"webhook_script_burst_{script.pk}", burst, 1):
+        return 1
+    if rate_limit_exceeded(
+        f"webhook_script_rate_{script.pk}", script.webhook_rate_per_minute, WEBHOOK_RATE_WINDOW
+    ):
+        return seconds_to_window_reset(WEBHOOK_RATE_WINDOW)
+    return None
+
+
+def _body_refused(script: Script, error: Exception) -> JsonResponse:
+    """413 for a body over DATA_UPLOAD_MAX_MEMORY_SIZE, 400 for one that
+    couldn't be read (the sender hung up mid-body)."""
+    if isinstance(error, RequestDataTooBig):
+        limit = settings.DATA_UPLOAD_MAX_MEMORY_SIZE
+        logger.info(f"Webhook body over {limit} bytes refused for script {script.name}")
+        return JsonResponse(
+            {"error": f"Request body too large: the limit is {limit} bytes."},
+            status=413,
+        )
+    logger.warning(f"Webhook body for script {script.name} could not be read: {error}")
+    return JsonResponse({"error": "Could not read the request body."}, status=400)
 
 
 def _inputs_rejected(error: ScriptInputsError) -> JsonResponse:
