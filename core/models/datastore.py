@@ -21,8 +21,9 @@ class DataStore(models.Model):
 
     # Tenancy Decision 2B: ``name`` is unique PER WORKSPACE (not globally), so two
     # workspaces can each own a store called "results". Every by-name resolver
-    # (cpanel, script helper, internal + public REST APIs) scopes the lookup to a
-    # workspace; see ``resolve_for_workspace``.
+    # (cpanel, script helper, internal API) scopes the lookup to a workspace; see
+    # ``resolve_for_workspace``. The external API (core/api/endpoints/datastores.py)
+    # matches its token's workspace only, without the unassigned-store fallback.
     name = models.CharField(
         max_length=100,
         help_text="Name for this data store (used in scripts), unique per workspace",
@@ -122,8 +123,8 @@ class DataStore(models.Model):
           still-unassigned (``workspace IS NULL``) store created before scoping.
 
         Raises ``DataStore.DoesNotExist`` if neither exists. The workspace source
-        is always trusted/server-derived (the run's workspace, the active
-        workspace, or the API token's), never a value the script supplied.
+        is always trusted/server-derived (the run's workspace or the active
+        workspace), never a value the script supplied.
         """
         # Fail closed (F129): no workspace resolves only still-unassigned rows,
         # never the default workspace's.

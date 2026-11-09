@@ -6,18 +6,19 @@ in-process Brain tools use the same handlers, schemas and grant checks.
 ## Authentication and workspace
 
 In **Console → API tokens**, create a **Unified API** token. Choose its workspace,
-permissions, an optional binding (one Brain or one script) and Brain tier. The secret is shown once; every API
+permissions, an optional binding (one Brain, one script or one datastore) and Brain tier. The secret is shown once; every API
 token (Unified, datastore and plugin) is stored only as a digest, and the 2.0
 upgrade hashed the datastore and plugin tokens 1.x kept in plaintext. Save it in
 your client's secret store.
 
-A backup restore deletes the tokens bound to a Brain or a script, or scoped to a
-single data store, even when it restores the same Brain, script or store on the
+A backup restore deletes the tokens bound to a Brain, a script or a data store (and
+the single-store datastore tokens), even when it restores the same Brain, script or store on the
 same instance (the restore preview lists them); unbound tokens are kept. Create new tokens for the
 affected clients after a restore. Backups never carry API tokens.
 
 Send `Authorization: Bearer <token>` or `X-API-Key: <token>`. The token selects the
-workspace; callers cannot override it in the URL or request body. Existing
+workspace; callers cannot override it in the URL or request body. A token whose
+workspace no longer exists is refused (403 `scope_mismatch`). Existing
 Datastore and plugin token scopes do not authorize this API. Brain operations
 also need a Brain grant for the token. No grant means no access, including public
 notes. Disabling, expiring or revoking a token takes effect on subsequent checks.
@@ -74,8 +75,9 @@ it can call the matching write endpoints. A token that got a write permission wh
 writes were on keeps it after they are turned off, but its write calls are refused
 until they are on again. A token without the permission gets 403 `forbidden`
 either way. MCP marks `run` and `write` tools with `readOnlyHint: false`. Settings
-lists the write endpoints this instance has. There are none yet; data writes come
-with the datastore, table and vector endpoints.
+lists the write endpoints this instance has: today
+[`datastores.set` and `datastores.delete`](#datastores). Every write call is recorded
+in the token's [Activity](#running-and-stopping-scripts).
 
 ## Brain operations
 
@@ -270,6 +272,64 @@ token's script tools under `script_tools`, next to `endpoints`:
  "rest": "scripts.run", "access": "run", "permission": "scripts:run"}
 ```
 
+## Datastores
+
+Read a workspace's datastores and their entries, and, while
+[API writes](#endpoint-classes-and-api-writes) are on, set and delete entries.
+
+| REST endpoint | Parameters | Permission |
+|---|---|---|
+| `datastores.list` | None | `datastores:read` |
+| `datastores.get` | `name` | `datastores:read` |
+| `datastores.entries` | `name`; optional `page` (from 1) and `page_size` (1–100, default 50) | `datastores:read` |
+| `datastores.entry` | `name`, `key` | `datastores:read` |
+| `datastores.set` | `name`, `key`, `value` (any JSON value) | `datastores:write` |
+| `datastores.delete` | `name`, `key` | `datastores:write` |
+
+```sh
+curl -H "Authorization: Bearer $PYRUN_TOKEN" \
+  "https://pyrun.example/api/v1/datastores.entry?name=results&key=latest"
+
+curl -H "Authorization: Bearer $PYRUN_TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"results","key":"latest","value":{"rows":42}}' \
+  https://pyrun.example/api/v1/datastores.set
+```
+
+- A datastore is named by its name in the token's workspace. A data store
+  that belongs to no workspace is never reached.
+  `datastores.list` returns `{"datastores": [...], "count": n}`, each with
+  `name`, `description`, `entry_count`, `created_at` and `updated_at`.
+- `datastores.entries` returns `entries` (`key`, `value`, `created_at`,
+  `updated_at`, by key), `count`, `page`, `page_size` and `total_pages`; a page
+  past the end returns the last page. `datastores.entry` returns one entry.
+- `datastores.set` stores `value` under `key`, replacing what the key holds, and
+  answers `{name, key, created, created_at, updated_at}` (`created` is false when it
+  replaced a value). It never creates a datastore: create stores in the console.
+  `datastores.delete` deletes one entry and answers `deleted: false` when the key
+  wasn't there. Both are POST only and take 30 calls a minute per token (each its
+  own count). A request body is limited by the server's upload limit (2.5 MB by
+  default; over it, 413 `too_large`).
+- Values are returned as stored, as on the console's datastore page: secrets a
+  script wrote into a datastore aren't masked.
+
+**Bind a token to one datastore** with the token form's **Datastore** field.
+That token's `datastores.list` returns that store alone, the others may leave out
+`name`, and any other store in the workspace answers 403 `forbidden` (a store
+that doesn't exist, or is in another workspace, answers 404 `not_found`). A
+token is bound to one Brain, one script or one datastore, not more. Deleting the
+store deletes the tokens bound to it.
+
+**The datastore API** (`/api/v1/datastores/`, `/api/v1/datastores/<name>/`,
+`.../entries/` and `.../entries/<key>/`) keeps working for datastore tokens. Its
+URLs call the same handlers as `datastores.list`, `.get`, `.entries` and `.entry`
+and answer the same data without the `{"ok": true, "data": ...}` envelope; errors
+keep that API's shape (`{"error": {"code": "NOT_FOUND", "message": ...}}`). A
+single-store datastore token is bound to its store like a Unified API token
+bound to it. It is read-only, and Unified API tokens don't work there. A datastore
+token whose workspace no longer exists is refused (403 `SCOPE_MISMATCH`). Before
+2.5 such a token could still read the data stores that belonged to no workspace,
+and any token could read one of those by its name.
+
 ## MCP clients
 
 Open **Console → Connect** for the instance's exact URL and commands. The normal
@@ -306,7 +366,7 @@ For clients that can only accept a URL, an instance administrator can enable
 **MCP URL tokens** in Connect. Create a separate token of that kind with read-only
 permissions and a mandatory expiry (90 days by default). Read-only means
 permissions that guard read endpoints alone: `brain:read`, `scripts:read`,
-`runs:read` and `runs:output`, not `brain:write`. Its endpoint is
+`runs:read`, `runs:output` and `datastores:read`, not `brain:write`. Its endpoint is
 `POST /mcp/k/<url-token>/`. It cannot be used as a REST/bearer token. The URL itself
 is a credential: keep connector configuration private and redact that route from
 reverse-proxy access logs. Because the token travels in the request path, reverse

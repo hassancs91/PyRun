@@ -150,9 +150,9 @@ begins tracking at the current release; earlier history is in the git log.
   403 `writes_disabled`, and the token form shows write permissions disabled
   with the reason. Turned on, write permissions can be granted per token. A
   token that already holds one keeps it, but its write calls are refused while
-  the switch is off. **Connect** shows the current mode. No write endpoint
-  ships yet; data writes arrive with the datastore, table and vector
-  endpoints. `brain.propose-feed` is a `run` endpoint (a proposal waits for
+  the switch is off. **Connect** shows the current mode. The first write
+  endpoints are the datastore ones (`datastores.set` and `datastores.delete`,
+  below). `brain.propose-feed` is a `run` endpoint (a proposal waits for
   approval), so it works whatever the switch says, and the catalog now lists
   its `access` as `run` instead of `write`. Backups include the switch; an
   older backup leaves it off. Guide: "Endpoint classes and API writes" in
@@ -205,6 +205,22 @@ begins tracking at the current release; earlier history is in the git log.
   the script page shows the tool name, a fork is never a tool, and backups keep
   the setting. Connect explains it with a Claude Code example. Guide: "Scripts
   as MCP tools" in `docs/api.md`.
+- **Datastores over the API and MCP.** `datastores.list`, `datastores.get`,
+  `datastores.entries` and `datastores.entry` read a workspace's datastores and
+  entries with the new token permission **Read datastores** (`datastores:read`,
+  which MCP URL tokens may hold too). `datastores.set` and `datastores.delete`
+  set and delete one entry with **Write datastore entries** (`datastores:write`):
+  they are write endpoints, so they work only while API writes are on, and every
+  call is recorded on the token's Activity page. A write never creates a
+  datastore. A token can be bound to one datastore with the token form's
+  **Datastore** field: it then reaches that store only. The datastore API
+  (`/api/v1/datastores/…`) keeps working for datastore tokens with the same
+  answers; its URLs now run the same code, and a single-store token is bound to
+  its store the same way. A datastore token whose workspace no longer exists is
+  now refused (403 `SCOPE_MISMATCH`) instead of reading the data stores that
+  belong to no workspace, and no token reaches one of those by its name any
+  more. Deleting a datastore in the console now says how many API tokens bound
+  to it go with it. Guide: "Datastores" in `docs/api.md`.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

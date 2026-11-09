@@ -2430,7 +2430,10 @@ class APITokenForm(forms.ModelForm):
         help_texts = {
             "name": "A friendly name to identify this token",
             "scope": "What this token grants access to",
-            "datastore": "Required for single-datastore scope",
+            "datastore": (
+                "Required for single-datastore scope. Optional for a unified API "
+                "token: it then reaches this datastore only."
+            ),
             "expires_at": "Optional. Leave empty for no expiration.",
         }
 
@@ -2483,7 +2486,8 @@ class APITokenForm(forms.ModelForm):
             self.add_error("plugin_slug", "Select the plugin this token is scoped to.")
         # Blank out the fields the chosen scope doesn't use (matches the model's
         # CheckConstraints — a stray selection must not survive a scope switch).
-        if scope != APIToken.Scope.DATASTORE:
+        # A unified API token may keep a datastore as its binding (2.5).
+        if scope not in (APIToken.Scope.DATASTORE, APIToken.Scope.API):
             cleaned["datastore"] = None
         if scope != APIToken.Scope.PLUGIN:
             cleaned["plugin_slug"] = ""

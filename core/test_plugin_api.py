@@ -138,17 +138,16 @@ class DatastoreApiRegressionTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["value"], "a-value")
 
-    def test_null_workspace_token_lists_only_unassigned_stores(self):
-        # F129: a NULL-workspace token is not the default workspace (the 0035
-        # backfill gave every pre-tenancy token one).
-        store_d = DataStore.objects.create(name="dstore", workspace=self.default)
-        legacy = DataStore.objects.create(name="legacy", workspace=None)
+    def test_null_workspace_token_is_refused(self):
+        # F129 made a NULL-workspace token see only unassigned stores, never the
+        # default workspace's (the 0035 backfill gave every pre-tenancy token
+        # one); since 2.5 (T15) it is refused outright, like on the unified API.
+        DataStore.objects.create(name="dstore", workspace=self.default)
+        DataStore.objects.create(name="legacy", workspace=None)
         bare = APIToken.objects.create(name="bare", token=APIToken.generate_token())
         resp = self.client.get("/api/v1/datastores/", **_auth(bare.raw_token))
-        self.assertEqual(resp.status_code, 200)
-        names = {d["name"] for d in resp.json()["datastores"]}
-        self.assertNotIn(store_d.name, names)
-        self.assertIn(legacy.name, names)
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.json()["error"]["code"], "SCOPE_MISMATCH")
 
     # -- auth ----------------------------------------------------------------
 

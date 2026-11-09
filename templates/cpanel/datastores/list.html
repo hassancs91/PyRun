@@ -64,7 +64,7 @@
                         <a href="{% url 'cpanel:datastore_detail' pk=store.pk %}" class="text-[13px] px-3 py-1.5 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">View</a>
                         {% if store.owner_plugin %}
                         {% if user.is_superuser %}
-                        <form method="post" action="{% url 'cpanel:datastore_delete' pk=store.pk %}" onsubmit="return confirm('&quot;{{ store.name|escapejs }}&quot; is managed by the {{ store.owner_plugin|escapejs }} plugin. Force-delete it and all its entries anyway? The plugin may break.');" class="inline">
+                        <form method="post" action="{% url 'cpanel:datastore_delete' pk=store.pk %}" onsubmit="return confirm('&quot;{{ store.name|escapejs }}&quot; is managed by the {{ store.owner_plugin|escapejs }} plugin. Force-delete it and all its entries anyway? The plugin may break.{% if store.bound_tokens %} It also deletes the {{ store.bound_tokens|escapejs }} API token{{ store.bound_tokens|pluralize|escapejs }} bound to it.{% endif %}');" class="inline">
                             {% csrf_token %}
                             <input type="hidden" name="force" value="1">
                             <button type="submit" title="Superuser escape hatch for a plugin-managed store" class="text-[13px] px-3 py-1.5 rounded-lg border border-fail/30 bg-fail/10 text-fail hover:bg-fail/20 transition-colors">Force delete</button>
@@ -73,7 +73,7 @@
                         <span class="text-xs text-faint" title="Delete it from the plugin's page">Plugin-managed</span>
                         {% endif %}
                         {% else %}
-                        <form method="post" action="{% url 'cpanel:datastore_delete' pk=store.pk %}" onsubmit="return confirm('Are you sure you want to delete the data store &quot;{{ store.name|escapejs }}&quot;? All entries will be permanently deleted.');" class="inline">
+                        <form method="post" action="{% url 'cpanel:datastore_delete' pk=store.pk %}" onsubmit="return confirm('Are you sure you want to delete the data store &quot;{{ store.name|escapejs }}&quot;? All entries will be permanently deleted.{% if store.bound_tokens %} So will the {{ store.bound_tokens|escapejs }} API token{{ store.bound_tokens|pluralize|escapejs }} bound to it.{% endif %}');" class="inline">
                             {% csrf_token %}
                             <button type="submit" class="text-[13px] px-3 py-1.5 rounded-lg border border-fail/30 bg-fail/10 text-fail hover:bg-fail/20 transition-colors">Delete</button>
                         </form>

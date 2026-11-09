@@ -71,7 +71,7 @@
 {# Usage info #}
 <div class="rounded-2xl border border-line bg-panel p-5">
     <h3 class="text-sm font-medium text-text mb-2">Using the API</h3>
-    <p class="text-sm text-muted mb-3">Unified API tokens discover their permitted endpoints at <code>/api/v1/_catalog</code>. They do not grant datastore or plugin API access.</p>
+    <p class="text-sm text-muted mb-3">Unified API tokens discover their permitted endpoints at <code>/api/v1/_catalog</code>; they read datastores through <code>datastores.*</code> with the datastore permissions. They don't work on the <code>/api/v1/datastores/</code> URLs below or the plugin API.</p>
     <p class="text-sm text-muted mb-3">Use your API token to access datastore data from external applications:</p>
     <code class="block px-3 py-3 bg-ink border border-line-soft rounded-lg text-sm font-mono text-text overflow-x-auto">curl -H "Authorization: Bearer YOUR_TOKEN" {{ request.scheme }}://{{ request.get_host }}/api/v1/datastores/</code>
 </div>

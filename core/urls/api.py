@@ -4,7 +4,7 @@ URL patterns for the PyRun REST API.
 
 from django.urls import path
 
-from core.views.api import (
+from core.views.api.datastores import (
     list_datastores,
     get_datastore,
     list_entries,

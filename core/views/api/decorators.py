@@ -23,8 +23,9 @@ def api_token_required(view_func):
     """
     Decorator to require API token authentication.
 
-    Validates the token, checks expiration, enforces rate limiting,
-    and attaches the token to the request for view access.
+    Validates the token, checks expiration, refuses a token without a
+    workspace, enforces rate limiting, and attaches the token to the request
+    for view access.
 
     Token can be provided via:
     - Authorization: Bearer <token>
@@ -54,7 +55,7 @@ def api_token_required(view_func):
             # Stored as a SHA-256 digest (F53); Unified API tokens never
             # authenticate here, so a stored digest isn't a usable credential.
             api_token = (
-                APIToken.objects.select_related("datastore")
+                APIToken.objects.select_related("workspace", "datastore__workspace")
                 .exclude(scope=APIToken.Scope.API)
                 .get(token=APIToken.digest(token), is_active=True)
             )
@@ -88,6 +89,20 @@ def api_token_required(view_func):
                 status=403,
             ))
 
+        # A token whose workspace is gone fails closed (2.5): it never falls back
+        # to the default workspace or to unassigned stores.
+        if token_workspace(api_token) is None:
+            logger.info(f"Datastore API token without a workspace refused: {api_token.name}")
+            return add_cors_headers(JsonResponse(
+                {
+                    "error": {
+                        "code": "SCOPE_MISMATCH",
+                        "message": "This token's workspace no longer exists",
+                    }
+                },
+                status=403,
+            ))
+
         # Rate limiting by token (fixed window, shared helper)
         if rate_limit_exceeded(
             f"api_rate_{api_token.id}", API_RATE_LIMIT, API_RATE_WINDOW
@@ -109,6 +124,12 @@ def api_token_required(view_func):
         return view_func(request, *args, **kwargs)
 
     return wrapper
+
+
+def token_workspace(token):
+    """The workspace a datastore token acts in: a single-store token's store's
+    (as it always has), else the token's own. None when it is gone."""
+    return token.datastore.workspace if token.datastore_id else token.workspace
 
 
 def _extract_token(request):

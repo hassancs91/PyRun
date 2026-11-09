@@ -69,7 +69,7 @@
             <div>
                 <label for="id_script" class="block text-[13px] font-medium text-text mb-1.5">Bind to one script (optional)</label>
                 {{ form.script }}{% include "cpanel/_field_errors.html" with field=form.script %}
-                <p class="mt-1.5 text-xs text-faint">A bound token sees that script and its runs only. Bind to a brain or a script, not both.</p>
+                <p class="mt-1.5 text-xs text-faint">A bound token sees that script and its runs only. Bind to one brain, one script or one datastore (the Datastore field above), not more.</p>
             </div>
         </div>
 
@@ -79,7 +79,8 @@
                 var dsField = document.getElementById("datastore-field");
                 var plField = document.getElementById("plugin-field");
                 function sync() {
-                    dsField.style.display = scope.value === "datastore" ? "" : "none";
+                    // A unified API token may bind the same field (optional).
+                    dsField.style.display = scope.value === "datastore" || scope.value === "api" ? "" : "none";
                     plField.style.display = scope.value === "plugin" ? "" : "none";
                     document.getElementById("api-fields").style.display = scope.value === "api" ? "" : "none";
                 }
@@ -110,7 +111,7 @@
                     <ul class="mt-2 space-y-1 list-disc list-inside text-xs">
                         <li>The token will only be shown once after creation</li>
                         <li>Store it securely — you won't be able to see it again</li>
-                        <li>Datastore and plugin tokens are read-only; unified API tokens use the selected permissions</li>
+                        <li>Datastore and plugin tokens are read-only; unified API tokens use the selected permissions (datastore writes need API writes on)</li>
                     </ul>
                 </div>
             </div>

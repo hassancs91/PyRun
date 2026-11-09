@@ -20,8 +20,8 @@ class APIToken(models.Model):
     - ``datastore``  — a single datastore (the FK).
     - ``datastores`` — all datastores in the token's workspace (legacy "global").
     - ``plugin``     — one plugin's declared API resources (``plugin_slug``).
-    - ``api``        — registry permissions, with an optional brain or script
-                       binding (at most one).
+    - ``api``        — registry permissions, with an optional brain, script or
+                       datastore binding (at most one).
 
     Historically named ``DataStoreAPIToken`` (the alias survives in
     ``core.models``); the table name is pinned so the rename touched no SQL.
@@ -45,6 +45,8 @@ class APIToken(models.Model):
         ("runs:output", "Read run output (stdout and stderr, secrets masked)"),
         ("scripts:run", "Run scripts (with inputs; can wait for the result)"),
         ("runs:stop", "Stop runs"),
+        ("datastores:read", "Read datastores (entries and their values)"),
+        ("datastores:write", "Write datastore entries (set and delete)"),
     )
     TIERS = (("public", "Public"), ("agents-only", "Agents only"), ("private", "Private"))
     # Which permissions are write permissions comes from the registry: those
@@ -82,14 +84,16 @@ class APIToken(models.Model):
         help_text="What this token grants access to",
     )
 
-    # Optional: Restrict to specific datastore (null = access to all datastores)
+    # The one datastore this token reaches: a single-store token's target, or
+    # a Unified API token's optional binding (2.5; CASCADE like the other
+    # bindings). NULL = every datastore in the token's workspace.
     datastore = models.ForeignKey(
         "DataStore",
         on_delete=models.CASCADE,
         null=True,
         blank=True,
         related_name="api_tokens",
-        help_text="If set, token only grants access to this datastore. Leave empty for global access.",
+        help_text="If set, the token reaches only this datastore. Leave empty for every datastore in its workspace.",
     )
 
     # Plugin scope target. Deliberately NOT an FK: plugins aren't rows (dev-mode
@@ -116,9 +120,9 @@ class APIToken(models.Model):
                                related_name="api_tokens")
 
     # Tenancy Stage 3: the workspace this token acts in. A global (no-datastore)
-    # token lists/resolves only this workspace's datastores; NULL falls back to
-    # the default workspace (today's behavior on a single-workspace instance).
-    # Plugin-scoped tokens are FAIL-CLOSED instead: NULL workspace → 403.
+    # token lists/resolves only this workspace's datastores (a single-store token
+    # acts in its store's). Every scope fails closed: no workspace → 403, never
+    # the default workspace (datastore tokens since 2.5).
     workspace = models.ForeignKey(
         "core.Workspace",
         on_delete=models.SET_NULL,
@@ -183,12 +187,14 @@ class APIToken(models.Model):
                 | models.Q(scope="api", brain__isnull=True),
                 name="apitoken_one_binding",
             ),
-            # scope="datastore" ⇔ datastore FK set (integrity, not just form
+            # scope="datastore" ⇒ datastore FK set; any other scope carries one
+            # only as a Unified API token's sole binding (integrity, not just form
             # validation — a plugin/global token must never carry a store FK).
             models.CheckConstraint(
                 condition=(
                     models.Q(scope="datastore", datastore__isnull=False)
                     | (~models.Q(scope="datastore") & models.Q(datastore__isnull=True))
+                    | models.Q(scope="api", brain__isnull=True, script__isnull=True)
                 ),
                 name="apitoken_scope_datastore_fk",
             ),
@@ -260,6 +266,13 @@ class APIToken(models.Model):
                 raise ValidationError({"script": "Bind a token to one brain or one script, not both."})
             if self.workspace_id != self.script.workspace_id:
                 raise ValidationError({"script": "Unknown script."})
+        if self.datastore_id:
+            if self.brain_id or self.script_id:
+                raise ValidationError(
+                    {"datastore": "Bind a token to one brain, one script or one datastore, not more."}
+                )
+            if self.workspace_id != self.datastore.workspace_id:
+                raise ValidationError({"datastore": "Unknown datastore."})
         self._refuse_write_grants()
 
     @staticmethod

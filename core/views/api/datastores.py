@@ -1,256 +1,104 @@
 """
-API views for datastore access.
-"""
+The legacy datastore REST API: ``/api/v1/datastores/…``, for datastore tokens.
 
-import logging
+Each URL is an alias of a registry endpoint (``core/api/endpoints/datastores.py``):
+the view turns the token into a call context and answers with that handler's
+result as it is, so the body is the one this API has always returned. Errors
+keep this API's envelope, ``{"error": {"code": "NOT_FOUND", "message": ...}}``,
+with upper-case codes. Unified API tokens call the same handlers as
+``/api/v1/datastores.list`` (and ``.get``, ``.entries``, ``.entry``).
+"""
 
 from django.http import JsonResponse, HttpRequest
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
-from core.models import DataStore, DataStoreEntry, Workspace
-from core.views.api.decorators import api_token_required, add_cors_headers
+from core.api.context import CallContext
+from core.api.errors import error_response
+from core.api.exceptions import ApiError
+from core.api.registry import registry
+from core.api.endpoints.datastores import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
+from core.views.api.decorators import api_token_required, add_cors_headers, token_workspace
 
-logger = logging.getLogger(__name__)
+def legacy_context(token):
+    """A datastore token as a registry caller holding ``datastores:read``.
 
-# Pagination settings
-DEFAULT_PAGE_SIZE = 50
-MAX_PAGE_SIZE = 100
+    A single-store token is bound to its store (the binding a Unified API token
+    gets from the same FK) and acts in its store's workspace. ``api_token_required``
+    has already refused a token without a workspace.
+    """
+    return CallContext(
+        workspace=token_workspace(token),
+        principal="token",
+        principal_id=str(token.pk),
+        permissions=frozenset({"datastores:read"}),
+        datastore_id=token.datastore_id,
+        transport="legacy",
+    )
+
+
+def _answer(request, slug, params):
+    try:
+        data = registry.call(slug, legacy_context(request.api_token), params)
+    except ApiError as exc:
+        return error_response(exc.status, exc.code.upper(), exc.message)
+    return add_cors_headers(JsonResponse(data))
+
+
+def _int_param(request, name, default, maximum=None):
+    """A lenient page number or size: bad text is the default, then clamped."""
+    try:
+        value = max(1, int(request.GET.get(name, default)))
+    except (ValueError, TypeError):
+        return default
+    return min(maximum, value) if maximum else value
 
 
 @csrf_exempt
 @require_http_methods(["GET", "OPTIONS"])
 @api_token_required
 def list_datastores(request: HttpRequest) -> JsonResponse:
+    """GET /api/v1/datastores/ = ``datastores.list``.
+
+    ``{"datastores": [{"name", "description", "entry_count", "created_at",
+    "updated_at"}], "count": n}``
     """
-    List all datastores accessible to the token.
-
-    GET /api/v1/datastores/
-
-    Returns:
-        {
-            "datastores": [
-                {
-                    "name": "store_name",
-                    "description": "...",
-                    "entry_count": 42,
-                    "created_at": "2026-01-15T10:30:00Z",
-                    "updated_at": "2026-02-10T14:22:00Z"
-                }
-            ],
-            "count": 1
-        }
-    """
-    token = request.api_token
-
-    if token.datastore:
-        # Token restricted to single datastore
-        datastores = [token.datastore]
-    else:
-        # Global token: list only the token's workspace datastores (tenancy
-        # Stage 3). A NULL-workspace token sees only unassigned stores (F129;
-        # the 0035 backfill gave every pre-tenancy token the default workspace).
-        datastores = DataStore.objects.for_workspace(token.workspace)
-
-    data = {
-        "datastores": [
-            {
-                "name": ds.name,
-                "description": ds.description,
-                "entry_count": ds.entry_count,
-                "created_at": ds.created_at.isoformat(),
-                "updated_at": ds.updated_at.isoformat(),
-            }
-            for ds in datastores
-        ],
-        "count": len(datastores) if token.datastore else datastores.count(),
-    }
-
-    response = JsonResponse(data)
-    return add_cors_headers(response)
+    return _answer(request, "datastores.list", {})
 
 
 @csrf_exempt
 @require_http_methods(["GET", "OPTIONS"])
 @api_token_required
 def get_datastore(request: HttpRequest, name: str) -> JsonResponse:
+    """GET /api/v1/datastores/<name>/ = ``datastores.get``.
+
+    ``{"name", "description", "entry_count", "created_at", "updated_at"}``
     """
-    Get datastore metadata.
-
-    GET /api/v1/datastores/<name>/
-
-    Returns:
-        {
-            "name": "store_name",
-            "description": "...",
-            "entry_count": 42,
-            "created_at": "2026-01-15T10:30:00Z",
-            "updated_at": "2026-02-10T14:22:00Z"
-        }
-    """
-    datastore = _get_authorized_datastore(request, name)
-    if isinstance(datastore, JsonResponse):
-        return datastore  # Error response
-
-    data = {
-        "name": datastore.name,
-        "description": datastore.description,
-        "entry_count": datastore.entry_count,
-        "created_at": datastore.created_at.isoformat(),
-        "updated_at": datastore.updated_at.isoformat(),
-    }
-
-    response = JsonResponse(data)
-    return add_cors_headers(response)
+    return _answer(request, "datastores.get", {"name": name})
 
 
 @csrf_exempt
 @require_http_methods(["GET", "OPTIONS"])
 @api_token_required
 def list_entries(request: HttpRequest, name: str) -> JsonResponse:
+    """GET /api/v1/datastores/<name>/entries/?page=&page_size= = ``datastores.entries``.
+
+    ``{"entries": [{"key", "value", "created_at", "updated_at"}], "count",
+    "page", "page_size", "total_pages"}``; page_size is 1-100 (default 50).
     """
-    List entries in a datastore with pagination.
-
-    GET /api/v1/datastores/<name>/entries/
-    Query params:
-        - page: Page number (default: 1)
-        - page_size: Items per page (default: 50, max: 100)
-
-    Returns:
-        {
-            "entries": [
-                {
-                    "key": "config",
-                    "value": {"retries": 3},
-                    "created_at": "2026-01-20T08:00:00Z",
-                    "updated_at": "2026-02-01T12:00:00Z"
-                }
-            ],
-            "count": 42,
-            "page": 1,
-            "page_size": 50,
-            "total_pages": 1
-        }
-    """
-    datastore = _get_authorized_datastore(request, name)
-    if isinstance(datastore, JsonResponse):
-        return datastore  # Error response
-
-    # Parse pagination params
-    try:
-        page = max(1, int(request.GET.get("page", 1)))
-    except (ValueError, TypeError):
-        page = 1
-
-    try:
-        page_size = min(MAX_PAGE_SIZE, max(1, int(request.GET.get("page_size", DEFAULT_PAGE_SIZE))))
-    except (ValueError, TypeError):
-        page_size = DEFAULT_PAGE_SIZE
-
-    # Get total count and calculate pagination
-    total_count = datastore.entries.count()
-    total_pages = max(1, (total_count + page_size - 1) // page_size)
-
-    # Ensure page is within bounds
-    page = min(page, total_pages)
-
-    # Get paginated entries
-    offset = (page - 1) * page_size
-    entries = datastore.entries.all()[offset:offset + page_size]
-
-    data = {
-        "entries": [
-            {
-                "key": entry.key,
-                "value": entry.get_value(),
-                "created_at": entry.created_at.isoformat(),
-                "updated_at": entry.updated_at.isoformat(),
-            }
-            for entry in entries
-        ],
-        "count": total_count,
-        "page": page,
-        "page_size": page_size,
-        "total_pages": total_pages,
-    }
-
-    response = JsonResponse(data)
-    return add_cors_headers(response)
+    return _answer(request, "datastores.entries", {
+        "name": name,
+        "page": _int_param(request, "page", 1),
+        "page_size": _int_param(request, "page_size", DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE),
+    })
 
 
 @csrf_exempt
 @require_http_methods(["GET", "OPTIONS"])
 @api_token_required
 def get_entry(request: HttpRequest, name: str, key: str) -> JsonResponse:
+    """GET /api/v1/datastores/<name>/entries/<key>/ = ``datastores.entry``.
+
+    ``{"key", "value", "created_at", "updated_at"}``
     """
-    Get a single entry by key.
-
-    GET /api/v1/datastores/<name>/entries/<key>/
-
-    Returns:
-        {
-            "key": "config",
-            "value": {"retries": 3},
-            "created_at": "2026-01-20T08:00:00Z",
-            "updated_at": "2026-02-01T12:00:00Z"
-        }
-    """
-    datastore = _get_authorized_datastore(request, name)
-    if isinstance(datastore, JsonResponse):
-        return datastore  # Error response
-
-    try:
-        entry = DataStoreEntry.objects.get(datastore=datastore, key=key)
-    except DataStoreEntry.DoesNotExist:
-        response = JsonResponse(
-            {"error": {"code": "NOT_FOUND", "message": f"Entry '{key}' not found"}},
-            status=404,
-        )
-        return add_cors_headers(response)
-
-    data = {
-        "key": entry.key,
-        "value": entry.get_value(),
-        "created_at": entry.created_at.isoformat(),
-        "updated_at": entry.updated_at.isoformat(),
-    }
-
-    response = JsonResponse(data)
-    return add_cors_headers(response)
-
-
-def _get_authorized_datastore(request: HttpRequest, name: str):
-    """
-    Get datastore if token has access.
-
-    Returns the DataStore object or a JsonResponse error.
-    """
-    token = request.api_token
-
-    # Scope by-name resolution to the token's workspace (tenancy Decision 2B). A
-    # datastore-scoped token resolves within its datastore's workspace; a global
-    # token resolves within its own workspace FK (Stage 3); NULL sees only
-    # unassigned stores (F129).
-    if token.datastore_id:
-        workspace_id = token.datastore.workspace_id
-    else:
-        workspace_id = token.workspace_id
-
-    try:
-        datastore = DataStore.resolve_for_workspace(name, workspace_id)
-    except DataStore.DoesNotExist:
-        response = JsonResponse(
-            {"error": {"code": "NOT_FOUND", "message": f"Datastore '{name}' not found"}},
-            status=404,
-        )
-        return add_cors_headers(response)
-
-    # Check token access
-    if token.datastore and token.datastore != datastore:
-        response = JsonResponse(
-            {"error": {"code": "FORBIDDEN", "message": "Token does not have access to this datastore"}},
-            status=403,
-        )
-        return add_cors_headers(response)
-
-    return datastore
+    return _answer(request, "datastores.entry", {"name": name, "key": key})

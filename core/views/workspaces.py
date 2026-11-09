@@ -33,8 +33,8 @@ MAX_NAME_LEN = 100
 # singular and plural label for the refusal message). Every SET_NULL workspace
 # FK except Environment (shared infra, listed instance-wide) belongs here: an
 # orphaned row is invisible under strict scoping, an orphaned Database keeps its
-# schema and role on the data server, and an orphaned datastore token falls back
-# to the default workspace on the datastore API.
+# schema and role on the data server, and an orphaned API token is refused
+# (fail closed, never the default workspace).
 _OWNED_RELATIONS = (
     ("scripts", "script", "scripts"),
     ("runs", "run", "runs"),

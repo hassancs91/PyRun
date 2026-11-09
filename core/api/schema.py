@@ -14,6 +14,9 @@ TYPES = {
     "boolean": lambda v: isinstance(v, bool),
     "null": lambda v: v is None,
 }
+# A schema whose type lists all of these accepts any JSON value (a datastore
+# entry's value). It may leave out ``items``: its array items are any value too.
+ANY_VALUE = ("object", "array", "string", "number", "boolean", "null")
 KEYWORDS = frozenset(
     {
         "type",
@@ -59,7 +62,7 @@ def check_schema(schema, depth=0):
         raise ValueError("enum must be a nonempty list")
     for child in properties.values():
         check_schema(child, depth + 1)
-    if "array" in types:
+    if "array" in types and ("items" in schema or not set(ANY_VALUE) <= set(types)):
         check_schema(schema.get("items"), depth + 1)
 
 
@@ -95,7 +98,7 @@ def validate(value, schema, path="$", depth=0):
         if len(value) > schema.get("maxItems", float("inf")):
             invalid("too many items")
         for i, item in enumerate(value):
-            validate(item, schema["items"], f"{path}[{i}]", depth + 1)
+            validate(item, schema.get("items", schema), f"{path}[{i}]", depth + 1)
     return value
 
 

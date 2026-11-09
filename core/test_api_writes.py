@@ -19,9 +19,9 @@ What this pins, roughly in order of how much it would hurt to get wrong:
 - Settings → API & MCP flips the switch (superusers only), Connect states the
   mode, and backups round-trip it (an older backup leaves writes off).
 
-No real write endpoint exists yet (datastores.set comes with T15), so a
-fixture endpoint ``fixture.write`` with its own ``fixture:write`` permission
-stands in for one.
+A fixture endpoint ``fixture.write`` with its own ``fixture:write`` permission
+stands in for a write endpoint here; the real ones (``datastores.set`` and
+``datastores.delete``) are covered in core/test_api_datastores.py.
 """
 
 import json

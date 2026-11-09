@@ -4,12 +4,13 @@ Data Store management views for the control panel.
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.db.models import Count
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from core.forms import DataStoreForm, DataStoreEntryForm
-from core.models import DataStore, DataStoreEntry
+from core.models import APIToken, DataStore, DataStoreEntry
 from core.services import DatastoreService
 from core.views.ownership import owned_block_message, owned_delete_blocked
 
@@ -26,9 +27,19 @@ def datastore_list_view(request: HttpRequest) -> HttpResponse:
     if owner_filter:
         datastores = [ds for ds in datastores if ds.owner_plugin == owner_filter]
 
+    # API tokens bound to a store (single-store tokens and Unified API bindings)
+    # are deleted with it (FK cascade); the delete confirm names their count.
+    bound = dict(
+        APIToken.objects.filter(datastore__in=[ds.pk for ds in datastores])
+        .order_by()
+        .values_list("datastore")
+        .annotate(n=Count("id"))
+    )
+
     # Format size for each datastore
     for ds in datastores:
         ds.size_display = DatastoreService.format_size(ds.size_bytes)
+        ds.bound_tokens = bound.get(ds.pk, 0)
 
     total_size = DatastoreService.get_total_size(request.workspace)
     total_size_display = DatastoreService.format_size(total_size)
