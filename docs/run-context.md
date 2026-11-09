@@ -103,7 +103,7 @@ the kind.
 |---|---|---|
 | `manual` | **Run now**, or **Re-run with same inputs** | `user` (`{id, email}`; API and MCP callers reading the run get `{id}` only); `rerun_of` (the id of the run it copies) for a re-run |
 | `schedule` | the script's schedule | `schedule_id`, `run_mode` (`interval`, `daily`, `cron`...), `fired_at` |
-| `webhook` | a call to the script's webhook URL | `method`, `query` (each name maps to a list of values), `content_type`; for a POST, `body` (the raw text) and, when the body is JSON, `body_json` |
+| `webhook` | a call to the script's webhook URL | `method`, `path`, `remote_ip`, `query` (each name maps to a list of values), `content_type`, `headers`; for a POST, `body_size`, `body` (the raw text) and, when the body is JSON, `body_json`. See [Webhook calls](#webhook-calls) |
 | `channel` | a chat message to a channel linked to the script | `channel` (its name), `channel_id`, `provider`, `text`, `sender`, `reply_ref`, `raw` (the provider's own payload) |
 | `plugin` | a plugin (`ScriptAPI.queue_run`) | `plugin`, `script_key`; `user` when the plugin passed one |
 | `api` | `scripts.run` over the API or MCP; or code that created the run itself | `token_id` (the API token that started it) and `via` (`rest` or `mcp`) for `scripts.run`; none otherwise |
@@ -125,8 +125,12 @@ A webhook event:
   "kind": "webhook",
   "received_at": "2026-11-08T10:00:00.412000+00:00",
   "method": "POST",
+  "path": "/webhook/Xy3kP9aB.../",
+  "remote_ip": "203.0.113.7",
   "query": {"source": ["shop"]},
   "content_type": "application/json",
+  "headers": {"content-type": "application/json", "content-length": "15", "user-agent": "Shopify-Captain-Hook"},
+  "body_size": 15,
   "body": "{\"order\": 1042}",
   "body_json": {"order": 1042}
 }
@@ -148,13 +152,75 @@ becomes `?`, and `NaN` or `Infinity` in a JSON body becomes `null` in
 reading `WEBHOOK_METHOD`, `WEBHOOK_QUERY`, `WEBHOOK_CONTENT_TYPE`,
 `WEBHOOK_BODY`, `WEBHOOK_BODY_JSON` and the `INBOUND_*` variables, with the
 same values as before. Those come from the request as they always did, so a
-body over the event's 1 MB cap is still whole in `WEBHOOK_BODY`. They also
-keep their old limit: on Linux one environment variable holds at most about
-128 KB, and a run whose `WEBHOOK_BODY` is bigger than that can't start.
+body over the event's 1 MB cap is still whole in `WEBHOOK_BODY`, unless it is
+too big for an environment variable (see [below](#webhook-calls)).
 
 A run started before 2.5 has no stored event. If such a run is still queued
 during an upgrade, its script gets just `kind` (from its trigger) and
 `received_at` (when the run was created).
+
+### Webhook calls
+
+A run started by the script's webhook URL gets the whole request:
+
+- **In the event:** `method`, `path`, `remote_ip`, `query`, `content_type`,
+  `headers` and, for a POST, `body_size`, `body` and `body_json`.
+  - `headers` has every request header, names in lower case
+    (`event["headers"].get("x-github-event")`), except `Authorization`,
+    `Cookie`, `Proxy-Authorization` and the hop-by-hop headers (`Connection`,
+    `Proxy-Connection`, `Keep-Alive`, `Transfer-Encoding`, `Upgrade`, `TE`,
+    `Trailer` and any the `Connection` header names).
+  - `path` shows only the first 8 characters of the webhook token: the event is
+    shown on the run page and to API callers, and the full URL is what lets
+    anyone start the script.
+  - `remote_ip` is the caller's address: the direct peer, or the client
+    behind your reverse proxy when `RATELIMIT_TRUSTED_PROXY_DEPTH` is set.
+  - `body_size` is the body's length in bytes, as received.
+- **In a file:** for a POST, `PYRUNNER_EVENT_BODY_FILE` is the path of a file
+  holding the body exactly as it was sent, byte for byte. Use it for a body
+  that is big, binary, or has to be checked against a signature over its exact
+  bytes:
+
+  ```python
+  import os
+
+  with open(os.environ["PYRUNNER_EVENT_BODY_FILE"], "rb") as f:
+      raw = f.read()
+  ```
+
+  It sits next to `run.json`, readable only by the run, and is deleted when the
+  run ends. A GET has no body and no file.
+
+**Bodies that aren't plain text.** A body that isn't valid UTF-8 (an image, a
+gzip, a Latin-1 form) can't be text: `body` is `""`, the event says
+`"body_binary": true`, and the bytes are in the body file.
+
+**Big bodies.** PyRun takes a body of up to 2.5 MB (Django's
+`DATA_UPLOAD_MAX_MEMORY_SIZE`); a bigger one is refused with **413** and no
+run. Up to that size:
+
+| Body | `body` in the event | Body file | `WEBHOOK_BODY` |
+|---|---|---|---|
+| up to about 128 KB | whole | whole | whole, as before 2.5 |
+| over about 128 KB | whole if the event fits in 1 MB (see **Size** above), else cut (`body_truncated: true`) | whole | `""`, and `WEBHOOK_BODY_OMITTED=1` |
+
+Linux caps one environment variable at 128 KB (the name and `=` included).
+Before 2.5 a run whose `WEBHOOK_BODY` or `WEBHOOK_BODY_JSON` was bigger than
+that couldn't start ("Argument list too long"). Now it starts, `WEBHOOK_BODY`
+is empty, `WEBHOOK_BODY_JSON` is not set, and `WEBHOOK_BODY_OMITTED` is `1`:
+read the body file. The same happens for a body that holds a NUL character
+(no environment variable can) and for a body that isn't UTF-8 (whose
+`WEBHOOK_BODY` was always `""`).
+
+A JSON body gets `body_json` only when Python can parse it: one nested deeper
+than about 1,000 levels, or with a number over 4,300 digits, stays text only.
+
+**Recent deliveries.** The script page's Webhook card lists the last 20 calls:
+their run's status, how long it ran, and the HTTP status PyRun answered with
+(200 queued or skipped, 503 during a maintenance window, 500 if the run
+couldn't be queued). Calls refused before a run exists (a wrong URL, the rate
+limit, a disabled script, a required input with no default, 413) aren't listed. Retries of a failed run aren't calls and aren't listed
+either.
 
 ---
 

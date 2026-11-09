@@ -46,6 +46,13 @@ from core.services.script_env import usable_env_vars
 from pyrunner.version import __version__ as PYRUNNER_VERSION
 
 
+def _restored_response_code(value):
+    """A backup's run ``response_code`` when it is an HTTP status, else None (unknown)."""
+    if isinstance(value, int) and not isinstance(value, bool) and 100 <= value <= 599:
+        return value
+    return None
+
+
 class BackupService:
     """
     Service for creating and restoring PyRun backups.
@@ -167,6 +174,8 @@ class BackupService:
     # scripts in one workspace expose the same name the first keeps it and the
     # second comes back unexposed (core.api.script_tools.restored_tool); an
     # exposed script that loses its tool this way is named in the warnings.
+    # ``response_code`` on runs (the status a webhook call got; older backups:
+    # NULL, shown as unknown).
     BACKUP_VERSION = "1.13.0"
     MAX_BACKUP_SIZE_MB = 100
     # Default cap on a gzip backup's expanded size (F92, zip-bomb guard);
@@ -750,6 +759,8 @@ class BackupService:
                 "next_attempt_at": cls._serialize_datetime(run.next_attempt_at),
                 # Graceful stop: when someone stopped the run.
                 "stop_requested_at": cls._serialize_datetime(run.stop_requested_at),
+                # Webhook runs: the HTTP status the call was answered with.
+                "response_code": run.response_code,
                 "trigger_type": run.trigger_type,
                 "triggered_by_email": run.triggered_by.email if run.triggered_by else None,
                 "created_at": cls._serialize_datetime(run.created_at),
@@ -2064,6 +2075,7 @@ class BackupService:
                     if finished
                     else None
                 ),
+                response_code=_restored_response_code(run_data.get("response_code")),
                 trigger_type=run_data.get("trigger_type", "manual"),
                 triggered_by=triggered_by,
                 created_at=cls._deserialize_datetime(run_data.get("created_at")),

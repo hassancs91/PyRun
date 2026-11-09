@@ -8,7 +8,9 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
-from django.db.models import Q
+from django.db.models import CharField, Q
+from django.db.models.fields.json import KeyTextTransform
+from django.db.models.functions import Cast
 from django.views.decorators.http import require_http_methods, require_POST
 from django.http import HttpRequest, HttpResponse, JsonResponse
 
@@ -16,7 +18,7 @@ from core.models import Script, Run, ScriptSchedule, ScheduleHistory, Library, S
 from core.charts import DURATION_CHART_MAX_BARS, duration_chart
 from core.forms import ScriptForm, ScheduleForm, ScriptInputsForm
 from core.services.maintenance import blocked_message
-from core.services.run_events import manual_event
+from core.services.run_events import KIND_WEBHOOK, manual_event
 from core.tasks import queue_script_run
 from core.services.schedule_service import ScheduleService
 from core.services.script_env import editor_secret_names, env_var_collisions
@@ -30,6 +32,27 @@ _ENV_REF_RE = re.compile(
 
 
 SCRIPTS_PER_PAGE = 25
+# The script page's Webhook card lists this many of the latest webhook calls.
+WEBHOOK_DELIVERIES_SHOWN = 20
+
+
+def recent_webhook_deliveries(script):
+    """The script's latest runs created by a webhook call, newest first.
+
+    Webhook runs are API runs whose event kind is ``webhook`` (``scripts.run``
+    runs are ``api``); retries are left out, a call made only the first
+    attempt. The event's kind is read as text (``->>``) and compared as text:
+    Run.event is ``json`` on PostgreSQL, which has no JSON equality, and a
+    key's own ``exact`` lookup compares JSON values.
+    """
+    return list(
+        script.runs.filter(trigger_type=Run.TriggerType.API, attempt=1)
+        .alias(event_kind=Cast(KeyTextTransform("kind", "event"), CharField()))
+        .filter(event_kind=KIND_WEBHOOK)
+        .defer("stdout", "stderr", "code_snapshot", "event", "inputs", "result", "queued_payload")
+        .order_by("-created_at")[:WEBHOOK_DELIVERIES_SHOWN]
+    )
+
 
 def _reconcile_grants(script, secret_ids, workspace) -> None:
     """Make the script's SecretGrant set exactly match ``secret_ids`` (Selected mode).
@@ -310,6 +333,7 @@ def script_detail_view(request: HttpRequest, pk) -> HttpResponse:
         workspace=request.workspace,
     )
     recent_runs = script.runs.select_related("triggered_by").order_by("-created_at")[:10]
+    webhook_deliveries = recent_webhook_deliveries(script)
 
     # Duration chart: the last N finished runs, oldest → newest. Only the two
     # timestamps are needed, so skip the output columns entirely.
@@ -332,6 +356,7 @@ def script_detail_view(request: HttpRequest, pk) -> HttpResponse:
     return render(request, "cpanel/scripts/detail.html", {
         "script": script,
         "recent_runs": recent_runs,
+        "webhook_deliveries": webhook_deliveries,
         "schedule": schedule,
         "duration_chart": duration_chart(chart_runs),
         "working_folder": str(script_workdir(script.pk)),

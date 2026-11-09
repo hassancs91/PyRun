@@ -207,7 +207,8 @@ A run counts as failed when the script exits with an error, or PyRun couldn't
 start it (a missing environment, a secret that couldn't be resolved). When it
 fails, PyRun creates the next attempt right away as a pending run with a
 **retry at HH:MM** chip. It has the same inputs, and for a webhook or chat
-trigger the same request data (`WEBHOOK_*`, `INBOUND_*`, `pyrunner_run.event()`).
+trigger the same request data (`WEBHOOK_*`, `INBOUND_*`, the webhook body file,
+`pyrunner_run.event()`).
 It runs the script's code as it is when the retry starts, so a fix you save
 in the meantime is picked up.
 

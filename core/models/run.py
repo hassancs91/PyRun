@@ -235,6 +235,18 @@ class Run(models.Model):
         help_text="When a stop was requested for this run.",
     )
 
+    # Webhook v2 (2.5, T20): the HTTP status the webhook call that created
+    # this run was answered with (200 queued or skipped, 503 maintenance, 500
+    # failed to queue). NULL for other triggers, for retries (no call made
+    # them) and for webhook runs from before 2.5. The script page's Recent
+    # deliveries shows it.
+    response_code = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        default=None,
+        help_text="HTTP status the webhook call that created this run got (webhook runs only).",
+    )
+
     # Who triggered the run
     triggered_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

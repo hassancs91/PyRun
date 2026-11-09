@@ -270,6 +270,19 @@ begins tracking at the current release; earlier history is in the git log.
   server starts, with no new dependency. Asked "how do I…?", Py AI searches them
   and answers with the link, on the console and on chat channels. Guide:
   "Documentation search" in `docs/api.md`.
+- **Webhook calls hand the script the whole request, any size.** A webhook
+  run's event now also has the request's `path`, `remote_ip`, `headers`
+  (lower-case names; `Authorization`, `Cookie` and hop-by-hop headers left
+  out) and `body_size`, and the body exactly as sent is in a file at
+  `PYRUNNER_EVENT_BODY_FILE`, bytes that aren't UTF-8 text included (the event
+  says `body_binary`). A body too big for one environment variable (Linux caps
+  one at 128 KB) used to stop the run from starting with "Argument list too
+  long": the run now starts with `WEBHOOK_BODY` empty and
+  `WEBHOOK_BODY_OMITTED=1`, and reads the file. Smaller bodies get the same
+  `WEBHOOK_*` variables as before. A body over 2.5 MB is refused with 413
+  instead of starting a run with an empty body. The script page's Webhook card
+  lists the last 20 calls with their run's status, duration and the HTTP code
+  PyRun answered. Guide: "Webhook calls" in `docs/run-context.md`.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

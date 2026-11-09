@@ -36,6 +36,7 @@ from core.services.run_events import default_event
 from core.services.script_env import usable_env_vars
 from core.services.script_inputs import input_env
 from core.services.secret_backends import SecretResolutionError
+from core.services.webhook_request import body_env, raw_body
 
 logger = logging.getLogger(__name__)
 
@@ -258,12 +259,30 @@ def _write_run_file(run, workdir: Path) -> str:
         return fh.name
 
 
+def _write_body_file(body: bytes, workdir: Path) -> str:
+    """Write a webhook call's raw body into the run's working folder; return the path.
+
+    Same place, privacy (0600) and lifetime as ``run.json``
+    (``_write_run_file``): the request body can hold anything the sender put
+    in it.
+    """
+    with tempfile.NamedTemporaryFile(
+        mode="wb",
+        prefix=".pyrun-body-",
+        delete=False,
+        dir=str(workdir),
+    ) as fh:
+        fh.write(body)
+        return fh.name
+
+
 def _build_script_environment(
     webhook_data: dict | None = None,
     run: "Run | None" = None,
     secrets: "dict | None" = None,
     library_root: str | None = None,
     run_file: str | None = None,
+    body_file: str | None = None,
 ) -> dict:
     """
     Build the environment dict for script execution.
@@ -275,7 +294,8 @@ def _build_script_environment(
     variable). The run's own ids
     (PYRUNNER_RUN_ID, PYRUNNER_SCRIPT_ID, PYRUNNER_SCRIPT_NAME) and
     PYRUNNER_RUN_FILE are set after the secrets, so nothing can override them.
-    Webhook data is added with WEBHOOK_ prefix.
+    Webhook data is added with WEBHOOK_ prefix (a body too big for an
+    environment variable is left out: core.services.webhook_request.body_env).
 
     Args:
         webhook_data: Optional webhook data from HTTP request
@@ -291,6 +311,8 @@ def _build_script_environment(
             PYTHONPATH is byte-for-byte what it was before this feature.
         run_file: Optional path of the run's ``run.json`` (``_write_run_file``),
             exported as PYRUNNER_RUN_FILE for ``pyrunner_run``.
+        body_file: Optional path of a webhook call's raw body
+            (``_write_body_file``), exported as PYRUNNER_EVENT_BODY_FILE.
 
     Returns:
         Environment dict to pass to subprocess
@@ -325,11 +347,10 @@ def _build_script_environment(
         env["WEBHOOK_QUERY"] = json.dumps(webhook_data.get("query", {}))
         env["WEBHOOK_CONTENT_TYPE"] = webhook_data.get("content_type", "")
 
-        if "body" in webhook_data:
-            env["WEBHOOK_BODY"] = webhook_data["body"]
-
-        if "body_json" in webhook_data:
-            env["WEBHOOK_BODY_JSON"] = json.dumps(webhook_data["body_json"])
+        # WEBHOOK_BODY / WEBHOOK_BODY_JSON as before 2.5, unless the body
+        # can't be an environment variable (then the run couldn't start):
+        # such a body is only in the body file.
+        env.update(body_env(webhook_data))
 
         # Inbound chat context (Channels Phase 2): lets the run reply via
         # pyrunner_notify.reply() to the conversation that triggered it.
@@ -362,6 +383,8 @@ def _build_script_environment(
             env["PYRUNNER_SCRIPT_NAME"] = run.script.name
     if run_file:
         env["PYRUNNER_RUN_FILE"] = str(run_file)
+    if body_file:
+        env["PYRUNNER_EVENT_BODY_FILE"] = str(body_file)
 
     # DataStore + Claude-usage access for the script helpers.
     #
@@ -1019,6 +1042,7 @@ def execute_run(run: Run, webhook_data: dict | None = None) -> None:
 
     script_file_path = None
     run_file_path = None
+    body_file_path = None
     library_root = None
     backend = None
     handle = None
@@ -1079,6 +1103,18 @@ def execute_run(run: Run, webhook_data: dict | None = None) -> None:
             logger.error("Run %s could not write its run file: %s", run.id, e)
             return  # the finally block persists this FAILED state
 
+        # Phase 2a, a webhook call with a body: its raw bytes (PYRUNNER_EVENT_BODY_FILE).
+        body = raw_body(webhook_data)
+        if body is not None:
+            try:
+                body_file_path = _write_body_file(body, workdir)
+            except OSError as e:
+                run.status = Run.Status.FAILED
+                run.exit_code = -1
+                run.stderr = f"Failed to write the request body file: {e}"
+                logger.error("Run %s could not write its body file: %s", run.id, e)
+                return  # the finally block persists this FAILED state
+
         # Phase 2b: Materialize the libraries pinned on this run at queue time.
         # The staging dir lives UNDER the run's workdir, which the sandbox backend
         # already binds writable and whose PYTHONPATH entries it binds into the
@@ -1130,6 +1166,7 @@ def execute_run(run: Run, webhook_data: dict | None = None) -> None:
                 secrets=secrets,
                 library_root=library_root,
                 run_file=run_file_path,
+                body_file=body_file_path,
             )
 
             # Also mask the injected AI credential in output, if any.
@@ -1310,8 +1347,12 @@ def execute_run(run: Run, webhook_data: dict | None = None) -> None:
                 _keep_output_after_kill(run, *captured)
         run.pid = None
 
-        # Cleanup temporary files (the script and its run.json)
-        for temp_path, what in ((script_file_path, "temp script file"), (run_file_path, "run file")):
+        # Cleanup temporary files (the script, its run.json and body file)
+        for temp_path, what in (
+            (script_file_path, "temp script file"),
+            (run_file_path, "run file"),
+            (body_file_path, "request body file"),
+        ):
             if temp_path is None:
                 continue
             try:

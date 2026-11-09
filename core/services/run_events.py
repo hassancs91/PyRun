@@ -18,9 +18,11 @@ kind       other keys
 manual     ``user`` {id, email} when a user started it; ``rerun_of`` (the
            source run's id) for Re-run with same inputs
 schedule   ``schedule_id``, ``run_mode``, ``fired_at``
-webhook    ``method``, ``query``, ``content_type``, and for a POST ``body``
-           and (JSON bodies that parse) ``body_json``: the values behind the
-           ``WEBHOOK_*`` variables
+webhook    ``method``, ``path``, ``remote_ip``, ``query``, ``content_type``,
+           ``headers``; for a POST ``body_size``, ``body`` and (JSON bodies
+           that parse) ``body_json``, ``body_binary`` for a body that isn't
+           UTF-8 text. The values behind the ``WEBHOOK_*`` variables, plus
+           the request details (core.services.webhook_request)
 channel    ``channel`` (name), ``channel_id``, ``provider``, ``text``,
            ``sender``, ``reply_ref``, ``raw`` (the provider's payload): the
            message behind the ``INBOUND_*`` variables
@@ -44,6 +46,7 @@ import math
 from django.utils import timezone
 
 from core.services.run_reports import json_size, result_text
+from core.services.webhook_request import BODY_BASE64, raw_body
 
 logger = logging.getLogger(__name__)
 
@@ -69,10 +72,6 @@ KIND_LABELS = {
     KIND_PLUGIN: "Plugin",
     KIND_API: "API",
 }
-
-# What a webhook event carries from ``core.views.webhooks._extract_webhook_data``.
-WEBHOOK_KEYS = ("method", "query", "content_type", "body", "body_json")
-
 
 def _iso(when) -> str:
     return (when or timezone.now()).isoformat()
@@ -187,9 +186,31 @@ def schedule_event(schedule, fired_at=None) -> dict:
     )
 
 
-def webhook_event(webhook_data: dict, received_at=None) -> dict:
-    """A webhook call: the same request data the ``WEBHOOK_*`` variables carry."""
-    fields = {key: webhook_data[key] for key in WEBHOOK_KEYS if key in webhook_data}
+def webhook_event(webhook_data: dict, received_at=None, *, path=None, headers=None, remote_ip=None) -> dict:
+    """A webhook call: the request data the ``WEBHOOK_*`` variables carry, plus
+    the request's ``path``, ``headers`` and ``remote_ip`` when given.
+
+    A call with a body also gets ``body_size`` (bytes, as received) and, when
+    the body isn't UTF-8 text, ``body_binary: true`` (its ``body`` is then "";
+    the bytes are in the run's body file).
+    """
+    # Request line first, the (possibly long) body last: the order the run
+    # page's Event card shows them in.
+    request = {"method": webhook_data.get("method"), "path": path, "remote_ip": remote_ip}
+    fields = {key: value for key, value in request.items() if value is not None}
+    for key in ("query", "content_type"):
+        if key in webhook_data:
+            fields[key] = webhook_data[key]
+    if headers is not None:
+        fields["headers"] = headers
+    body = raw_body(webhook_data)
+    if body is not None:
+        fields["body_size"] = len(body)
+        if BODY_BASE64 in webhook_data:
+            fields["body_binary"] = True
+    for key in ("body", "body_json"):
+        if key in webhook_data:
+            fields[key] = webhook_data[key]
     return build_event(KIND_WEBHOOK, received_at, **fields)
 
 
