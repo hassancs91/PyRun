@@ -177,6 +177,15 @@ begins tracking at the current release; earlier history is in the git log.
   this gets one cron per time from its next sync (the daily resync for a time
   zone other than UTC; for UTC, edit the schedule, switch it off and on, or
   Pause all and Resume all).
+- **Brain sources without a title no longer share one source id.** A source's
+  id came from its title or URL path only, so two untitled thoughts sent in
+  one month (from `brain.propose-feed`, the console or a script) were both
+  `thought-2026-11-source`: notes from different sources cited the same
+  `source`, and both approvals read "Feed: thought-2026-11-source". An untitled
+  source is now named by its first few words, and when the Brain already has
+  the id, the start of the new feed's id is appended
+  (`thought-2026-11-source-3f9a`). A source named by its title or URL path
+  keeps the id it got before unless the Brain already has it.
 
 ## [2.0.0] — October 23, 2026
 

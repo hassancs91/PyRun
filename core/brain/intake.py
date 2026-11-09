@@ -5,6 +5,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from html.parser import HTMLParser
 
 from django.db import transaction
@@ -22,6 +23,8 @@ from .service import BrainService
 
 log = logging.getLogger(__name__)
 MAX_PAYLOAD = 512 * 1024
+SOURCE_ID_MAX = BrainFeed._meta.get_field("source_id").max_length
+SLUG_WORDS = 6
 SOURCE_KINDS = ("doc", "article", "video", "podcast", "thread", "thought", "conversation", "other")
 INTAKE_PROPERTIES = {
     "source_kind": {"type": "string", "enum": list(SOURCE_KINDS)},
@@ -153,6 +156,31 @@ def fetch_text(url, *, deadline=None):
     raise ApiError("fetch_failed", "URL exceeded three redirects.")
 
 
+def source_slug(title, url, content):
+    """The readable part of a source id: title, URL path, opening words, then "source"."""
+    words = " ".join(content.split(maxsplit=SLUG_WORDS)[:SLUG_WORDS])
+    for text in (title, urllib.parse.urlsplit(url).path, words):
+        if slug := slugify(text)[:60]:
+            return slug
+    return "source"
+
+
+def unique_source_id(brain, source_id, feed_id):
+    """Keep the readable id unless this brain already has it; then append the new feed's id.
+
+    Called under the brain row lock, so two proposals can't both take one id. The
+    suffix grows on the rare clash; the full feed id is unique.
+    """
+    feeds = BrainFeed.objects.filter(brain=brain)
+    if not feeds.filter(source_id=source_id).exists():
+        return source_id
+    for size in (4, 8, 12, 32):
+        keep = SOURCE_ID_MAX - size - 1  # trim the readable part, never the suffix
+        candidate = f"{source_id[:keep].rstrip('-')}-{feed_id.hex[:size]}"
+        if size == 32 or not feeds.filter(source_id=candidate).exists():
+            return candidate
+
+
 def enqueue(workspace_id, feed_id):
     from django_q.tasks import async_task
 
@@ -190,17 +218,19 @@ def capture(workspace, brain_id, params, *, channel, principal, deadline=None, c
             "too_large", "A source payload may contain at most 512 KB of UTF-8 text.", 413
         )
     kind = params.get("source_kind", "doc")
-    source_id = f"{kind}-{timezone.localdate():%Y-%m}-{slugify(title or urllib.parse.urlsplit(url).path)[:60] or 'source'}"
+    source_id = f"{kind}-{timezone.localdate():%Y-%m}-{source_slug(title, url, content)}"
     with transaction.atomic():
         brain = BrainService.get(workspace, brain_id, lock=True)
         if deadline is not None and time.monotonic() >= deadline:
             raise ApiError("timeout", "The call exceeded its time budget before capture.", 504)
         if ctx is not None and not access_for(ctx, brain).can_propose:
             raise unknown()
+        feed_id = uuid.uuid4()
         feed = BrainFeed.objects.create(
+            id=feed_id,
             brain=brain,
             base_revision=brain.head_revision,
-            source_id=source_id,
+            source_id=unique_source_id(brain, source_id, feed_id),
             channel=channel,
             principal=principal,
             error=error,

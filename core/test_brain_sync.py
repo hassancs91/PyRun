@@ -62,6 +62,15 @@ class SyncTests(TestCase):
         self.config.refresh_from_db()
         self.assertEqual(self.config.remote_sha, A)
 
+    def test_pull_keeps_its_own_source_id_beside_intake_feeds(self):
+        # Intake ids get a suffix when taken (F2.5b-03); sync ids are separate and dedupe on themselves.
+        intake.capture(self.ws, self.brain.pk, {"content": "A thought", "source_kind": "thought"},
+                       channel="console", principal=f"user:{self.user.pk}")
+        files = contract_files() | {"raw/incoming.md": "Incoming"}
+        feed = self.remote(files)
+        self.assertEqual(feed.source_id, f"sync:{self.config.generation}:{A}")
+        self.assertEqual(self.remote(files).pk, feed.pk)
+
     def test_matching_pull_updates_only_baseline_without_revision(self):
         self.assertIsNone(self.remote(contract_files()))
         self.assertEqual(self.config.remote_sha, A)

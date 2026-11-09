@@ -3,8 +3,9 @@
 import copy
 import io
 import json
+import urllib.parse
 import uuid
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 from email.message import Message
 from unittest.mock import AsyncMock, patch
@@ -13,6 +14,7 @@ from asgiref.sync import async_to_sync
 from django.test import TestCase, SimpleTestCase
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.text import slugify
 
 from core.api.exceptions import ApiError
 from core.api.registry import registry
@@ -522,6 +524,115 @@ class FeedTests(TestCase):
         )
         self.assertIn("Captured", _pyai_handler(channel, message).text)
         self.assertEqual(BrainFeed.objects.get().channel, "telegram")
+
+
+class SourceIdTests(TestCase):
+    """A source id is the provenance notes cite, so no two feeds in a brain share one (F2.5b-03)."""
+
+    UID = uuid.UUID("3f9a3f9a-3f9a-4f9a-8f9a-3f9a3f9a3f9a")
+
+    def setUp(self):
+        self.ws = Workspace.objects.create(name="Source id workspace")
+        self.brain = BrainService.create(self.ws, "mind", files=contract_files())
+
+    def capture(self, brain=None, **params):
+        with (
+            patch("core.brain.intake.safe_url"),
+            patch.object(intake.timezone, "localdate", return_value=date(2026, 11, 9)),
+        ):
+            return intake.capture(
+                self.ws, (brain or self.brain).pk, params, channel="api", principal="token:1"
+            )
+
+    def existing(self, source_id, brain=None):
+        brain = brain or self.brain
+        return BrainFeed.objects.create(
+            brain=brain, base_revision=brain.head_revision, source_id=source_id,
+            channel="console", principal="user:1", raw_payload={"content": "Earlier"},
+        )
+
+    def test_untitled_thoughts_get_distinct_ids(self):
+        BrainGrant.objects.create(
+            brain=self.brain, subject_kind="agent", subject_id="test",
+            max_tier="agents-only", can_propose=True,
+        )
+        ctx = principal_context(self.ws, "agent", "test")
+        params = {"brain": "mind", "content": "Remember this", "source_kind": "thought"}
+        with patch.object(intake.timezone, "localdate", return_value=date(2026, 11, 9)):
+            first = registry.call("brain.propose-feed", ctx, params)
+            second = registry.call("brain.propose-feed", ctx, params)
+        self.assertEqual(first["source_id"], "thought-2026-11-remember-this")
+        self.assertEqual(
+            second["source_id"], f"thought-2026-11-remember-this-{second['feed_id'][:4]}"
+        )
+        # Content with no ASCII words still falls back to "source", then gets a suffix.
+        ids = [
+            self.capture(content=text, source_kind="thought").source_id
+            for text in ("تذكر هذا", "!!!")
+        ]
+        self.assertEqual(ids[0], "thought-2026-11-source")
+        self.assertRegex(ids[1], r"^thought-2026-11-source-[0-9a-f]{4}$")
+
+    def test_untitled_sources_fall_back_to_their_opening_words(self):
+        thought = self.capture(
+            content="  Why small teams ship faster than big ones.\nMore", source_kind="thought"
+        )
+        self.assertEqual(thought.source_id, "thought-2026-11-why-small-teams-ship-faster-than")
+        # A URL whose path is "/" names nothing, so the words decide.
+        page = self.capture(
+            url="https://example.com/", content="Example Domain page text", source_kind="article"
+        )
+        self.assertEqual(page.source_id, "article-2026-11-example-domain-page-text")
+        # A title that slugifies to nothing names nothing either.
+        untitled = self.capture(title="؟؟", content="Plain words here")
+        self.assertEqual(untitled.source_id, "doc-2026-11-plain-words-here")
+
+    def test_titled_and_url_sources_keep_the_previous_format(self):
+        for title, url, kind in (
+            ("Hello, World!", "", "doc"),
+            ("A very long title that keeps going " * 4, "https://example.com/x", "article"),
+            ("", "https://example.com/blog/My Post?x=1", "article"),
+            ("Ünïcode Títle", "", "video"),
+            ("a" * 59 + " b", "", "thread"),
+        ):
+            legacy = (
+                f"{kind}-2026-11-"
+                f"{slugify(title or urllib.parse.urlsplit(url).path)[:60] or 'source'}"
+            )
+            feed = self.capture(title=title, url=url, content="Body", source_kind=kind)
+            self.assertEqual(feed.source_id, legacy)
+
+    def test_a_taken_id_gets_a_suffix_that_grows_on_a_clash(self):
+        first = self.capture(title="Weekly notes", content="One")
+        self.assertEqual(first.source_id, "doc-2026-11-weekly-notes")
+        # Another brain's ids don't count.
+        other = BrainService.create(self.ws, "other", files=contract_files())
+        self.assertEqual(
+            self.capture(brain=other, title="Weekly notes", content="Two").source_id,
+            "doc-2026-11-weekly-notes",
+        )
+        self.existing("doc-2026-11-weekly-notes-3f9a")
+        with patch("core.brain.intake.uuid.uuid4", return_value=self.UID):
+            second = self.capture(title="Weekly notes", content="Three")
+        self.assertEqual(second.pk, self.UID)
+        self.assertEqual(second.source_id, "doc-2026-11-weekly-notes-3f9a3f9a")
+
+    def test_ids_fit_the_column_and_never_lose_the_suffix(self):
+        title = "Long title " + "x" * 400
+        first = self.capture(title=title, content="Body", source_kind="conversation")
+        second = self.capture(title=title, content="Body", source_kind="conversation")
+        self.assertEqual(len(first.source_id), len("conversation-2026-11-") + 60)
+        self.assertEqual(second.source_id, f"{first.source_id}-{second.pk.hex[:4]}")
+        limit = BrainFeed._meta.get_field("source_id").max_length
+        self.existing("a" * limit)
+        self.assertEqual(
+            intake.unique_source_id(self.brain, "a" * limit, self.UID), "a" * (limit - 5) + "-3f9a"
+        )
+        # A slug cut at 60 can end in "-"; the suffix doesn't double it.
+        dashed = self.capture(title="a" * 59 + " b", content="Body")
+        self.assertTrue(dashed.source_id.endswith("a-"))
+        again = self.capture(title="a" * 59 + " b", content="Body")
+        self.assertEqual(again.source_id, f"{dashed.source_id}{again.pk.hex[:4]}")
 
 
 class RuntimeTests(TestCase):

@@ -58,6 +58,13 @@ AIProvider profile to propose changes, and the validator checks them against the
 Brain contract. It never commits directly. Owners/admins review the diff and
 approve or reject; ordinary proposals can also be edited before review.
 
+Each source gets a source id, which its notes cite as `source` and its approval
+revision names (`Feed: <id>`). The id is `<kind>-<YYYY-MM>-<slug>`, with the slug
+taken from the title, else the URL path, else the source's first few words, else
+`source`. When the Brain already has that id, the start of the new feed's id is
+appended (`thought-2026-11-remember-this-3f9a`), so a new source never takes an id
+the Brain already has.
+
 Server-side URL intake allows HTTP/HTTPS, applies network policy to each redirect,
 and limits downloads to 15 seconds, three redirects and 512 KB. Paste text when a
 site cannot be fetched. The feeder retries transient failures up to three times.
