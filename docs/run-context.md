@@ -576,8 +576,9 @@ masked the same way.
 ## Connections
 
 A connection is one account on an outside service: an Airtable token, an API
-key, bearer token or username and password for any HTTP API, or an SMTP login.
-Add it under **Connections** in the sidebar (pick the service, fill in its
+key, bearer token or username and password for any HTTP API, an SMTP login, or
+an OAuth account on Google, Microsoft 365, GitHub, Slack or Notion (see
+[OAuth connections](#oauth-connections) below). Add it under **Connections** in the sidebar (pick the service, fill in its
 fields, then **Test** it), and grant it to the scripts that need it: in the
 script's **Connections** box, on the connection's page, or with **Grant to all
 my scripts**, which gives it to every script the connection's creator makes in
@@ -603,7 +604,7 @@ with pyrunner_connections.smtp("mail") as server:   # connected and logged in
 |---|---|
 | `client(name, timeout=30)` | An HTTP client for the connection's base URL: a `requests.Session` when `requests` is installed in the script's environment, otherwise a small standard-library client with `get`, `post`, `put`, `patch`, `delete` and `request`, whose replies have `status_code`, `headers`, `content`, `text`, `json()`, `ok` and `raise_for_status()` |
 | `smtp(name, timeout=30)` | An `smtplib.SMTP` (or `SMTP_SSL`) connected, upgraded with STARTTLS when the connection says so, and logged in; `server.from_address` is the connection's From address |
-| `token(name)` | The bare API key or bearer token, for a service's own SDK |
+| `token(name)` | The bare API key, bearer token or OAuth access token, for a service's own SDK. An OAuth access token is good for at least a minute: call `token()` again when you need it later |
 | `credentials(name)` | Everything `client()` and `smtp()` use: `headers`, `params`, `token`, `basic` (`username`, `password`) and `smtp` |
 | `info(name)` | `name`, `provider`, `provider_label`, `auth_kind`, `status`, `account_label`, `base_url` (and `smtp`: host, port, security, username, from address), never a secret |
 | `list()` | `info()` of every connection the script is granted |
@@ -611,10 +612,68 @@ with pyrunner_connections.smtp("mail") as server:   # connected and logged in
 A connection that can't be used raises `pyrunner_connections.ConnectionsError`
 with a `code`: `CONNECTION_NOT_FOUND` (it doesn't exist or isn't granted to
 this script; the two look the same), `AMBIGUOUS` (a provider name matches
-several), `CONNECTION_REVOKED`, `CONNECTION_UNREADABLE` (the stored
+several), `CONNECTION_REVOKED`, `CONNECTION_EXPIRED` (an OAuth connection the
+provider stopped accepting: reconnect it), `CONNECTION_REFRESH_FAILED` (the
+provider couldn't be reached to refresh an OAuth token; try again later),
+`CONNECTION_UNREADABLE` (the stored
 credentials can't be decrypted: was `ENCRYPTION_KEY` changed?),
 `RUN_NOT_RUNNING` (asked after the run ended), `NOT_HTTP` / `NOT_SMTP` /
 `NO_TOKEN` (the wrong function for its kind).
+
+### OAuth connections
+
+Google (Sheets, Gmail, Drive, Calendar), Microsoft 365 (Outlook mail,
+calendars, OneDrive), GitHub, Slack and Notion connections use OAuth 2.0. A
+script uses them like any other connection:
+
+```python
+import pyrunner_connections
+
+google = pyrunner_connections.client("google")    # sends "Authorization: Bearer <access token>"
+files = google.get("/drive/v3/files").json()      # relative to https://www.googleapis.com
+token = pyrunner_connections.token("google")       # for an SDK (google-api-python-client, PyGithub...)
+```
+
+`client()` sends the token only to the provider's base URL (Google:
+`https://www.googleapis.com`, Microsoft: `https://graph.microsoft.com`,
+GitHub: `https://api.github.com`, Slack: `https://slack.com/api`, Notion:
+`https://api.notion.com`, with its `Notion-Version` header). For another host
+of the same provider (Google's `sheets.googleapis.com`), pass `token()` to its
+SDK or put it in your own `Authorization` header.
+
+- **Scripts only get the access token.** The refresh token and the OAuth
+  app's client secret never leave PyRun: they are not in the environment, in
+  what `pyrunner_connections` is handed or in the output.
+- **Refreshed when needed.** PyRun refreshes the access token when a script asks
+  for it and it expires within a minute, one refresh at a time however many
+  runs ask at once. `client()` picks the new token up by itself on its next
+  request, and a refreshed token is masked in the output like the first one.
+- **Expired.** If the provider refuses the refresh (the refresh token was
+  revoked or ran out, for example after 7 days for a Google app in Testing
+  mode), the connection is marked **Expired**, its creator is emailed (when
+  PyRun's email is set up) and scripts get `CONNECTION_EXPIRED` until you
+  **Reconnect** it or paste a new token. A provider that is down doesn't expire
+  anything: scripts get `CONNECTION_REFRESH_FAILED` and the next try refreshes.
+
+Making one needs the provider's **OAuth app** (its client ID and secret) under
+**Connections → OAuth apps**: a workspace's own, or an instance default a
+superuser sets for every workspace. Then pick the provider under **Add
+connection**, tick what it may access and either:
+
+- **Connect**: PyRun sends you to the provider's consent screen and back to its
+  one callback, `https://<your PyRun>/oauth/callback/`, which every app
+  registers as its redirect URI. Only your browser has to reach that address,
+  not the internet. The sign-in has 10 minutes and must finish in the browser
+  that started it.
+- **Paste a token**: for a PyRun with no address your browser can come back
+  to, paste a refresh token you got for the same OAuth app elsewhere (for
+  Google, the OAuth 2.0 Playground with your own client), or a token that
+  doesn't expire (a GitHub personal access token, a Slack bot token, a Notion
+  internal integration secret). PyRun checks it with the provider before it
+  saves it.
+
+Setting up each provider's app, and Google's consent screen in particular, is
+in `docs/integrations/oauth-apps.md`.
 
 What keeps the credentials safe:
 
@@ -632,8 +691,8 @@ What keeps the credentials safe:
   for the connection's base URL (same scheme, host and port). A request to any
   other URL, or a redirect that leaves the base URL, goes without them.
 
-**Test** calls the provider's account endpoint (Airtable's `whoami`, which also
-names the account), the HTTP connection's test path, or logs in to the SMTP
+**Test** calls the provider's account endpoint (Airtable's `whoami`, an OAuth
+provider's user info, which also names the account), the HTTP connection's test path, or logs in to the SMTP
 server, from PyRun itself, so addresses inside your network are refused unless
 `PYRUNNER_ALLOW_PRIVATE_NETWORK` is on (the same rule as the base URL and SMTP
 host when you save). A failed test marks the connection's status and keeps the

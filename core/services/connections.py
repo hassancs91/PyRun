@@ -1,5 +1,5 @@
 """
-Connections: grants, credentials for runs, masking and testing (2.5 Stage 5, T23).
+Connections: grants, credentials for runs, masking and testing (2.5 Stage 5, T23 and T24).
 
 The console, the loopback endpoints (``core/views/api/connections_internal.py``)
 and the executor all go through here:
@@ -12,6 +12,8 @@ and the executor all go through here:
   material (headers, query parameters, the bare token, the SMTP login). Every
   secret value in it is recorded on the run (``RunMask``) before it is handed
   out, so the run's masking passes cover it even when it wasn't there at spawn.
+  An OAuth connection's access token is refreshed first when it is about to
+  expire (``core.services.oauth.ensure_fresh``).
 - ``connection_masks(run)`` is the spawn-time half: the secret values of every
   connection the run's script is granted, for the masking dict.
 - ``check_connection(connection)`` calls the provider's whoami (or the test
@@ -30,7 +32,7 @@ import urllib.request
 from django.db.models import Q
 from django.utils import timezone
 
-from core.integrations.presets import SMTP, auth_material, base_url, get_preset, mask_values
+from core.integrations.presets import OAUTH2, SMTP, auth_material, base_url, get_preset, mask_values
 from core.models import Connection, ConnectionGrant, RunMask, Script
 
 logger = logging.getLogger(__name__)
@@ -302,6 +304,10 @@ def issue(run, connection) -> dict:
             f"Connection '{connection.name}' has expired: reconnect it in Connections.",
             409,
         )
+    if connection.auth_kind == OAUTH2:
+        from core.services.oauth import ensure_fresh
+
+        connection = ensure_fresh(connection)
     try:
         credentials = connection.get_credentials()
     except Exception:
@@ -318,7 +324,15 @@ def issue(run, connection) -> dict:
         run.pk,
         mask_values(connection.name, preset, connection.auth_kind, connection.config, credentials),
     )
-    return {**info(connection), **material}
+    out = {**info(connection), **material}
+    if connection.auth_kind == OAUTH2:
+        # Seconds the access token is still good for (None: it doesn't expire),
+        # so the helper knows when to ask again.
+        expires = connection.token_expires_at
+        out["expires_in"] = (
+            max(0, int((expires - timezone.now()).total_seconds())) if expires else None
+        )
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -364,12 +378,26 @@ def _test_smtp(smtp) -> str:
     return smtp["username"] or smtp["from_address"] or smtp["host"]
 
 
-def _test_http(preset, connection, material) -> str:
-    """GET the whoami (or test) path with the credentials; returns the account label."""
+def _label(data, keys) -> str:
+    """The first non-empty value among ``keys`` (dotted = nested) in a JSON object."""
+    for key in keys:
+        value = data
+        for part in key.split("."):
+            value = value.get(part) if isinstance(value, dict) else None
+        if value and not isinstance(value, (dict, list)):
+            return str(value)
+    return ""
+
+
+def http_check(preset, config, material) -> str:
+    """GET the whoami (or test) path with the credentials; returns the account label.
+
+    Raises ValueError when the service refuses (or the URL isn't allowed).
+    """
     from core.netguard import guarded_opener, is_safe_endpoint_url
 
-    root = base_url(preset, connection.config)
-    path = preset.whoami.path if preset.whoami else (connection.config or {}).get("test_path", "")
+    root = base_url(preset, config)
+    path = preset.whoami.path if preset.whoami else (config or {}).get("test_path", "")
     url = root + (("/" + path.lstrip("/")) if path else "")
     if material["params"]:
         joiner = "&" if urllib.parse.urlsplit(url).query else "?"
@@ -386,16 +414,17 @@ def _test_http(preset, connection, material) -> str:
             raise ValueError(f"The service refused these credentials (HTTP {e.code}).") from None
         raise ValueError(f"The service answered HTTP {e.code}.") from None
     label = ""
-    if preset.whoami and preset.whoami.label_keys:
+    if preset.whoami:
         try:
             data = json.loads(raw)
         except ValueError:
             data = None
+        if isinstance(data, dict) and data.get("ok") is False:
+            # Slack answers HTTP 200 with {"ok": false, "error": "invalid_auth"}.
+            raise ValueError(f"The service refused these credentials ({data.get('error') or 'not ok'}).")
         if isinstance(data, dict):
-            label = next(
-                (str(data[k]) for k in preset.whoami.label_keys if data.get(k)), ""
-            )
-    return label or (connection.config or {}).get("username", "")
+            label = _label(data, preset.whoami.label_keys)
+    return label or (config or {}).get("username", "")
 
 
 def check_connection(connection) -> tuple[bool, str]:
@@ -409,13 +438,22 @@ def check_connection(connection) -> tuple[bool, str]:
         return False, f"Unknown provider '{connection.provider}'."
     if connection.status == Connection.Status.REVOKED:
         return False, "This connection was revoked: enter its credentials again first."
+    if connection.status == Connection.Status.EXPIRED:
+        return False, "This connection has expired: reconnect it, or paste a new token."
+    if connection.auth_kind == OAUTH2:
+        from core.services.oauth import ensure_fresh
+
+        try:
+            connection = ensure_fresh(connection)
+        except ConnectionLookupError as e:
+            return False, e.message
     try:
         credentials = connection.get_credentials()
         material = auth_material(preset, connection.auth_kind, connection.config, credentials)
         if connection.auth_kind == SMTP:
             label = _test_smtp(material["smtp"])
         else:
-            label = _test_http(preset, connection, material)
+            label = http_check(preset, connection.config, material)
     except Exception as e:
         from core.executor import mask_secrets_in_value
 

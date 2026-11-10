@@ -286,9 +286,14 @@ class BundledDocsTests(SimpleTestCase):
         cls.index = help_docs.build_index(settings.BASE_DIR)
 
     def test_every_file_is_read_and_anchors_are_unique(self):
-        self.assertEqual(self.index.files, list(help_docs.CORPUS))
+        integrations = sorted(
+            f"{help_docs.INTEGRATIONS_DIR}/{p.name}"
+            for p in (Path(settings.BASE_DIR) / help_docs.INTEGRATIONS_DIR).glob("*.md")
+        )
+        self.assertIn("docs/integrations/oauth-apps.md", integrations)
+        self.assertEqual(self.index.files, list(help_docs.CORPUS) + integrations)
         self.assertEqual(self.index.missing, [])
-        for doc in help_docs.CORPUS:
+        for doc in self.index.files:
             anchors = [s.anchor for s in self.index.sections if s.doc == doc]
             self.assertTrue(anchors, doc)
             self.assertEqual(len(anchors), len(set(anchors)), doc)

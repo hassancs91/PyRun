@@ -7,15 +7,17 @@ script whose grants decide) comes from the token, never from the body.
 
 POST /internal/connections/token  {"connection": "<name or provider>"}
     -> the auth material: headers and query parameters for the base URL, the
-       bare token (API key and bearer kinds), the basic-auth pair or the SMTP
-       login, plus what /info gives. Every secret value in it is recorded on the
+       bare token (API key and bearer kinds, or an OAuth connection's access
+       token, refreshed first when it is about to expire, with ``expires_in``),
+       the basic-auth pair or the SMTP login, plus what /info gives. Every secret value in it is recorded on the
        run first (core.services.connections.issue), so the run's output masks it.
 POST /internal/connections/info   {"connection": "..."}  -> no secrets
 POST /internal/connections/list   {}                     -> the granted connections, no secrets
 
 Errors: 404 CONNECTION_NOT_FOUND (missing and not granted look the same),
 409 AMBIGUOUS / CONNECTION_REVOKED / CONNECTION_EXPIRED / CONNECTION_UNSUPPORTED,
-503 CONNECTION_UNREADABLE (the encryption key changed).
+503 CONNECTION_UNREADABLE (the encryption key changed) / CONNECTION_REFRESH_FAILED
+(the OAuth provider couldn't be reached to refresh the token).
 """
 
 import json

@@ -3,7 +3,8 @@
 Routes the admin (behind a configurable slug), the setup wizard, auth, the
 cpanel console (mounted both unprefixed and under an optional
 ``/cpanel/w/<workspace_id>/`` tenancy prefix), the public REST API, the internal
-loopback datastore API, the public webhook + inbound-channel endpoints, and one
+loopback datastore API, the public webhook + inbound-channel endpoints, the
+OAuth callback for Connections, and one
 guarded mount per loaded plugin at ``/plugins/<slug>/``.
 """
 
@@ -17,6 +18,7 @@ from django.shortcuts import redirect
 
 from core.views.webhooks import webhook_trigger_view
 from core.views.channel_webhooks import channel_webhook_view
+from core.views.connections import oauth_callback_view
 from core.views.public_pages import plugin_public_page_view
 from core.api.mcp import dispatch as mcp_dispatch
 
@@ -68,6 +70,8 @@ urlpatterns = [
     path("webhook/<str:token>/", webhook_trigger_view, name="webhook_trigger"),
     # Public inbound chat webhook for Channels (signature-verified, no auth).
     path("channels/<str:token>/", channel_webhook_view, name="channel_webhook"),
+    # The one OAuth redirect URI every provider app registers (Connections, 2.5 T24).
+    path("oauth/callback/", oauth_callback_view, name="oauth_callback"),
     # Plugin public pages (capability URLs — no session, per-IP rate-limited).
     path("p/<str:token>/", plugin_public_page_view, name="plugin_public_page"),
     path("", lambda request: redirect("auth:login")),

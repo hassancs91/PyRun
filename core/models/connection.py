@@ -1,9 +1,10 @@
 """
-Connections: a workspace's credentials for one outside account (2.5 Stage 5, T23).
+Connections: a workspace's credentials for one outside account (2.5 Stage 5, T23 and T24).
 
 A Connection holds what a script needs to call one service as one account: an
-Airtable token, a bearer token or username and password for any HTTP API, or an
-SMTP login. Its shape comes from a provider preset
+Airtable token, a bearer token or username and password for any HTTP API, an
+SMTP login, or an OAuth 2.0 account (Google, Microsoft, GitHub, Slack, Notion)
+whose access token PyRun refreshes with the provider's ``OAuthClient``. Its shape comes from a provider preset
 (``core.integrations.presets``): which auth kinds the provider takes, which
 fields each needs, and how the credentials become request headers.
 
@@ -32,8 +33,6 @@ class Connection(models.Model):
     """One account on one outside service, usable by the scripts it is granted to."""
 
     class AuthKind(models.TextChoices):
-        # No preset takes OAuth 2.0 yet, so such a connection can't be made or
-        # used; the value is reserved so the column never changes.
         OAUTH2 = "oauth2", "OAuth 2.0"
         API_KEY = "api_key", "API key"
         BEARER = "bearer", "Bearer token"
@@ -71,7 +70,25 @@ class Connection(models.Model):
         blank=True,
         help_text="Fernet-encrypted JSON object of the preset's secret fields (blank once revoked).",
     )
-    scopes = models.JSONField(default=list, blank=True, help_text="OAuth scopes (OAuth connections).")
+    scopes = models.JSONField(
+        default=list, blank=True, help_text="OAuth scopes the account granted (OAuth connections)."
+    )
+    # OAuth connections (T24): the app whose client id and secret refresh the
+    # token (kept even if the workspace adds its own app later: a refresh token
+    # belongs to the app that issued it), and when the access token expires.
+    oauth_client = models.ForeignKey(
+        "core.OAuthClient",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="connections",
+    )
+    token_expires_at = models.DateTimeField(
+        null=True, blank=True, help_text="When the OAuth access token expires (blank: it doesn't)."
+    )
+    # SQLite has no row locks: a process claims a refresh by setting this with
+    # a conditional UPDATE (Postgres locks the row instead).
+    refreshing_until = models.DateTimeField(null=True, blank=True)
     account_label = models.CharField(
         max_length=255,
         blank=True,
@@ -131,6 +148,71 @@ class Connection(models.Model):
         self.credentials_encrypted = (
             EncryptionService.encrypt(json.dumps(clean, sort_keys=True)) if clean else ""
         )
+
+
+class OAuthClient(models.Model):
+    """An OAuth app's client id and secret for one provider (bring your own app).
+
+    A workspace's own app is used for its new connections; without one, the
+    instance default (``workspace`` NULL, set by a superuser) is. The app's
+    callback URL is PyRun's one ``/oauth/callback/``.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    workspace = models.ForeignKey(
+        "core.Workspace",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="oauth_clients",
+        help_text="Workspace this app is for; blank = the instance default for every workspace.",
+    )
+    provider = models.CharField(max_length=50, help_text="OAuth provider preset key, e.g. google.")
+    client_id = models.CharField(max_length=500)
+    client_secret_encrypted = models.TextField(blank=True)
+    config = models.JSONField(
+        default=dict, blank=True, help_text="The preset's extra app fields (Microsoft's tenant)."
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_oauth_clients",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "oauth_clients"
+        ordering = ["provider"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["workspace", "provider"], name="uniq_oauth_client_ws_provider"
+            ),
+            # NULLs are distinct in a unique index: one instance default per provider.
+            models.UniqueConstraint(
+                fields=["provider"],
+                condition=models.Q(workspace__isnull=True),
+                name="uniq_oauth_client_default_provider",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.provider} app ({'instance default' if self.workspace_id is None else 'workspace'})"
+
+    def get_secret(self) -> str:
+        """The decrypted client secret ("" when there is none). Raises EncryptionError."""
+        if not self.client_secret_encrypted:
+            return ""
+        from core.services import EncryptionService
+
+        return EncryptionService.decrypt(self.client_secret_encrypted)
+
+    def set_secret(self, secret: str) -> None:
+        from core.services import EncryptionService
+
+        self.client_secret_encrypted = EncryptionService.encrypt(secret) if secret else ""
 
 
 class ConnectionGrant(models.Model):

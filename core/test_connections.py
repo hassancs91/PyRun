@@ -129,7 +129,10 @@ class _Fixture:
 
 class PresetTests(SimpleTestCase):
     def test_the_batch_one_presets_are_valid(self):
-        self.assertEqual(list(presets()), ["airtable", "http", "smtp"])
+        self.assertEqual(
+            list(presets()),
+            ["airtable", "google", "microsoft", "github", "slack", "notion", "http", "smtp"],
+        )
         for preset in presets().values():
             with self.subTest(preset=preset.key):
                 self.assertTrue(preset.auth_kinds)

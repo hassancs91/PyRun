@@ -1,0 +1,50 @@
+{% extends "cpanel/layout.html" %}
+
+{% block title %}{{ preset.label }} OAuth app - {{ instance_name }}{% endblock %}
+
+{% block breadcrumbs %}
+<a href="{% url 'cpanel:connection_list' %}">Connections</a>
+<a href="{% url 'cpanel:oauth_app_list' %}">OAuth apps</a>
+<span>{{ preset.label }}</span>
+{% endblock %}
+{% block heading %}{{ preset.label }} OAuth app{% endblock %}
+{% block subtitle %}{% if client and not client.workspace_id %}Instance default: used by every workspace without its own app{% else %}Used by this workspace's new {{ preset.label }} connections{% endif %}{% endblock %}
+
+{% block page %}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+    <form method="post" autocomplete="off" class="lg:col-span-2 max-w-3xl w-full rounded-2xl border border-line bg-panel p-6 space-y-5">
+        {% csrf_token %}
+        {% if not client %}<input type="hidden" name="provider" value="{{ preset.key }}">{% endif %}
+        {% include "cpanel/_form_errors.html" %}
+        {% for field in form.main_fields %}{% include "cpanel/connections/_field.html" %}{% endfor %}
+        {% if form.instance_default %}
+        <label class="flex items-start gap-2.5 text-sm text-text">
+            {{ form.instance_default }}
+            <span>{{ form.instance_default.label }}<span class="block text-xs text-faint">{{ form.instance_default.help_text }}</span></span>
+        </label>
+        {% endif %}
+        <div class="flex items-center justify-end gap-2.5 pt-4 border-t border-line-soft">
+            <a href="{% url 'cpanel:oauth_app_list' %}" class="text-[13px] px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Cancel</a>
+            <button type="submit" class="text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">Save</button>
+        </div>
+    </form>
+
+    <aside class="space-y-5">
+        <div class="rounded-2xl border border-line bg-panel p-5 text-sm text-muted space-y-3">
+            <p class="font-medium text-text">Register the app</p>
+            {% if preset.oauth.console_url %}<p class="text-xs">Make it at <a href="{{ preset.oauth.console_url }}" target="_blank" rel="noopener" class="text-info hover:underline break-all">{{ preset.oauth.console_url }}</a>, with this redirect URI:</p>{% endif %}
+            <code class="block px-3 py-2 bg-ink border border-line-soft rounded-lg text-xs font-mono text-text break-all">{{ callback_url }}</code>
+            {% if preset.docs_url %}<p class="text-xs"><a href="{{ preset.docs_url }}" target="_blank" rel="noopener" class="text-info hover:underline">{{ preset.label }} OAuth docs</a></p>{% endif %}
+        </div>
+        {% if client %}
+        <div class="rounded-2xl border border-line bg-panel p-5 text-sm text-muted space-y-3">
+            <p class="text-xs">{{ used_by }} connection{{ used_by|pluralize }} refresh{{ used_by|pluralize:"es," }} with this app.</p>
+            <form method="post" action="{% url 'cpanel:oauth_app_delete' pk=client.pk %}" onsubmit="return confirm('Delete this {{ preset.label|escapejs }} app? Connections it issued tokens for stop refreshing.');">
+                {% csrf_token %}
+                <button type="submit" class="text-[13px] px-3 py-1.5 rounded-lg border border-fail/30 bg-fail/10 text-fail hover:bg-fail/20 transition-colors">Delete app</button>
+            </form>
+        </div>
+        {% endif %}
+    </aside>
+</div>
+{% endblock %}

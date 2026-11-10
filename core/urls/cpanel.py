@@ -93,6 +93,9 @@ from core.views.connections import (
     connection_list_view,
     connection_revoke_view,
     connection_test_view,
+    oauth_app_delete_view,
+    oauth_app_form_view,
+    oauth_app_list_view,
 )
 from core.views.secrets import (
     secret_list_view,
@@ -339,6 +342,10 @@ urlpatterns = [
     path("connections/<uuid:pk>/test/", connection_test_view, name="connection_test"),
     path("connections/<uuid:pk>/revoke/", connection_revoke_view, name="connection_revoke"),
     path("connections/<uuid:pk>/delete/", connection_delete_view, name="connection_delete"),
+    path("connections/apps/", oauth_app_list_view, name="oauth_app_list"),
+    path("connections/apps/new/", oauth_app_form_view, name="oauth_app_create"),
+    path("connections/apps/<uuid:pk>/", oauth_app_form_view, name="oauth_app_edit"),
+    path("connections/apps/<uuid:pk>/delete/", oauth_app_delete_view, name="oauth_app_delete"),
 
     # Channels
     path("channels/", channel_list_view, name="channel_list"),

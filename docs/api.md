@@ -478,7 +478,7 @@ and runs are the token's workspace's.
   `last_error` (with the channel's own credentials masked), `last_tested_at`
   and `last_inbound_at`. Members' ids and names aren't returned.
 - `connections.list` returns `connections`, each with `name`, `provider`,
-  `provider_label`, `auth_kind` (`api_key`, `bearer`, `basic`, `smtp`),
+  `provider_label`, `auth_kind` (`oauth2`, `api_key`, `bearer`, `basic`, `smtp`),
   `status` (`ok`, `error`, `revoked`, `expired`), `account_label`,
   `last_tested_at`, `last_error` (with the connection's own values masked),
   `grant_all_scripts`, `owner_plugin`, `scripts` (the scripts it is granted to,

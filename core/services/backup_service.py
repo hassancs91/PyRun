@@ -26,6 +26,7 @@ from core.models import (
     GlobalSettings,
     Library,
     MaintenanceWindow,
+    OAuthClient,
     PackageOperation,
     Run,
     ScheduleHistory,
@@ -186,6 +187,10 @@ class BackupService:
     # unknown preset restores as none and is named in the warnings.
     # ``webhook_mode`` on scripts (async | sync; older backups and anything
     # else: async).
+    # ``connections`` and ``oauth_clients`` (credentials and client secrets
+    # carried encrypted, like secrets) plus each script's ``connection_grants``;
+    # a connection carries its app (``oauth_client_id``) and token expiry. A
+    # backup without either key leaves this instance's rows of that kind alone.
     BACKUP_VERSION = "1.13.0"
     MAX_BACKUP_SIZE_MB = 100
     # Default cap on a gzip backup's expanded size (F92, zip-bomb guard);
@@ -265,6 +270,7 @@ class BackupService:
         from core.brain.backup import export_brains
         backup_data["brains"] = export_brains()
         backup_data["maintenance_windows"] = cls._export_maintenance_windows()
+        backup_data["oauth_clients"] = cls._export_oauth_clients()
         backup_data["connections"] = cls._export_connections()
 
         return backup_data
@@ -746,11 +752,31 @@ class BackupService:
                 "grant_all_scripts": c.grant_all_scripts,
                 "owner_plugin": c.owner_plugin,
                 "owner_key": c.owner_key,
+                "oauth_client_id": str(c.oauth_client_id) if c.oauth_client_id else None,
+                "token_expires_at": cls._serialize_datetime(c.token_expires_at),
                 "created_at": cls._serialize_datetime(c.created_at),
                 "updated_at": cls._serialize_datetime(c.updated_at),
                 "created_by_email": c.created_by.email if c.created_by else None,
             }
             for c in Connection.objects.select_related("created_by").order_by("created_at")
+        ]
+
+    @classmethod
+    def _export_oauth_clients(cls) -> List[dict]:
+        """Export OAuth apps (2.5 T24): the client secret stays Fernet-encrypted."""
+        return [
+            {
+                "id": str(c.id),
+                "workspace_id": str(c.workspace_id) if c.workspace_id else None,
+                "provider": c.provider,
+                "client_id": c.client_id,
+                "client_secret_encrypted": c.client_secret_encrypted,
+                "config": c.config,
+                "created_at": cls._serialize_datetime(c.created_at),
+                "updated_at": cls._serialize_datetime(c.updated_at),
+                "created_by_email": c.created_by.email if c.created_by else None,
+            }
+            for c in OAuthClient.objects.select_related("created_by").order_by("created_at")
         ]
 
     @classmethod
@@ -1212,6 +1238,7 @@ class BackupService:
             "libraries": len(backup_data.get("libraries", [])),
             "databases": len(backup_data.get("databases", [])),
             "connections": len(backup_data.get("connections", [])),
+            "oauth_clients": len(backup_data.get("oauth_clients", [])),
         }
 
         return {
@@ -1307,6 +1334,8 @@ class BackupService:
             # an older backup without the key leaves this instance's alone.
             if "connections" in backup_data:
                 Connection.objects.all().delete()
+            if "oauth_clients" in backup_data:
+                OAuthClient.objects.all().delete()
             Environment.objects.all().delete()
             DataStoreEntry.objects.all().delete()
             DataStore.objects.all().delete()
@@ -1352,6 +1381,12 @@ class BackupService:
             warnings.extend(
                 cls._import_secrets(backup_data.get("secrets", []), user_map, current_user, ws_map, default_ws)
             )
+            oauth_clients_restored = None
+            if "oauth_clients" in backup_data:
+                oauth_clients_restored, oauth_warnings = cls._import_oauth_clients(
+                    backup_data["oauth_clients"], user_map, current_user, ws_map, default_ws
+                )
+                warnings.extend(oauth_warnings)
             connections_restored = None
             if "connections" in backup_data:
                 connections_restored, connection_warnings = cls._import_connections(
@@ -1433,6 +1468,8 @@ class BackupService:
                 counts["maintenance_windows"] = maintenance_windows_restored
             if connections_restored is not None:
                 counts["connections"] = connections_restored
+            if oauth_clients_restored is not None:
+                counts["oauth_clients"] = oauth_clients_restored
 
             return {"success": True, "counts": counts, "errors": [], "warnings": warnings}
 
@@ -1454,6 +1491,7 @@ class BackupService:
         ("datastores", DataStore),
         ("maintenance_windows", MaintenanceWindow),
         ("connections", Connection),
+        ("oauth_clients", OAuthClient),
     )
 
     @classmethod
@@ -2091,6 +2129,9 @@ class BackupService:
                 )
             config = row.get("config")
             scopes = row.get("scopes")
+            oauth_client_id = row.get("oauth_client_id")
+            if oauth_client_id and not OAuthClient.objects.filter(pk=oauth_client_id).exists():
+                oauth_client_id = None
             Connection.objects.create(
                 id=row["id"],
                 workspace=workspace,
@@ -2107,6 +2148,43 @@ class BackupService:
                 grant_all_scripts=row.get("grant_all_scripts") is True,
                 owner_plugin=row.get("owner_plugin"),
                 owner_key=row.get("owner_key"),
+                oauth_client_id=oauth_client_id or None,
+                token_expires_at=cls._deserialize_datetime(row.get("token_expires_at")),
+                created_by=user_map.get(row.get("created_by_email"), current_user),
+            )
+            count += 1
+        return count, warnings
+
+    @classmethod
+    def _import_oauth_clients(cls, rows: List[dict], user_map: dict, current_user, ws_map: dict, default_ws):
+        """Import OAuth apps (2.5 T24); returns (count, warnings).
+
+        The client secret is restored encrypted as it was. An instance default
+        (no workspace) stays one; a second app for the same provider and
+        workspace (two source workspaces mapped onto one) is skipped.
+        """
+        warnings: List[str] = []
+        count = 0
+        taken = set()
+        for row in rows:
+            workspace = (
+                cls._resolve_workspace(row.get("workspace_id"), ws_map, default_ws)
+                if row.get("workspace_id") else None
+            )
+            provider = str(row.get("provider") or "")[:50]
+            key = (workspace.pk if workspace else None, provider)
+            if not provider or not row.get("client_id") or key in taken:
+                warnings.append(f"OAuth app for '{provider}': skipped (incomplete, or a duplicate).")
+                continue
+            taken.add(key)
+            config = row.get("config")
+            OAuthClient.objects.create(
+                id=row["id"],
+                workspace=workspace,
+                provider=provider,
+                client_id=str(row["client_id"])[:500],
+                client_secret_encrypted=row.get("client_secret_encrypted") or "",
+                config=config if isinstance(config, dict) else {},
                 created_by=user_map.get(row.get("created_by_email"), current_user),
             )
             count += 1

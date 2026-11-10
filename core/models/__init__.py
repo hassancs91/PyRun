@@ -33,7 +33,7 @@ from .vector_collection import VectorCollection
 from .brain import Brain, BrainBlob, BrainRevision, BrainEntity, BrainGrant, BrainFeed, BrainReaderJob, BrainSync
 from .ratelimit import RateLimitCounter
 from .maintenance import MaintenanceWindow
-from .connection import Connection, ConnectionGrant, RunMask
+from .connection import Connection, ConnectionGrant, OAuthClient, RunMask
 
 __all__ = [
     "User",
@@ -88,5 +88,6 @@ __all__ = [
     "RateLimitCounter",
     "Connection",
     "ConnectionGrant",
+    "OAuthClient",
     "RunMask",
 ]

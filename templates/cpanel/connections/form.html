@@ -34,14 +34,27 @@
         <p class="text-xs text-faint">{{ preset.label }} · {{ auth_label }}</p>
         {% endif %}
 
-        {% for field in form %}{% if field.name != "grant_all_scripts" %}
-        <div>
-            <label for="{{ field.id_for_label }}" class="block text-[13px] font-medium text-text mb-1.5">{{ field.label }}{% if not field.field.required %} <span class="text-faint font-normal">(optional)</span>{% endif %}</label>
-            {{ field }}
-            {% if field.help_text %}<p class="mt-1.5 text-xs text-faint">{{ field.help_text }}</p>{% endif %}
-            {% include "cpanel/_field_errors.html" with field=field %}
+        {% for field in form.main_fields %}{% include "cpanel/connections/_field.html" %}{% endfor %}
+
+        {% if auth_kind == "oauth2" %}
+        <div class="pt-4 border-t border-line-soft space-y-3">
+            <h3 class="text-sm font-semibold">{% if connection %}Reconnect{% else %}Connect{% endif %} with {{ preset.label }}</h3>
+            {% if oauth_client %}
+            <p class="text-xs text-faint">Opens {{ preset.label }}'s consent screen and comes back to <span class="font-mono">{{ callback_url }}</span>, using the {% if oauth_client.workspace_id %}workspace's{% else %}instance default{% endif %} {{ preset.label }} OAuth app.</p>
+            <button type="submit" name="action" value="connect" class="text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">{% if connection %}Reconnect{% else %}Connect{% endif %} with {{ preset.label }}</button>
+            {% else %}
+            <p class="text-xs text-warn">No {{ preset.label }} OAuth app yet: <a href="{% url 'cpanel:oauth_app_create' %}?provider={{ preset.key|urlencode }}" class="text-info hover:underline">add one</a> to use Connect or a pasted refresh token.</p>
+            {% endif %}
         </div>
-        {% endif %}{% endfor %}
+        <details class="pt-4 border-t border-line-soft"{% if form.is_bound and form.action != "connect" %} open{% endif %}>
+            <summary class="text-sm font-semibold cursor-pointer">Or paste a token</summary>
+            <div class="space-y-5 mt-3">
+                {% if preset.oauth.paste_help %}<p class="text-xs text-faint">{{ preset.oauth.paste_help }}</p>{% endif %}
+                {% for field in form.paste_fields %}{% include "cpanel/connections/_field.html" %}{% endfor %}
+                <p class="text-xs text-faint">PyRun checks a pasted token with {{ preset.label }} before it saves it.</p>
+            </div>
+        </details>
+        {% endif %}
 
         <div class="pt-4 border-t border-line-soft space-y-3">
             <h3 class="text-sm font-semibold">Scripts</h3>
@@ -71,7 +84,7 @@
 
         <div class="flex items-center justify-end gap-2.5 pt-4 border-t border-line-soft">
             <a href="{% url 'cpanel:connection_list' %}" class="text-[13px] px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Cancel</a>
-            <button type="submit" class="text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">{% if connection %}Save{% else %}Add connection{% endif %}</button>
+            <button type="submit" name="action" value="save" class="text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">{% if connection %}Save{% elif auth_kind == "oauth2" %}Save pasted token{% else %}Add connection{% endif %}</button>
         </div>
     </form>
 
@@ -85,6 +98,10 @@
                 {% else %}<span class="text-warn">{{ connection.get_status_display }}</span>{% endif %}
             </p>
             {% if connection.account_label %}<p class="text-xs text-muted">Account: {{ connection.account_label }}</p>{% endif %}
+            {% if connection.auth_kind == "oauth2" and connection.status != "revoked" %}
+            <p class="text-xs text-muted">{% if connection.token_expires_at %}Access token good for {{ connection.token_expires_at|timeuntil }} more; refreshed when a script needs it{% else %}Access token doesn't expire{% endif %}.</p>
+            {% if connection.scopes %}<p class="text-xs text-faint break-words">Scopes: {{ connection.scopes|join:" " }}</p>{% endif %}
+            {% endif %}
             {% if connection.last_error %}<p class="text-xs text-fail break-words">{{ connection.last_error }}</p>{% endif %}
             <div class="flex flex-wrap gap-2 pt-1">
                 {% if connection.status != "revoked" %}
@@ -96,6 +113,8 @@
                     {% csrf_token %}<input type="hidden" name="next" value="edit">
                     <button type="submit" class="text-[13px] px-3 py-1.5 rounded-lg border border-warn/30 bg-warn/10 text-warn hover:bg-warn/20 transition-colors">Revoke</button>
                 </form>
+                {% elif connection.auth_kind == "oauth2" %}
+                <p class="text-xs text-faint">Reconnect, or paste a token, to use it again.</p>
                 {% else %}
                 <p class="text-xs text-faint">Enter the credentials again and save to reconnect.</p>
                 {% endif %}
@@ -109,9 +128,11 @@
 with pyrunner_connections.smtp("{{ connection.name|default:preset.key }}") as server:
     server.sendmail(server.from_address, [to], message){% else %}
 api = pyrunner_connections.client("{{ connection.name|default:preset.key }}")
-reply = api.get("/...")  # relative to the base URL{% endif %}</code>
+reply = api.get("/...")  # relative to the base URL{% endif %}{% if auth_kind == "oauth2" %}
+token = pyrunner_connections.token("{{ connection.name|default:preset.key }}")  # short-lived{% endif %}</code>
             <ul class="list-disc list-inside text-xs space-y-1">
                 <li>Secret fields are encrypted and never shown again.</li>
+                {% if auth_kind == "oauth2" %}<li>Scripts get only the access token; PyRun keeps the refresh token and refreshes it a minute before it expires.</li>{% endif %}
                 <li>Scripts get the credentials only when granted, never in their environment, and they are masked in run output.</li>
                 {% if preset.docs_url %}<li><a href="{{ preset.docs_url }}" target="_blank" rel="noopener" class="text-info hover:underline">{{ preset.label }} authentication docs</a></li>{% endif %}
             </ul>

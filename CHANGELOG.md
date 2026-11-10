@@ -325,6 +325,22 @@ begins tracking at the current release; earlier history is in the git log.
   run started. Backups carry connections and their grants; the API's new
   `connections.list` (permission `connections:read`) and the console's Py AI
   list them without credentials. Guide: "Connections" in `docs/run-context.md`.
+- **OAuth connections: Google, Microsoft 365, GitHub, Slack and Notion.** Add
+  the provider's OAuth app (client ID and secret) under **Connections → OAuth
+  apps**, for the workspace or, as a superuser, as the instance default, then
+  add a connection and tick what it may access (Sheets, Gmail, Drive, Calendar,
+  Outlook mail, repositories, posting to Slack...). **Connect** goes through the
+  provider's consent screen and back to PyRun's one `/oauth/callback/`, with a
+  signed state that expires after 10 minutes and PKCE; **Paste a token** takes
+  a refresh token (or a token that doesn't expire) when the instance has no
+  callback address your browser can reach, and checks it with the provider
+  first. Scripts only ever get the access token (`pyrunner_connections.token()`
+  and `client()`, which picks up a refreshed token by itself); the refresh token
+  and client secret never leave PyRun. Tokens are refreshed when a script needs
+  them, a minute early and one refresh at a time; a refresh the provider refuses
+  marks the connection **Expired** and emails its creator. Backups carry the
+  apps (secrets still encrypted). Setup guide for each provider, including
+  Google's consent screen: `docs/integrations/oauth-apps.md`.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

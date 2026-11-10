@@ -1,0 +1,15 @@
+<div>
+    {% if field.field.widget.allow_multiple_selected and field.field.widget.input_type == "checkbox" %}
+    <span class="block text-[13px] font-medium text-text mb-1.5">{{ field.label }}{% if not field.field.required %} <span class="text-faint font-normal">(optional)</span>{% endif %}</span>
+    <div class="space-y-1.5">
+        {% for choice in field %}
+        <label class="flex items-center gap-2.5 text-sm text-text">{{ choice.tag }}<span>{{ choice.choice_label }}</span></label>
+        {% endfor %}
+    </div>
+    {% else %}
+    <label for="{{ field.id_for_label }}" class="block text-[13px] font-medium text-text mb-1.5">{{ field.label }}{% if not field.field.required %} <span class="text-faint font-normal">(optional)</span>{% endif %}</label>
+    {{ field }}
+    {% endif %}
+    {% if field.help_text %}<p class="mt-1.5 text-xs text-faint">{{ field.help_text }}</p>{% endif %}
+    {% include "cpanel/_field_errors.html" with field=field %}
+</div>

@@ -6,6 +6,7 @@
 {% block heading %}Connections{% endblock %}
 {% block subtitle %}Accounts on outside services your scripts call through pyrunner_connections{% endblock %}
 {% block actions %}
+<a href="{% url 'cpanel:oauth_app_list' %}" class="text-[13px] px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">OAuth apps</a>
 {% if encryption_configured %}
 <a href="{% url 'cpanel:connection_create' %}" class="inline-flex items-center gap-2 text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">
     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>

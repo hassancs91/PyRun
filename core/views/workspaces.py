@@ -50,6 +50,7 @@ _OWNED_RELATIONS = (
     # CASCADE, not SET_NULL, but listed too: deleting the workspace would
     # silently delete the accounts' credentials with it.
     ("connections", "connection", "connections"),
+    ("oauth_clients", "OAuth app", "OAuth apps"),
 )
 
 

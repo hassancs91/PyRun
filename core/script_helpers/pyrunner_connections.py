@@ -2,8 +2,9 @@
 PyRun connections for scripts: call an outside service as a connected account.
 
 A connection (sidebar → Connections) holds an account's credentials: an Airtable
-token, an API key, bearer token or username and password for any HTTP API, or an
-SMTP login. Grant it to a script (the script's Connections box), then:
+token, an API key, bearer token or username and password for any HTTP API, an
+SMTP login, or an OAuth account (Google, Microsoft, GitHub, Slack, Notion).
+Grant it to a script (the script's Connections box), then:
 
     import pyrunner_connections
 
@@ -29,17 +30,26 @@ script's environment, otherwise a small standard-library client with the same
 basics (``get/post/put/patch/delete/request``; responses with ``status_code``,
 ``headers``, ``content``, ``text``, ``json()``, ``ok`` and ``raise_for_status()``).
 Relative URLs are joined to the base URL. Standard library only.
+
+An OAuth connection gives a script only its access token, never the refresh
+token: ``token()`` returns one good for at least a minute, and PyRun refreshes
+it when it is about to expire. Clients from ``client()`` pick up the new token
+on their next request by themselves.
 """
 
 import json as _json
 import os
 import smtplib
 import ssl
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
 
-_cache = {}
+_cache = {}  # name -> (auth material, monotonic time to ask again or None)
+# Ask for a new access token this long before the old one expires (PyRun
+# refreshes it from a minute before).
+_EARLY = 60
 
 
 class ConnectionsError(Exception):
@@ -104,17 +114,27 @@ def credentials(name):
     """The raw auth material of ``name`` (headers, params, token, basic, smtp).
 
     For a library that wants the pieces itself; ``client()`` and ``smtp()`` use
-    them for you. Cached for the rest of the run.
+    them for you. Cached for the rest of the run, or, for an OAuth access token,
+    until a minute before it expires.
     """
-    if name not in _cache:
+    cached = _cache.get(name)
+    if cached is None or (cached[1] is not None and time.monotonic() >= cached[1]):
         data = _post("token", {"connection": name})
         data.pop("ok", None)
-        _cache[name] = data
-    return _cache[name]
+        expires_in = data.get("expires_in")
+        again = None
+        if isinstance(expires_in, (int, float)):
+            again = time.monotonic() + max(0, expires_in - _EARLY)
+        _cache[name] = cached = (data, again)
+    return cached[0]
 
 
 def token(name):
-    """The bare API key or bearer token of ``name``, e.g. for a service's own SDK."""
+    """The bare API key, bearer token or OAuth access token of ``name``, e.g. for a service's own SDK.
+
+    An OAuth access token is good for at least a minute; call ``token()`` again
+    when you need it later rather than keeping it.
+    """
     material = credentials(name)
     if not material.get("token"):
         raise ConnectionsError(
@@ -143,8 +163,8 @@ def client(name, timeout=30):
     try:
         import requests
     except ImportError:
-        return Client(material, timeout)
-    return _requests_session(requests, material, timeout)
+        return Client(material, timeout, name=name)
+    return _requests_session(requests, material, timeout, name)
 
 
 def _with_params(extra, params):
@@ -157,7 +177,7 @@ def _with_params(extra, params):
     return [*extra.items(), *params]
 
 
-def _requests_session(requests, material, timeout):
+def _requests_session(requests, material, timeout, name=None):
     base = material["base_url"]
     origin = _origin(base)
     secret_headers = {k.lower() for k in material["headers"]}
@@ -172,6 +192,9 @@ def _requests_session(requests, material, timeout):
 
         def request(self, method, url, *args, **kwargs):
             full = _join(base, url)
+            if name is not None:
+                # A refreshed OAuth access token replaces the expired one.
+                self.headers.update(credentials(name)["headers"])
             if _origin(full) == origin:
                 kwargs["params"] = _with_params(material["params"], kwargs.get("params"))
             kwargs.setdefault("timeout", timeout)
@@ -239,7 +262,8 @@ class _Redirects(urllib.request.HTTPRedirectHandler):
 class Client:
     """The standard-library HTTP client ``client()`` returns without requests."""
 
-    def __init__(self, material, timeout=30):
+    def __init__(self, material, timeout=30, name=None):
+        self._name = name
         self.base_url = material["base_url"]
         self.headers = dict(material["headers"])
         self.timeout = timeout
@@ -248,6 +272,9 @@ class Client:
         self._secret_headers = {k.lower() for k in material["headers"]}
 
     def request(self, method, url, *, params=None, json=None, data=None, headers=None, timeout=None):
+        if self._name is not None:
+            # A refreshed OAuth access token replaces the expired one.
+            self.headers.update(credentials(self._name)["headers"])
         full = _join(self.base_url, url)
         same = _origin(full) == self._origin
         sent = {k: v for k, v in self.headers.items() if same or k.lower() not in self._secret_headers}
