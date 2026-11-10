@@ -21,6 +21,7 @@ What this pins, roughly in order of how much it would hurt to get wrong:
 No test reaches a real provider: OAuth goes to T24's in-process provider.
 """
 
+import re
 import uuid
 from unittest import mock
 
@@ -328,6 +329,19 @@ class PluginPageTests(_ProviderMixin, _PluginFixture, TestCase):
         self.assertContains(resp, f'<option value="{mine.pk}">my-google</option>', html=True)
         self._app()
         self.assertContains(self.client.get(self.page), "Connect Google", count=2)
+
+    def test_the_picker_shrinks_to_the_card_at_phone_width(self):
+        # Test pass 5 (F9): a long "name (account)" option made the picker's form wider than a 390 px screen
+        # (the page scrolled sideways); the form and its select may now shrink and wrap.
+        self._connection(name="a-long-google-connection-name", provider="google", auth_kind=OAUTH2,
+                         account_label="someone.with.a.long.address@example.test", credentials={"access_token": "at"})
+        html = self.client.get(self.page).content.decode()
+        use = reverse("cpanel:plugin_connection_use", kwargs={"slug": SLUG, "key": "sheet"})
+        form = re.search(r'<form method="post" action="%s" class="([^"]+)"' % re.escape(use), html).group(1)
+        self.assertIn("min-w-0 max-w-full", form)
+        self.assertIn("flex-wrap", form)
+        select = re.search(r'<select id="pc-[^"]+" name="connection" class="([^"]+)"', html).group(1)
+        self.assertIn("min-w-0 max-w-full", select)
 
     def test_connect_makes_the_plugins_connection_and_comes_back(self):
         self._app()

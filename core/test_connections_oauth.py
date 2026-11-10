@@ -859,6 +859,18 @@ class OAuthBackupTests(_ProviderMixin, _Fixture, TestCase):
         self.assertEqual(OAuthClient.objects.get(pk=app.pk).get_secret(), CLIENT_SECRET)
         self.assertIsNone(OAuthClient.objects.get(pk=default.pk).workspace)
 
+    def test_the_restore_preview_lists_every_kind_it_counts(self):
+        # Test pass 5 (F8): the preview counted oauth_clients but its "This backup contains" list didn't show
+        # them, though a restore replaces the OAuth apps. Every counted kind needs its row in the modal.
+        from django.template.loader import get_template
+
+        source = get_template("cpanel/settings.html").template.source
+        self.assertIn("['OAuth apps', 'oauth_clients']", source)
+        counts = BackupService.get_backup_preview(BackupService.create_backup(created_by_user=self.user))["counts"]
+        for key in counts:
+            if key != "package_operations":  # internal bookkeeping, never listed
+                self.assertIn(f"'{key}']", source, key)
+
     def test_an_older_backup_leaves_the_apps_alone(self):
         app = self._app()
         data = BackupService.create_backup(created_by_user=self.user)

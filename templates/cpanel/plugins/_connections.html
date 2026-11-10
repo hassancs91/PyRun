@@ -41,10 +41,11 @@ where connection_requirements = ConnectionAPI(OWNER).requirements(). `next` is w
                     <a href="{% url 'cpanel:connection_create' %}?provider={{ st.requirement.provider|urlencode }}" class="text-[13px] px-3 py-1.5 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Add a {{ st.provider_label }} connection</a>
                 {% endif %}
                 {% if st.choices %}
-                <form method="post" action="{% url 'cpanel:plugin_connection_use' st.slug st.key %}" class="inline-flex items-center gap-2">
+                {# min-w-0/max-w-full: a long "name (account)" option must not widen the page at phone width #}
+                <form method="post" action="{% url 'cpanel:plugin_connection_use' st.slug st.key %}" class="inline-flex flex-wrap items-center gap-2 min-w-0 max-w-full">
                     {% csrf_token %}<input type="hidden" name="next" value="{{ next }}">
                     <label class="sr-only" for="pc-{{ st.slug }}-{{ st.key }}">Use an existing connection</label>
-                    <select id="pc-{{ st.slug }}-{{ st.key }}" name="connection" class="text-[13px] bg-ink border border-line rounded-lg px-2 py-1.5 text-text">
+                    <select id="pc-{{ st.slug }}-{{ st.key }}" name="connection" class="min-w-0 max-w-full text-[13px] bg-ink border border-line rounded-lg px-2 py-1.5 text-text">
                         {% for c in st.choices %}<option value="{{ c.pk }}">{{ c.name }}{% if c.account_label %} ({{ c.account_label }}){% endif %}</option>{% endfor %}
                     </select>
                     <button type="submit" class="text-[13px] px-3 py-1.5 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">{% if st.connection %}Use this instead{% else %}Use this one{% endif %}</button>
