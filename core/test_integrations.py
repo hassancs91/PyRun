@@ -30,6 +30,7 @@ import threading
 import time
 import types
 import unittest
+import urllib.parse
 from pathlib import Path
 from unittest import mock
 
@@ -82,6 +83,9 @@ class _Api(http.server.BaseHTTPRequestHandler):
             return self._reply(302, headers=[("Location", self.server.other + "/landed")])
         if path == "/see-other":
             return self._reply(303, headers=[("Location", "/v1/me")])
+        if path == "/go":  # 302 to ?to=, "@other" standing for the second server's base URL
+            to = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)["to"][0]
+            return self._reply(302, headers=[("Location", to.replace("@other", self.server.other))])
         if path == "/slow":
             time.sleep(1.0)
             return self._reply(200, {})
@@ -176,6 +180,24 @@ class RealTransportTests(_Servers, testing.IntegrationTestMixin, SimpleTestCase)
                 _method, _path, headers, _raw = self.elsewhere.seen[0]
                 self.assertNotIn("Authorization", headers)
                 self.assertEqual(headers.get("X-Trace"), "1")
+
+    def test_a_query_key_follows_redirects_on_the_base_url_only(self):
+        # Test pass 5 (O4): once on every hop to the base URL's origin, never on a hop elsewhere,
+        # even when the Location itself carries it (a move that keeps the query string).
+        self.use_connection("api", auth_kind="api_key", config={"base_url": self.base, "location": "query",
+                                                                "param_name": "key"},
+                            credentials={"api_key": KEY})
+        for label, patch in self._both():
+            with self.subTest(transport=label), patch:
+                self.api.seen.clear()
+                self.elsewhere.seen.clear()
+                self.integration_client.reset()
+                self.http.get("/go", params={"to": "/back?r=1"})
+                self.http.get("/go", params={"to": f"{self.base}/abs?key={KEY}"})
+                self.http.get("/go", params={"to": f"@other/moved?key={KEY}&r=2"})
+                hops = [path for _m, path, _h, _b in self.api.seen if not path.startswith("/go")]
+                self.assertEqual(hops, [f"/back?r=1&key={KEY}", f"/abs?key={KEY}"])
+                self.assertEqual([path for _m, path, _h, _b in self.elsewhere.seen], ["/moved?r=2"])
 
     def test_a_303_after_a_post_is_a_get_without_the_body(self):
         self.use_connection("api", auth_kind="bearer", config={"base_url": self.base}, credentials={"token": TOKEN})

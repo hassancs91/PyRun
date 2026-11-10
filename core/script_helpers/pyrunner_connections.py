@@ -186,10 +186,35 @@ def _with_params(extra, params):
     return [*extra.items(), *params]
 
 
+def _redirect_url(url, params, same):
+    """A redirect's target ``url`` with the connection's query parameters ``params`` (an API key in the query).
+
+    On the base URL's origin (``same``) they are added when the Location left
+    them out; anywhere else they are taken out, should the Location carry them
+    (a move to another host that keeps the query string).
+    """
+    if not params:
+        return url
+    parts = urllib.parse.urlsplit(url)
+    pairs = urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+    mine = [(str(k), str(v)) for k, v in params.items()]
+    if same:
+        missing = [pair for pair in mine if pair not in pairs]
+        if not missing:
+            return url
+        query = (parts.query + "&" if parts.query else "") + urllib.parse.urlencode(missing)
+    else:
+        if not any(pair in pairs for pair in mine):
+            return url
+        query = urllib.parse.urlencode([pair for pair in pairs if pair not in mine])
+    return urllib.parse.urlunsplit(parts._replace(query=query))
+
+
 def _requests_session(requests, material, timeout, name=None):
     base = material["base_url"]
     origin = _origin(base)
     secret_headers = {k.lower() for k in material["headers"]}
+    params = material["params"]
 
     def strip(prepared):
         if _origin(prepared.url) != origin:
@@ -215,7 +240,12 @@ def _requests_session(requests, material, timeout, name=None):
             return prepared
 
         def rebuild_auth(self, prepared_request, response):
+            # Called for each redirect hop: a query-parameter key follows it on
+            # the base URL's origin only, as the headers do.
             super().rebuild_auth(prepared_request, response)
+            prepared_request.url = _redirect_url(
+                prepared_request.url, params, _origin(prepared_request.url) == origin
+            )
             strip(prepared_request)
 
     session = ConnectionSession()
@@ -253,13 +283,19 @@ class Response:
 
 
 class _Redirects(urllib.request.HTTPRedirectHandler):
-    """Follow redirects, dropping the connection's headers when one leaves the origin."""
+    """Follow redirects with the connection's credentials on the base URL's origin only.
 
-    def __init__(self, origin, secret_headers):
+    Its headers are dropped when a hop leaves the origin; its query parameters
+    (an API key in the query) go on every hop to the origin and on no other.
+    """
+
+    def __init__(self, origin, secret_headers, params=None):
         self.origin = origin
         self.secret_headers = secret_headers
+        self.params = params or {}
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
+        newurl = _redirect_url(newurl, self.params, _origin(newurl) == self.origin)
         new = super().redirect_request(req, fp, code, msg, headers, newurl)
         if new is not None and _origin(new.full_url) != self.origin:
             for store in (new.headers, new.unredirected_hdrs):
@@ -303,7 +339,7 @@ class Client:
         elif data is not None:
             body = bytes(data)
         sent.update(headers or {})
-        opener = urllib.request.build_opener(_Redirects(self._origin, self._secret_headers))
+        opener = urllib.request.build_opener(_Redirects(self._origin, self._secret_headers, self._params))
         req = urllib.request.Request(full, data=body, headers=sent, method=method.upper())
         try:
             with opener.open(req, timeout=timeout or self.timeout) as resp:

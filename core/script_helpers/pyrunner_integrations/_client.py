@@ -437,7 +437,7 @@ class Client:
         secret_names = {k.lower() for k in material.get("headers") or {}}
         url = _connections._join(base, path)
         query = params
-        for _hop in range(MAX_REDIRECTS + 1):
+        for hop in range(MAX_REDIRECTS + 1):
             same = _connections._origin(url) == origin
             sent = {"User-Agent": USER_AGENT}
             if same:
@@ -447,7 +447,11 @@ class Client:
             for name, value in (headers or {}).items():
                 if same or name.lower() not in secret_names:
                     sent[name] = value
-            full = _with_query(url, _connections._with_params(material.get("params") if same else {}, query))
+            if hop:
+                # A redirect's Location: the query key once on the origin, never elsewhere.
+                full = _connections._redirect_url(url, material.get("params"), same)
+            else:
+                full = _with_query(url, _connections._with_params(material.get("params") if same else {}, query))
             logger.debug("%s %s", method, safe_url(full))
             response = self._transport(method, full, sent, body, timeout or self.timeout)
             location = response.headers.get("location")

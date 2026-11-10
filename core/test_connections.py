@@ -29,6 +29,7 @@ import http.server
 import json
 import sys
 import threading
+import urllib.parse
 import uuid
 from unittest import mock
 
@@ -428,6 +429,12 @@ class _Recorder(http.server.BaseHTTPRequestHandler):
             self.send_header("Location", self.server.redirect_to)
             self.end_headers()
             return
+        if self.path.startswith("/go?"):  # 302 to ?to=, "@away" standing for the second server
+            to = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)["to"][0]
+            self.send_response(302)
+            self.send_header("Location", to.replace("@away", self.server.away))
+            self.end_headers()
+            return
         body = b'{"ok": true}'
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -452,6 +459,7 @@ class HelperClientTests(SimpleTestCase):
         self.home = f"http://127.0.0.1:{self.servers[0].server_port}"
         self.away = f"http://127.0.0.1:{self.servers[1].server_port}"
         self.servers[0].redirect_to = self.away + "/landed"
+        self.servers[0].away = self.away
         self.material = {
             "base_url": self.home, "headers": {"X-Api-Key": "k-secret"}, "params": {"sig": "q-secret"},
             "token": "k-secret", "basic": None, "smtp": None,
@@ -482,6 +490,28 @@ class HelperClientTests(SimpleTestCase):
         except ImportError:  # pragma: no cover - requests ships with PyRun
             self.skipTest("requests is not installed")
         self._exercise(pyrunner_connections._requests_session(requests, self.material, 5))
+
+    def _query_key_redirects(self, client):
+        # Test pass 5 (O4): a query-parameter key goes once on every hop to the base URL's
+        # origin and never on a hop elsewhere, even when the Location carries it.
+        client.get("/go", params={"to": "/back?r=1"})
+        client.get("/go", params={"to": self.home + "/abs?sig=q-secret"})
+        client.get("/go", params={"to": "@away/moved?sig=q-secret&r=2"})
+        home, away = self.servers[0].server_port, self.servers[1].server_port
+        hops = [p for p in self._paths(home) if not p.startswith("/go")]
+        self.assertEqual(hops, ["/back?r=1&sig=q-secret", "/abs?sig=q-secret"])
+        self.assertEqual(self._paths(away), ["/moved?r=2"])
+        self.assertEqual([h.get("X-Api-Key") for h in self._headers(home)], ["k-secret"] * 5)
+
+    def test_stdlib_client_keeps_a_query_key_on_redirects_to_the_base_url_only(self):
+        self._query_key_redirects(pyrunner_connections.Client(self.material, timeout=5))
+
+    def test_requests_session_keeps_a_query_key_on_redirects_to_the_base_url_only(self):
+        try:
+            import requests
+        except ImportError:  # pragma: no cover - requests ships with PyRun
+            self.skipTest("requests is not installed")
+        self._query_key_redirects(pyrunner_connections._requests_session(requests, self.material, 5))
 
     def test_stdlib_response_basics(self):
         client = pyrunner_connections.Client(self.material, timeout=5)

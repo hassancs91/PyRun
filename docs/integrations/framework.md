@@ -129,8 +129,12 @@ class ItemsTests(testing.IntegrationTestCase):
 
 - **`IntegrationTestCase`** is a `SimpleTestCase` (no database);
   `IntegrationTestMixin` adds the same to a `TestCase`. While a test runs, no
-  request reaches the network (one nothing answers fails the test), and waits
-  don't sleep: they are listed in `self.sleeps`.
+  request made through `pyrunner_integrations` reaches the network (one
+  nothing answers fails the test), and waits don't sleep: they are listed in
+  `self.sleeps`. A client from `pyrunner_connections.client()` is not served
+  by `fake_http()` or cassettes: its requests go to the connection's base URL,
+  so give such code its replies with `unittest.mock`, or call the service
+  through `pyrunner_integrations`.
 - **`use_connection(name, provider, auth_kind=None, config=None,
   credentials=None)`** gives the code a connection, as
   `pyrunner_connections.credentials()`, `token()`, `info()` and `list()` see

@@ -714,10 +714,15 @@ What keeps the credentials safe:
   The script's granted connections are added to the masking set when the run
   starts, and every value PyRun hands the script while it runs is recorded for
   that run too, so a key rotated or a grant added since the start is masked
-  as well. The recorded copies are deleted when the run ends.
+  as well. The recorded copies are deleted when the run ends. A recorded value
+  that differs from the one masked under the same name at the start (the old
+  or the new key of a rotation, a refreshed token) shows as
+  `[connection:<name>.<field>#issued:MASKED]`, and more of them as `#2`, `#3`.
 - **Only to the base URL.** `client()` sends the credentials only to requests
   for the connection's base URL (same scheme, host and port). A request to any
-  other URL, or a redirect that leaves the base URL, goes without them.
+  other URL, or a redirect that leaves the base URL, goes without them. A
+  redirect to another path of the base URL keeps them, an API key sent as a
+  query parameter included.
 
 **Test** calls the provider's account endpoint (Airtable's `whoami`, an OAuth
 provider's user info, which also names the account), the HTTP connection's test path, or logs in to the SMTP
