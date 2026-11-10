@@ -10,7 +10,7 @@ every concrete field, so a new column can't be silently dropped from forks.
 
 from django.db import transaction
 
-from core.models import Script, ScriptLibrary, ScriptSchedule, SecretGrant
+from core.models import ConnectionGrant, Script, ScriptLibrary, ScriptSchedule, SecretGrant
 
 # Script fields copied verbatim onto the fork.
 FORK_COPIED_FIELDS = (
@@ -152,6 +152,13 @@ def fork_script(source: Script, *, user, name: str | None = None) -> Script:
         [
             SecretGrant(script=fork, secret_id=grant.secret_id, active=grant.active)
             for grant in source.secret_grants.all()
+        ]
+    )
+    # Connection grants too, as secret grants: the fork is in the same workspace.
+    ConnectionGrant.objects.bulk_create(
+        [
+            ConnectionGrant(script=fork, connection_id=grant.connection_id, active=grant.active)
+            for grant in source.connection_grants.all()
         ]
     )
     ScriptLibrary.objects.bulk_create(

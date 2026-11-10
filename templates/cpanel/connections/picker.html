@@ -1,0 +1,21 @@
+{% extends "cpanel/layout.html" %}
+
+{% block title %}Add Connection - {{ instance_name }}{% endblock %}
+
+{% block breadcrumbs %}
+<a href="{% url 'cpanel:connection_list' %}">Connections</a>
+<span>Add</span>
+{% endblock %}
+{% block heading %}Add connection{% endblock %}
+{% block subtitle %}Pick the service to connect{% endblock %}
+
+{% block page %}
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    {% for preset in presets %}
+    <a href="{% url 'cpanel:connection_create' %}?provider={{ preset.key|urlencode }}" class="rounded-2xl border border-line bg-panel p-5 hover:border-faint hover:bg-panel-hi/50 transition-colors">
+        <h3 class="text-sm font-semibold text-text">{{ preset.label }}</h3>
+        <p class="text-sm text-muted mt-1">{{ preset.description }}</p>
+    </a>
+    {% endfor %}
+</div>
+{% endblock %}

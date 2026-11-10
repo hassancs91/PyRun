@@ -9,7 +9,8 @@ per-run token (never from the body) to ``store_result`` / ``store_progress``
 the result; T22). All of them:
 
 - mask secret values with the same set execution masks output with
-  (``core.executor.mask_set_for_display``) BEFORE anything is stored, and refuse
+  (``core.executor.mask_set_for_display``, plus the credentials the run was
+  handed by ``pyrunner_connections`` so far) BEFORE anything is stored, and refuse
   to store when a secret can't be resolved, so every reader (run page, RunView,
   notifications, backups) only ever sees the masked copy;
 - write only while the run is RUNNING, in one conditional UPDATE, so a write
@@ -79,10 +80,12 @@ def _mask(run, value, *values):
     resolved once).
     """
     from core.executor import mask_secrets_in_value, mask_set_for_display
+    from core.services.connections import with_issued_masks
     from core.services.secret_backends import SecretResolutionError
 
     try:
-        masks = mask_set_for_display(run)
+        # Plus what the run was handed over the loopback so far (connections).
+        masks = with_issued_masks(run.pk, mask_set_for_display(run))
     except SecretResolutionError:
         raise RunReportError(
             "SECRETS_UNAVAILABLE",

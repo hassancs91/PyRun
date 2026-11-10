@@ -406,7 +406,7 @@ class InventoryTests(_Fixture, TestCase):
         self.client.force_login(
             User.objects.create(email="t18-settings@example.com", is_superuser=True))
         page = self.client.get(reverse("cpanel:settings"))
-        self.assertContains(page, "vectors.*, providers.*, secrets.*, channels.*, plugins.*, "
+        self.assertContains(page, "vectors.*, providers.*, secrets.*, channels.*, connections.*, plugins.*, "
                                   "environments.*, libraries.*, schedules.*, system.*")
 
     def test_every_endpoint_over_mcp_and_no_secret_anywhere(self):

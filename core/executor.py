@@ -497,11 +497,17 @@ def with_ai_credentials(secrets: dict) -> dict:
 def mask_set_for_display(run) -> dict:
     """Everything to mask out of run data shown in the console.
 
-    The run's secrets (the same resolver execution uses) plus the injected AI
-    credential. Raises SecretResolutionError when an external secret can't be
-    resolved; callers then hide the data rather than show it unmasked.
+    The run's secrets (the same resolver execution uses), the injected AI
+    credential and the secret values of the connections its script is granted
+    (``core.services.connections``). Raises SecretResolutionError when an
+    external secret can't be resolved; callers then hide the data rather than
+    show it unmasked.
     """
-    return with_ai_credentials(resolve_secrets_for_run(run))
+    from core.services.connections import connection_masks
+
+    masks = with_ai_credentials(resolve_secrets_for_run(run))
+    masks.update(connection_masks(run))
+    return masks
 
 
 def mask_run_inputs(run, mask_sets: dict | None = None):
@@ -1169,8 +1175,14 @@ def execute_run(run: Run, webhook_data: dict | None = None) -> None:
                 body_file=body_file_path,
             )
 
-            # Also mask the injected AI credential in output, if any.
+            # Also mask the injected AI credential in output, if any, and the
+            # credentials of the connections this script is granted: they are
+            # never injected (pyrunner_connections asks the loopback), so they
+            # join the masking dict only after the environment is built.
             with_ai_credentials(secrets)
+            from core.services.connections import connection_masks, with_issued_masks
+
+            secrets.update(connection_masks(run))
 
             # Select the RunBackend from the DB isolation policy (instance →
             # workspace → script), resolved per-run; an explicit
@@ -1233,6 +1245,9 @@ def execute_run(run: Run, webhook_data: dict | None = None) -> None:
             result = backend.wait(handle, spec.timeout)
             wait_completed = True
             finished_at = timezone.now()
+            # The final pass also masks what the run was handed over the
+            # loopback while it ran (the per-run mask set).
+            with_issued_masks(run.pk, secrets)
             captured = (
                 _truncate_output(_mask_secrets_in_output(result.stdout or "", secrets)),
                 _truncate_output(_mask_secrets_in_output(result.stderr or "", secrets)),
@@ -1369,6 +1384,12 @@ def execute_run(run: Run, webhook_data: dict | None = None) -> None:
                 logger.warning(
                     "Failed to delete library staging dir: %s", library_root
                 )
+
+        # The run has ended, so nothing it was handed needs masking any more:
+        # drop the recorded copies (never raises).
+        from core.services.connections import forget_issued
+
+        forget_issued(run.pk)
 
         logger.info(
             f"Run {run.id} completed with status {run.status} "

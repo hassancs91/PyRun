@@ -54,6 +54,7 @@ class APIToken(models.Model):
         ("secrets:read_names", "Read secret names and the scripts that get them (never values)"),
         ("providers:read", "Read AI and embedding providers (names and models, never keys)"),
         ("channels:read", "Read chat channels (handlers and members, never tokens)"),
+        ("connections:read", "Read connections (providers, accounts and grants, never credentials)"),
         ("plugins:read", "Read installed plugins"),
         ("environments:read", "Read environments (and their installed packages)"),
         ("libraries:read", "Read libraries (modules and attached scripts, never code)"),

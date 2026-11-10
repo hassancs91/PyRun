@@ -47,6 +47,9 @@ _OWNED_RELATIONS = (
     ("brains", "brain", "brains"),
     ("channels", "channel", "channels"),
     ("api_tokens", "API token", "API tokens"),
+    # CASCADE, not SET_NULL, but listed too: deleting the workspace would
+    # silently delete the accounts' credentials with it.
+    ("connections", "connection", "connections"),
 )
 
 

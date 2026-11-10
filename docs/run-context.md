@@ -568,7 +568,82 @@ replaced with `[NAME:MASKED]`. Masking uses the secrets the run was given plus
 the AI provider credential. If one of the run's secrets comes from an external
 provider that can't be reached at that moment, the value can't be checked, so
 PyRun refuses to store it and `set_result` raises `RunError` with code
-`SECRETS_UNAVAILABLE`.
+`SECRETS_UNAVAILABLE`. The credentials of the script's connections (below) are
+masked the same way.
+
+---
+
+## Connections
+
+A connection is one account on an outside service: an Airtable token, an API
+key, bearer token or username and password for any HTTP API, or an SMTP login.
+Add it under **Connections** in the sidebar (pick the service, fill in its
+fields, then **Test** it), and grant it to the scripts that need it: in the
+script's **Connections** box, on the connection's page, or with **Grant to all
+my scripts**, which gives it to every script the connection's creator makes in
+the workspace, now and later (not plugins' scripts). A connection belongs to
+one workspace; its members can add, edit, test, revoke and delete it, like
+secrets. Keys, tokens and passwords are stored encrypted and never shown
+again; a blank secret field on the edit page keeps the saved value.
+
+A script asks for a connection by name, or by its provider (`"airtable"`) when
+it has exactly one of that provider:
+
+```python
+import pyrunner_connections
+
+api = pyrunner_connections.client("airtable")   # the credentials attached
+bases = api.get("/v0/meta/bases").json()        # relative to the base URL
+
+with pyrunner_connections.smtp("mail") as server:   # connected and logged in
+    server.sendmail(server.from_address, ["you@example.com"], message)
+```
+
+| Function | Returns |
+|---|---|
+| `client(name, timeout=30)` | An HTTP client for the connection's base URL: a `requests.Session` when `requests` is installed in the script's environment, otherwise a small standard-library client with `get`, `post`, `put`, `patch`, `delete` and `request`, whose replies have `status_code`, `headers`, `content`, `text`, `json()`, `ok` and `raise_for_status()` |
+| `smtp(name, timeout=30)` | An `smtplib.SMTP` (or `SMTP_SSL`) connected, upgraded with STARTTLS when the connection says so, and logged in; `server.from_address` is the connection's From address |
+| `token(name)` | The bare API key or bearer token, for a service's own SDK |
+| `credentials(name)` | Everything `client()` and `smtp()` use: `headers`, `params`, `token`, `basic` (`username`, `password`) and `smtp` |
+| `info(name)` | `name`, `provider`, `provider_label`, `auth_kind`, `status`, `account_label`, `base_url` (and `smtp`: host, port, security, username, from address), never a secret |
+| `list()` | `info()` of every connection the script is granted |
+
+A connection that can't be used raises `pyrunner_connections.ConnectionsError`
+with a `code`: `CONNECTION_NOT_FOUND` (it doesn't exist or isn't granted to
+this script; the two look the same), `AMBIGUOUS` (a provider name matches
+several), `CONNECTION_REVOKED`, `CONNECTION_UNREADABLE` (the stored
+credentials can't be decrypted: was `ENCRYPTION_KEY` changed?),
+`RUN_NOT_RUNNING` (asked after the run ended), `NOT_HTTP` / `NOT_SMTP` /
+`NO_TOKEN` (the wrong function for its kind).
+
+What keeps the credentials safe:
+
+- **Never in the environment.** A script gets no connection credential as an
+  environment variable. `pyrunner_connections` asks PyRun's internal API for
+  it, with the run's signed token, and PyRun checks the grant every time.
+- **Masked in output.** Every key, token and password a script could be
+  handed, and the basic-auth header made from them, is masked in its stdout,
+  stderr, result, progress and reply as `[connection:<name>.<field>:MASKED]`.
+  The script's granted connections are added to the masking set when the run
+  starts, and every value PyRun hands the script while it runs is recorded for
+  that run too, so a key rotated or a grant added since the start is masked
+  as well. The recorded copies are deleted when the run ends.
+- **Only to the base URL.** `client()` sends the credentials only to requests
+  for the connection's base URL (same scheme, host and port). A request to any
+  other URL, or a redirect that leaves the base URL, goes without them.
+
+**Test** calls the provider's account endpoint (Airtable's `whoami`, which also
+names the account), the HTTP connection's test path, or logs in to the SMTP
+server, from PyRun itself, so addresses inside your network are refused unless
+`PYRUNNER_ALLOW_PRIVATE_NETWORK` is on (the same rule as the base URL and SMTP
+host when you save). A failed test marks the connection's status and keeps the
+error, with the connection's own values masked; scripts can still use it.
+**Revoke** deletes the stored credentials but keeps the connection, its name
+and its grants: scripts get `CONNECTION_REVOKED` until you enter the
+credentials again. Backups carry connections (credentials still encrypted, so
+the restoring instance needs the same `ENCRYPTION_KEY`) and their grants. The
+API's `connections.list` and the console's Py AI list them without credentials
+(`docs/api.md`).
 
 ---
 

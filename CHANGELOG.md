@@ -310,6 +310,21 @@ begins tracking at the current release; earlier history is in the git log.
   on a script left in Async mode are answered as before. Set the mode under
   **Webhook → Reply, signature and limits**. Guide: "Synchronous replies" in
   `docs/run-context.md`, with a Slack slash-command example.
+- **Connections: call an outside service as an account.** Add an Airtable
+  token, an API key, bearer token or username and password for any HTTP API,
+  or an SMTP login under the new **Connections** page (sidebar), **Test** it,
+  and grant it to scripts: in the script's new **Connections** box, on the
+  connection's page, or to all of its creator's scripts at once. Scripts use it
+  with the new `pyrunner_connections` helper: `client(name)` gives an HTTP
+  client with the credentials attached (a `requests.Session` when `requests` is
+  installed), `smtp(name)` a logged-in SMTP connection, `token(name)` the bare
+  key. Credentials are encrypted, belong to one workspace, never enter a
+  script's environment (PyRun hands them over its internal API after checking
+  the grant), are sent only to the connection's base URL, and are masked in
+  the run's output, result and progress, including values handed out after the
+  run started. Backups carry connections and their grants; the API's new
+  `connections.list` (permission `connections:read`) and the console's Py AI
+  list them without credentials. Guide: "Connections" in `docs/run-context.md`.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

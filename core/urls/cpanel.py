@@ -86,6 +86,14 @@ from core.views.settings import (
     cleanup_preview_view,
     system_info_view,
 )
+from core.views.connections import (
+    connection_create_view,
+    connection_delete_view,
+    connection_edit_view,
+    connection_list_view,
+    connection_revoke_view,
+    connection_test_view,
+)
 from core.views.secrets import (
     secret_list_view,
     secret_create_view,
@@ -325,6 +333,12 @@ urlpatterns = [
     path("api/secret-test-resolve/", secret_test_resolve_view, name="secret_test_resolve"),
     path("secrets/<uuid:pk>/edit/", secret_edit_view, name="secret_edit"),
     path("secrets/<uuid:pk>/delete/", secret_delete_view, name="secret_delete"),
+    path("connections/", connection_list_view, name="connection_list"),
+    path("connections/new/", connection_create_view, name="connection_create"),
+    path("connections/<uuid:pk>/", connection_edit_view, name="connection_edit"),
+    path("connections/<uuid:pk>/test/", connection_test_view, name="connection_test"),
+    path("connections/<uuid:pk>/revoke/", connection_revoke_view, name="connection_revoke"),
+    path("connections/<uuid:pk>/delete/", connection_delete_view, name="connection_delete"),
 
     # Channels
     path("channels/", channel_list_view, name="channel_list"),

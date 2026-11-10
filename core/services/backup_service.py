@@ -16,6 +16,7 @@ from django.utils import timezone
 
 from core.models import (
     Brain,
+    Connection,
     Database,
     DatabaseGrant,
     DataStore,
@@ -264,6 +265,7 @@ class BackupService:
         from core.brain.backup import export_brains
         backup_data["brains"] = export_brains()
         backup_data["maintenance_windows"] = cls._export_maintenance_windows()
+        backup_data["connections"] = cls._export_connections()
 
         return backup_data
 
@@ -450,7 +452,7 @@ class BackupService:
         scripts = []
         queryset = (
             Script.objects.select_related("environment", "created_by", "archived_by")
-            .prefetch_related("tags", "secret_grants", "library_attachments")
+            .prefetch_related("tags", "secret_grants", "library_attachments", "connection_grants")
             .all()
             .order_by("created_at")
         )
@@ -517,6 +519,12 @@ class BackupService:
                 # secret_grants. Old backups carry none.
                 "libraries": [
                     str(a.library_id) for a in script.library_attachments.all()
+                ],
+                # Explicit connection grants (2.5 T23), imported after both the
+                # connections and the scripts exist. Old backups carry none.
+                "connection_grants": [
+                    {"connection_id": str(g.connection_id), "active": g.active}
+                    for g in script.connection_grants.all()
                 ],
                 "created_at": cls._serialize_datetime(script.created_at),
                 "updated_at": cls._serialize_datetime(script.updated_at),
@@ -712,6 +720,38 @@ class BackupService:
                 "updated_at": cls._serialize_datetime(p.updated_at),
             })
         return providers
+
+    @classmethod
+    def _export_connections(cls) -> List[dict]:
+        """Export connections (2.5 T23): credentials stay Fernet-encrypted, as secrets.
+
+        Their grants travel with the scripts (``connection_grants``).
+        """
+        from core.models import Connection
+
+        return [
+            {
+                "id": str(c.id),
+                "workspace_id": str(c.workspace_id),
+                "name": c.name,
+                "provider": c.provider,
+                "auth_kind": c.auth_kind,
+                "config": c.config,
+                "credentials_encrypted": c.credentials_encrypted,
+                "scopes": c.scopes,
+                "account_label": c.account_label,
+                "status": c.status,
+                "last_tested_at": cls._serialize_datetime(c.last_tested_at),
+                "last_error": c.last_error,
+                "grant_all_scripts": c.grant_all_scripts,
+                "owner_plugin": c.owner_plugin,
+                "owner_key": c.owner_key,
+                "created_at": cls._serialize_datetime(c.created_at),
+                "updated_at": cls._serialize_datetime(c.updated_at),
+                "created_by_email": c.created_by.email if c.created_by else None,
+            }
+            for c in Connection.objects.select_related("created_by").order_by("created_at")
+        ]
 
     @classmethod
     def _export_secrets(cls) -> List[dict]:
@@ -1171,6 +1211,7 @@ class BackupService:
             "brains": len(backup_data.get("brains", [])),
             "libraries": len(backup_data.get("libraries", [])),
             "databases": len(backup_data.get("databases", [])),
+            "connections": len(backup_data.get("connections", [])),
         }
 
         return {
@@ -1262,6 +1303,10 @@ class BackupService:
             # incoming one. Cascades to revisions.
             Library.objects.all().delete()
             Secret.objects.all().delete()
+            # Connections are full-replace when the backup has them (2.5 T23);
+            # an older backup without the key leaves this instance's alone.
+            if "connections" in backup_data:
+                Connection.objects.all().delete()
             Environment.objects.all().delete()
             DataStoreEntry.objects.all().delete()
             DataStore.objects.all().delete()
@@ -1307,6 +1352,12 @@ class BackupService:
             warnings.extend(
                 cls._import_secrets(backup_data.get("secrets", []), user_map, current_user, ws_map, default_ws)
             )
+            connections_restored = None
+            if "connections" in backup_data:
+                connections_restored, connection_warnings = cls._import_connections(
+                    backup_data["connections"], user_map, current_user, ws_map, default_ws
+                )
+                warnings.extend(connection_warnings)
             libraries_restored = cls._import_libraries(
                 backup_data.get("libraries", []), user_map, current_user, ws_map, default_ws
             )
@@ -1314,6 +1365,7 @@ class BackupService:
             # Grants reference both Secrets (imported above) and Scripts (just
             # imported), so they go in their own pass. Old backups carry none.
             cls._import_secret_grants(backup_data.get("scripts", []), script_map)
+            cls._import_connection_grants(backup_data.get("scripts", []), script_map)
             # Library attachments need both sides too — same pass-ordering reason.
             cls._import_library_attachments(backup_data.get("scripts", []), script_map)
             cls._import_schedules(backup_data.get("script_schedules", []), script_map, user_map, current_user, ws_map, default_ws)
@@ -1379,6 +1431,8 @@ class BackupService:
             }
             if maintenance_windows_restored is not None:
                 counts["maintenance_windows"] = maintenance_windows_restored
+            if connections_restored is not None:
+                counts["connections"] = connections_restored
 
             return {"success": True, "counts": counts, "errors": [], "warnings": warnings}
 
@@ -1399,6 +1453,7 @@ class BackupService:
         ("package_operations", PackageOperation),
         ("datastores", DataStore),
         ("maintenance_windows", MaintenanceWindow),
+        ("connections", Connection),
     )
 
     @classmethod
@@ -2000,6 +2055,86 @@ class BackupService:
                     script=script,
                     secret=secret,
                     defaults={"active": grant.get("active", True)},
+                )
+
+    @classmethod
+    def _import_connections(cls, rows: List[dict], user_map: dict, current_user, ws_map: dict, default_ws):
+        """Import connections (2.5 T23); returns (count, warnings).
+
+        Credentials are restored encrypted as they were (like secrets: the
+        backup's ENCRYPTION_KEY must match). A provider or auth kind this
+        version doesn't know is kept, marked error, with a warning; a name
+        already taken in its workspace (two source workspaces mapped onto one)
+        is skipped with a warning.
+        """
+        from core.integrations.presets import get_preset
+
+        warnings: List[str] = []
+        count = 0
+        taken = set()
+        for row in rows:
+            workspace = cls._resolve_workspace(row.get("workspace_id"), ws_map, default_ws)
+            name = str(row.get("name") or "")[:100]
+            if not name or (workspace.pk, name) in taken:
+                warnings.append(f"Connection '{name}': skipped (no name, or the name is taken in its workspace).")
+                continue
+            taken.add((workspace.pk, name))
+            status = row.get("status") if row.get("status") in Connection.Status.values else Connection.Status.OK
+            last_error = str(row.get("last_error") or "")
+            preset = get_preset(row.get("provider"))
+            if preset is None or row.get("auth_kind") not in preset.auth_kinds:
+                status = Connection.Status.ERROR
+                last_error = "This version of PyRun doesn't know this provider or sign-in."
+                warnings.append(
+                    f"Connection '{name}': provider '{row.get('provider')}' ({row.get('auth_kind')}) "
+                    "is not known to this version; restored but unusable."
+                )
+            config = row.get("config")
+            scopes = row.get("scopes")
+            Connection.objects.create(
+                id=row["id"],
+                workspace=workspace,
+                name=name,
+                provider=str(row.get("provider") or "")[:50],
+                auth_kind=str(row.get("auth_kind") or "")[:20],
+                config=config if isinstance(config, dict) else {},
+                credentials_encrypted=row.get("credentials_encrypted") or "",
+                scopes=scopes if isinstance(scopes, list) else [],
+                account_label=str(row.get("account_label") or "")[:255],
+                status=status,
+                last_tested_at=cls._deserialize_datetime(row.get("last_tested_at")),
+                last_error=last_error,
+                grant_all_scripts=row.get("grant_all_scripts") is True,
+                owner_plugin=row.get("owner_plugin"),
+                owner_key=row.get("owner_key"),
+                created_by=user_map.get(row.get("created_by_email"), current_user),
+            )
+            count += 1
+        return count, warnings
+
+    @classmethod
+    def _import_connection_grants(cls, scripts_data: List[dict], script_map: dict) -> None:
+        """Recreate the scripts' explicit connection grants (ids are preserved).
+
+        A grant to a missing connection, or to one in another workspace than
+        its script's, is skipped. Older backups carry none.
+        """
+        from core.models import ConnectionGrant
+
+        for script_data in scripts_data:
+            script = script_map.get(script_data["id"])
+            if not script:
+                continue
+            for grant in script_data.get("connection_grants", []):
+                connection = Connection.objects.filter(
+                    id=grant.get("connection_id"), workspace_id=script.workspace_id
+                ).first()
+                if connection is None:
+                    continue
+                ConnectionGrant.objects.get_or_create(
+                    script=script,
+                    connection=connection,
+                    defaults={"active": grant.get("active", True) is not False},
                 )
 
     @classmethod

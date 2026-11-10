@@ -218,6 +218,31 @@
         </div>
     </section>
 
+    {# Connections (granted to this script; pyrunner_connections asks for them by name) #}
+    <section class="rounded-2xl border border-line bg-panel">
+        <input type="hidden" name="connections_section" value="1">
+        <div class="flex items-center gap-2 px-5 py-4 border-b border-line-soft">
+            {% icon "link" class="w-4 h-4 text-faint" %}
+            <h3 class="text-sm font-semibold">Connections</h3>
+        </div>
+        <div class="p-5 space-y-3">
+            {% if connection_choices %}
+            <p class="text-xs text-faint">The connections this script may use with <span class="font-mono">pyrunner_connections</span>. Their credentials are never put in its environment.</p>
+            <div class="space-y-2">
+                {% for c in connection_choices %}
+                <label class="flex items-center gap-2.5 text-sm">
+                    <input type="checkbox" name="granted_connection_ids" value="{{ c.id }}" {% if c.granted %}checked{% endif %} class="w-4 h-4 rounded text-ok bg-ink border-line focus:ring-ok/40 focus:ring-2">
+                    <span class="font-mono text-info min-w-0 truncate">{{ c.name }}</span>
+                    <span class="text-xs text-faint whitespace-nowrap">{{ c.provider_label }}{% if c.by_wildcard %} · has it by "all my scripts"{% endif %}</span>
+                </label>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-sm text-muted">No connections in this workspace. <a href="{% url 'cpanel:connection_create' %}" class="text-info hover:underline">Add one</a> to call an outside service as an account.</p>
+            {% endif %}
+        </div>
+    </section>
+
     {% if schedule_form %}
     {# Schedule (collapsible) #}
     <section class="rounded-2xl border border-line bg-panel overflow-hidden">

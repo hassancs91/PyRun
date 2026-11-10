@@ -166,7 +166,8 @@ class BridgeToolsTests(_Fixture, TestCase):
         self.assertNotIn("runs-output", channel)
         # T17 added databases-query, T18 code, secret names, providers and channels.
         self.assertEqual(console - channel, {"runs-output", "databases-query", "scripts-code",
-                                             "secrets-names", "providers-list", "channels-list"})
+                                             "secrets-names", "providers-list", "channels-list",
+                                             "connections-list"})
         # Brain tools come from core.brain.tools (grant-checked), not from here.
         self.assertFalse(any(n.startswith("brain-") for n in console | channel))
 

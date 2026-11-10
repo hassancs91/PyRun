@@ -425,8 +425,8 @@ Search a workspace's vector collections and, while
 ## Workspace inventory and health
 
 Describe the rest of a workspace, and the instance it runs on: providers, secret
-names, chat channels, plugins, environments, libraries, schedules, a script's
-code, and whether everything is OK. All are `read` endpoints, each with its own
+names, chat channels, connections, plugins, environments, libraries, schedules,
+a script's code, and whether everything is OK. All are `read` endpoints, each with its own
 permission.
 
 | REST endpoint | Parameters | Permission |
@@ -434,6 +434,7 @@ permission.
 | `providers.list` | None | `providers:read` |
 | `secrets.names` | Optional `script` (its id: only the secrets it gets) | `secrets:read_names` |
 | `channels.list` | None | `channels:read` |
+| `connections.list` | Optional `script` (its id: only the connections it may use) | `connections:read` |
 | `plugins.list` | None | `plugins:read` |
 | `environments.list` | Optional `environment` (a name or id: that one, with its installed packages) | `environments:read` |
 | `libraries.list` | None | `libraries:read` |
@@ -446,7 +447,8 @@ curl -H "Authorization: Bearer $PYRUN_TOKEN" https://pyrun.example/api/v1/system
 ```
 
 None of them returns a secret value, a provider's key or base URL, a channel's
-bot token, inbound token or signing secret, or a library's code. AI and
+bot token, inbound token or signing secret, a connection's key, token or
+password, or a library's code. AI and
 embedding providers, plugins and environments belong to the instance, so every
 workspace lists the same ones; usage, scripts, channels, libraries, schedules
 and runs are the token's workspace's.
@@ -475,6 +477,14 @@ and runs are the token's workspace's.
   `pending`, `approved`, `blocked`), `daily_reply_cap`, `daily_cap_reached`,
   `last_error` (with the channel's own credentials masked), `last_tested_at`
   and `last_inbound_at`. Members' ids and names aren't returned.
+- `connections.list` returns `connections`, each with `name`, `provider`,
+  `provider_label`, `auth_kind` (`api_key`, `bearer`, `basic`, `smtp`),
+  `status` (`ok`, `error`, `revoked`, `expired`), `account_label`,
+  `last_tested_at`, `last_error` (with the connection's own values masked),
+  `grant_all_scripts`, `owner_plugin`, `scripts` (the scripts it is granted to,
+  explicitly or by **Grant to all my scripts**, up to 50) and `script_count`.
+  With `script`, the list is the connections that script may use. Scripts use
+  connections through `pyrunner_connections` (`docs/run-context.md`).
 - `plugins.list` returns `plugins`, each with `slug`, `name`, `version`, `status`
   (`active`, `installed`, `disabled`, `errored`), `source`, `summary`, `author`,
   `installed_at` and `activated_at`.
@@ -511,7 +521,7 @@ and runs are the token's workspace's.
   daily update check), `plugins.errored` and `runs` (`running`, `waiting`,
   `failed_last_24h`). Error texts aren't returned; the console's pages show them.
 - A token bound to one script sees that script only, wherever these name
-  scripts (`secrets.names`, `channels.list`, the `scripts` counts of
+  scripts (`secrets.names`, `channels.list`, `connections.list`, the `scripts` counts of
   `environments.list`, `libraries.list`, `schedules.list`), and `scripts.code`
   reads that script alone. Its binding doesn't narrow anything else, as for
   databases and vectors.
@@ -568,8 +578,8 @@ Each endpoint declares a Py AI tier:
 
 So a chat channel can't read a run's output (`runs.output`), run a database
 query (`databases.query`), read a script's code (`scripts.code`) or list secret
-names (`secrets.names`), providers (`providers.list`) or channels
-(`channels.list`); the console can.
+names (`secrets.names`), providers (`providers.list`), channels
+(`channels.list`) or connections (`connections.list`); the console can.
 The tier is checked again on every call, not only when the tools are listed.
 Datastore values reach both tiers as stored, unmasked, as Py AI's
 `query_datastore` tool already gave them to chat channels; so do vector points.

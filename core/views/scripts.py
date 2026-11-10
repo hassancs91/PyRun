@@ -17,6 +17,7 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from core.models import Script, Run, ScriptSchedule, ScheduleHistory, Library, ScriptLibrary, Secret, SecretGrant, Tag
 from core.charts import DURATION_CHART_MAX_BARS, duration_chart
 from core.forms import ScriptForm, ScheduleForm, ScriptInputsForm, WebhookSettingsForm
+from core.services import connections as connection_service
 from core.services.maintenance import blocked_message
 from core.services.run_events import KIND_WEBHOOK, manual_event
 from core.services.webhook_signatures import header_for as signature_header_for
@@ -74,6 +75,46 @@ def _reconcile_grants(script, secret_ids, workspace) -> None:
         SecretGrant.objects.create(script=script, secret_id=sid, active=True)
     for sid in existing.keys() - valid:
         existing[sid].delete()
+
+
+def _reconcile_connections(request, script) -> None:
+    """Save the Connections box: only when the form had it (a post without it keeps the grants)."""
+    if "connections_section" in request.POST:
+        connection_service.set_grants(
+            script, request.POST.getlist("granted_connection_ids"), request.workspace
+        )
+
+
+def _connection_choices(workspace, script, creator) -> list:
+    """The workspace's connections for the script form's Connections box.
+
+    ``creator`` is the script's (the signed-in user for a new script): a
+    connection granted to all its creator's scripts reaches it too.
+    """
+    from core.integrations.presets import get_preset
+    from core.models import Connection, ConnectionGrant
+
+    granted = set()
+    if script is not None:
+        granted = {
+            str(pk) for pk in ConnectionGrant.objects.filter(script=script, active=True)
+            .values_list("connection_id", flat=True)
+        }
+    user_script = script is None or script.owner_plugin is None
+    choices = []
+    for c in Connection.objects.filter(workspace=workspace).order_by("name"):
+        preset = get_preset(c.provider)
+        choices.append({
+            "id": str(c.pk),
+            "name": c.name,
+            "provider_label": preset.label if preset else c.provider,
+            "granted": str(c.pk) in granted,
+            "by_wildcard": bool(
+                c.grant_all_scripts and user_script and creator is not None
+                and c.created_by_id is not None and c.created_by_id == creator.pk
+            ),
+        })
+    return choices
 
 
 def _reconcile_libraries(script, library_ids, workspace) -> None:
@@ -301,6 +342,7 @@ def script_create_view(request: HttpRequest) -> HttpResponse:
             if script.injection_mode == Script.InjectionMode.SELECTED:
                 _reconcile_grants(script, request.POST.getlist("granted_secret_ids"), request.workspace)
             _reconcile_libraries(script, request.POST.getlist("library_ids"), request.workspace)
+            _reconcile_connections(request, script)
             messages.success(request, f'Script "{script.name}" created successfully.')
             _warn_if_timeout_outruns_workers(request, script)
             _warn_on_env_var_collisions(request, script)
@@ -320,6 +362,7 @@ def script_create_view(request: HttpRequest) -> HttpResponse:
         "available_tags": available_tags,
         "selected_tag_ids": [],
         "granted_secrets": [],
+        "connection_choices": _connection_choices(request.workspace, None, request.user),
         "available_libraries": Library.objects.for_workspace(request.workspace).order_by("key"),
         "attached_library_ids": [],
         "env_secrets": editor_secret_names(None, request.workspace.pk if request.workspace else None),
@@ -407,6 +450,7 @@ def script_edit_view(request: HttpRequest, pk) -> HttpResponse:
             if script.injection_mode == Script.InjectionMode.SELECTED:
                 _reconcile_grants(script, request.POST.getlist("granted_secret_ids"), request.workspace)
             _reconcile_libraries(script, request.POST.getlist("library_ids"), request.workspace)
+            _reconcile_connections(request, script)
             schedule = schedule_form.save()
 
             # Capture new config
@@ -451,6 +495,7 @@ def script_edit_view(request: HttpRequest, pk) -> HttpResponse:
         "available_tags": available_tags,
         "selected_tag_ids": selected_tag_ids,
         "granted_secrets": granted_secrets,
+        "connection_choices": _connection_choices(request.workspace, script, script.created_by),
         "available_libraries": Library.objects.for_workspace(request.workspace).order_by("key"),
         "attached_library_ids": [str(pk) for pk in script.libraries.values_list("pk", flat=True)],
         # Names only, for the saved script: a refused POST has written the

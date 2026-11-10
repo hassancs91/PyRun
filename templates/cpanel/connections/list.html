@@ -1,0 +1,101 @@
+{% extends "cpanel/layout.html" %}
+{% load icon_tags %}
+
+{% block title %}Connections - {{ instance_name }}{% endblock %}
+
+{% block heading %}Connections{% endblock %}
+{% block subtitle %}Accounts on outside services your scripts call through pyrunner_connections{% endblock %}
+{% block actions %}
+{% if encryption_configured %}
+<a href="{% url 'cpanel:connection_create' %}" class="inline-flex items-center gap-2 text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">
+    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+    Add connection
+</a>
+{% endif %}
+{% endblock %}
+
+{% block page %}
+{% if not encryption_configured %}
+<div class="rounded-2xl border border-warn/30 bg-warn/10 p-5">
+    <h3 class="font-medium text-warn">Encryption not configured</h3>
+    <p class="text-sm text-muted mt-1">Set the <span class="font-mono text-text">ENCRYPTION_KEY</span> environment variable to add connections: their credentials are stored encrypted, like secrets.</p>
+</div>
+{% endif %}
+
+{% if rows %}
+<section class="rounded-2xl border border-line bg-panel overflow-hidden">
+    <div class="overflow-x-auto">
+    <table class="table-cards w-full sm:min-w-[720px]">
+        <thead>
+            <tr class="border-b border-line-soft text-left">
+                <th class="px-3 sm:px-6 py-3 eyebrow text-faint font-normal">Name</th>
+                <th class="px-3 sm:px-6 py-3 eyebrow text-faint font-normal">Provider</th>
+                <th class="px-3 sm:px-6 py-3 eyebrow text-faint font-normal">Status</th>
+                <th class="px-3 sm:px-6 py-3 eyebrow text-faint font-normal">Used by</th>
+                <th class="px-3 sm:px-6 py-3 eyebrow text-faint font-normal text-right">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-line-soft">
+            {% for row in rows %}{% with c=row.connection %}
+            <tr class="group hover:bg-panel-hi/50 transition-colors">
+                <td class="px-3 sm:px-6 py-3.5">
+                    <a href="{% url 'cpanel:connection_edit' pk=c.pk %}" class="font-mono text-sm text-info hover:underline">{{ c.name }}</a>
+                    {% if c.account_label %}<div class="text-xs text-faint mt-0.5">{{ c.account_label }}</div>{% endif %}
+                </td>
+                <td data-label="Provider" class="px-3 sm:px-6 py-3.5 text-sm text-muted">{{ row.provider_label }} <span class="text-xs text-faint">· {{ c.get_auth_kind_display }}</span></td>
+                <td data-label="Status" class="px-3 sm:px-6 py-3.5 text-sm">
+                    {% if c.status == "ok" %}
+                        {% if c.last_tested_at %}<span class="text-ok">OK</span> <span class="text-xs text-faint">· tested {{ c.last_tested_at|timesince }} ago</span>{% else %}<span class="text-muted">Not tested yet</span>{% endif %}
+                    {% elif c.status == "error" %}
+                        <span class="text-fail">Test failed</span>{% if c.last_error %}<div class="text-xs text-faint mt-0.5 max-w-xs truncate" title="{{ c.last_error }}">{{ c.last_error }}</div>{% endif %}
+                    {% else %}
+                        <span class="text-warn">{{ c.get_status_display }}</span>
+                    {% endif %}
+                </td>
+                <td data-label="Used by" class="px-3 sm:px-6 py-3.5 text-sm text-muted">
+                    {% if row.used_by_count %}{{ row.used_by|join:", " }}{% if row.used_by_count > row.used_by|length %} and {{ row.used_by_count|add:"-6" }} more{% endif %}{% else %}<span class="text-faint">No scripts</span>{% endif %}
+                    {% if c.grant_all_scripts %}<div class="text-xs text-faint mt-0.5">Granted to all of {{ c.created_by.email|default:"its creator" }}'s scripts</div>{% endif %}
+                </td>
+                <td class="tc-actions px-3 sm:px-6 py-3.5">
+                    <div class="flex items-center justify-end gap-2">
+                        {% if c.status != "revoked" %}
+                        <form method="post" action="{% url 'cpanel:connection_test' pk=c.pk %}" class="inline">
+                            {% csrf_token %}
+                            <button type="submit" class="text-[13px] px-3 py-1.5 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Test</button>
+                        </form>
+                        {% endif %}
+                        <a href="{% url 'cpanel:connection_edit' pk=c.pk %}" class="text-[13px] px-3 py-1.5 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Edit</a>
+                        <form method="post" action="{% url 'cpanel:connection_delete' pk=c.pk %}" onsubmit="return confirm('Delete the connection {{ c.name|escapejs }}? Scripts using it will fail.');" class="inline">
+                            {% csrf_token %}
+                            <button type="submit" class="text-[13px] px-3 py-1.5 rounded-lg border border-fail/30 bg-fail/10 text-fail hover:bg-fail/20 transition-colors">Delete</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            {% endwith %}{% endfor %}
+        </tbody>
+    </table>
+    </div>
+</section>
+{% else %}
+<section class="rounded-2xl border border-line bg-panel px-6 py-16 text-center">
+    <div class="w-14 h-14 rounded-full bg-info/10 grid place-items-center mx-auto mb-4">
+        {% icon "link" class="w-7 h-7 text-info" %}
+    </div>
+    <h3 class="text-base font-semibold mb-1">No connections yet</h3>
+    <p class="text-sm text-muted mb-6">Add an Airtable token, an HTTP API's key or login, or an SMTP server, then grant it to the scripts that need it.</p>
+    {% if encryption_configured %}
+    <a href="{% url 'cpanel:connection_create' %}" class="inline-flex items-center gap-2 text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">Add connection</a>
+    {% endif %}
+</section>
+{% endif %}
+
+<div class="rounded-2xl border border-line bg-panel p-5">
+    <h3 class="text-sm font-medium text-text mb-2">Using connections in scripts</h3>
+    <p class="text-sm text-muted mb-3">Grant a connection to a script (here, or in the script's Connections box). The script asks for it by name; its credentials never enter the script's environment and are masked in its output.</p>
+    <code class="block px-3 py-3 bg-ink border border-line-soft rounded-lg text-sm font-mono text-text whitespace-pre overflow-x-auto">import pyrunner_connections
+
+api = pyrunner_connections.client("airtable")
+print(api.get("/v0/meta/bases").json())</code>
+</div>
+{% endblock %}
