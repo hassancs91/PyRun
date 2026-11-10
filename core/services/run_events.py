@@ -125,12 +125,23 @@ def cap_event(event: dict) -> dict:
     no body to cut), only ``kind``, ``received_at`` and ``truncated`` are kept.
     It never raises for a payload JSON can't encode (too deeply nested, say):
     that payload is left out the same way. The run always starts.
+
+    A ``body_json`` nested too deep to store (Python's parser takes a few
+    thousand levels, storing stops near 1,000) is not a size cut: the event
+    keeps ``body`` as text without ``body_json`` and isn't marked
+    ``truncated``, like a body that isn't JSON at all.
     """
     try:
         cleaned = _clean(event)
         if json_size(cleaned) <= EVENT_MAX_BYTES:
             return cleaned
     except (RecursionError, TypeError, ValueError) as e:
+        if "body_json" in event:
+            logger.warning(
+                "Run event (%s) keeps the body as text only: its parsed JSON can't be stored (%s)",
+                event.get("kind"), e,
+            )
+            return cap_event({k: v for k, v in event.items() if k != "body_json"})
         # Expected for a hostile body (nested too deep); a caller passing a
         # non-JSON value is a bug, so say what was dropped either way.
         logger.warning("Run event (%s) can't be stored as is (%s); reducing it", event.get("kind"), e)

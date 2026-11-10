@@ -212,15 +212,22 @@ read the body file. The same happens for a body that holds a NUL character
 (no environment variable can) and for a body that isn't UTF-8 (whose
 `WEBHOOK_BODY` was always `""`).
 
-A JSON body gets `body_json` only when Python can parse it: one nested deeper
-than about 1,000 levels, or with a number over 4,300 digits, stays text only.
+A JSON body gets `body_json` in the event only when it can be stored parsed:
+one nested deeper than about 1,000 levels, or with a number over 4,300
+digits, stays text only there (`body`, no `body_json`, and not `truncated`).
+`WEBHOOK_BODY_JSON` is set as before 2.5, whenever Python's parser reads the
+body: that can be a few thousand levels deep, so for a body nested between
+the two it is set while the event has no `body_json`.
+
+A body that arrives shorter than its `Content-Length` (the sender hung up
+mid-body) gets **400** and no run.
 
 **Recent deliveries.** The script page's Webhook card lists the last 20 calls:
 their run's status, how long it ran, and the HTTP status PyRun answered with
 (200 queued or skipped, 503 during a maintenance window, 500 if the run
 couldn't be queued). Calls refused before a run exists (a wrong URL, a missing
 or wrong signature, a rate limit, a disabled script, a required input with no
-default, 413) aren't listed. Retries of a failed run aren't calls and aren't
+default, a body cut short, 413) aren't listed. Retries of a failed run aren't calls and aren't
 listed either.
 
 #### Webhook signatures

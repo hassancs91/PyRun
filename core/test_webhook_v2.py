@@ -24,6 +24,7 @@ What this pins, roughly in order of how much it would hurt to get wrong:
 
 import base64
 import hashlib
+import io
 import json
 import os
 import subprocess
@@ -399,6 +400,44 @@ class EnvelopeTests(_Fixture, TestCase):
             self.assertNotIn("body_json", webhook_data)
             self.assertEqual(run.event["body_size"], len(body))
 
+    def test_json_nested_deeper_than_the_event_can_store_stays_text_in_the_event(self):
+        # 2.5 test pass, F1: Python's parser takes deeper nesting than the
+        # event can store. The event keeps the body as text, without
+        # body_json and without ``truncated`` (it is 3 KB, far under the cap);
+        # WEBHOOK_BODY / WEBHOOK_BODY_JSON stay what they always were.
+        script = self._webhook_script()
+        for depth in (1_500, 3_000):
+            body = "[" * depth + "]" * depth
+            Run.objects.filter(script=script).delete()
+            _, run, webhook_data = self._post(script, data=body, content_type="application/json")
+            run.refresh_from_db()
+            event = run.event
+            self.assertEqual(event["body"], body, depth)
+            self.assertEqual(event["body_size"], len(body), depth)
+            self.assertNotIn("body_json", event, depth)
+            self.assertNotIn("truncated", event, depth)
+            self.assertNotIn("body_truncated", event, depth)
+
+            try:
+                parsed = json.loads(body)
+            except RecursionError:  # the C parser's own depth limit (platform)
+                parsed = None
+            expected_env = {"WEBHOOK_BODY": body}
+            if parsed is not None:
+                self.assertEqual(webhook_data["body_json"], parsed, depth)
+                expected_env["WEBHOOK_BODY_JSON"] = json.dumps(parsed)
+            else:
+                self.assertNotIn("body_json", webhook_data, depth)
+            self.assertEqual(body_env(webhook_data), expected_env, depth)
+
+    def test_json_the_event_can_store_keeps_body_json(self):
+        script = self._webhook_script()
+        body = "[" * 900 + "]" * 900
+        _, run, _ = self._post(script, data=body, content_type="application/json")
+        run.refresh_from_db()
+        self.assertIn("body_json", run.event)
+        self.assertNotIn("truncated", run.event)
+
     def test_the_builder_still_takes_v1_data_alone(self):
         event = webhook_event({"method": "POST", "query": {}, "content_type": "", "body": "hi"})
         self.assertEqual(event["body_size"], 2)
@@ -421,6 +460,48 @@ class TooLargeTests(_Fixture, TestCase):
         script = self._webhook_script()
         _, run, webhook_data = self._post(script, data="a" * 1000, content_type="text/plain")
         self.assertEqual(len(webhook_data["body"]), 1000)
+
+
+class CutShortBodyTests(_Fixture, TestCase):
+    """A sender that hangs up mid-body (2.5 test pass, F2): the WSGI server
+    hands over the bytes that arrived without an error, so the body is
+    shorter than its Content-Length. It gets 400 and no run, signed or not."""
+
+    def _cut_short(self, script, sent=b'{"order": 1', declared=1000, **headers):
+        url = reverse("webhook_trigger", args=[script.webhook_token])
+        with mock.patch("core.tasks.async_task", return_value="t") as task:
+            resp = self.client.generic(
+                "POST", url, content_type="application/json", headers=headers,
+                **{"wsgi.input": io.BytesIO(sent), "CONTENT_LENGTH": str(declared)},
+            )
+        self.task_called = task.called
+        return resp
+
+    def test_a_body_shorter_than_its_content_length_gets_400_and_no_run(self):
+        script = self._webhook_script()
+        with self.assertLogs("core.views.webhooks", "WARNING") as logs:
+            resp = self._cut_short(script)
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertEqual(resp.json(), {"error": "Could not read the request body."})
+        self.assertIn("ended after 11 of 1000 bytes", "\n".join(logs.output))
+        self.assertFalse(Run.objects.filter(script=script).exists())
+        self.assertFalse(self.task_called)
+
+    def test_a_signed_script_refuses_it_before_checking_the_signature(self):
+        script = self._webhook_script(webhook_signature=Script.WebhookSignature.GITHUB)
+        script.set_webhook_signature_secret("s")
+        script.save()
+        resp = self._cut_short(script, **{"X-Hub-Signature-256": "sha256=" + "0" * 64})
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertFalse(Run.objects.filter(script=script).exists())
+
+    def test_a_whole_body_is_still_taken(self):
+        script = self._webhook_script()
+        body = b'{"order": 1}'
+        resp = self._cut_short(script, sent=body, declared=len(body))
+        self.assertEqual(resp.status_code, 200, resp.content)
+        run = Run.objects.get(script=script)
+        self.assertEqual(run.event["body"], body.decode())
 
 
 # --------------------------------------------------------------------------- #

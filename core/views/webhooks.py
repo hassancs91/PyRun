@@ -106,7 +106,7 @@ def webhook_trigger_view(request: HttpRequest, token: str) -> JsonResponse:
     # about the script and never gets a run.
     if webhook_signatures.required(script):
         try:
-            body = request.body
+            body = _request_body(request)
         except (RequestDataTooBig, UnreadablePostError) as e:
             return _body_refused(script, e)
         failure = webhook_signatures.verify(script, request.headers, body)
@@ -273,6 +273,25 @@ def _inputs_rejected(error: ScriptInputsError) -> JsonResponse:
     )
 
 
+def _request_body(request: HttpRequest) -> bytes:
+    """The request's body, all of it.
+
+    ``request.body`` raises RequestDataTooBig over DATA_UPLOAD_MAX_MEMORY_SIZE
+    and UnreadablePostError when a read fails. A sender that hangs up
+    mid-body doesn't always fail the read: the WSGI server hands over the
+    bytes that arrived. A body shorter than its Content-Length is refused
+    the same way, so no run starts on part of a payload.
+    """
+    body = request.body
+    try:
+        declared = int(request.META.get("CONTENT_LENGTH") or 0)
+    except ValueError:
+        declared = 0
+    if len(body) < declared:
+        raise UnreadablePostError(f"the body ended after {len(body)} of {declared} bytes")
+    return body
+
+
 def _record_response_code(run: Run, code: int) -> None:
     """Store the status a call is about to get, on a run with no task."""
     run.response_code = code
@@ -309,7 +328,7 @@ def _extract_webhook_data(request: HttpRequest) -> dict:
 
     # Extract body for POST requests
     if request.method == "POST":
-        raw = request.body
+        raw = _request_body(request)
         try:
             body = raw.decode("utf-8")
         except UnicodeDecodeError:

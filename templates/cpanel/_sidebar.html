@@ -44,8 +44,8 @@
 
         {# Scripts #}
         <a href="{% url 'cpanel:script_list' %}"
-           class="relative flex items-center gap-3 px-3 py-1.5 rounded-md text-sm transition-colors {% if 'script' in request.resolver_match.url_name %}font-medium text-ok bg-ok/10{% else %}text-muted hover:text-text hover:bg-panel-hi{% endif %}">
-            {% if 'script' in request.resolver_match.url_name %}<span class="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-ok"></span>{% endif %}
+           class="relative flex items-center gap-3 px-3 py-1.5 rounded-md text-sm transition-colors {% if 'script' in request.resolver_match.url_name or request.resolver_match.url_name == 'webhook_settings' %}font-medium text-ok bg-ok/10{% else %}text-muted hover:text-text hover:bg-panel-hi{% endif %}">
+            {% if 'script' in request.resolver_match.url_name or request.resolver_match.url_name == 'webhook_settings' %}<span class="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-ok"></span>{% endif %}
             {% icon "file-code-2" %}
             <span>Scripts</span>
         </a>
@@ -166,8 +166,8 @@
 
         {# Settings #}
         <a href="{% url 'cpanel:settings' %}"
-           class="relative flex items-center gap-3 px-3 py-1.5 rounded-md text-sm transition-colors {% if 'settings' in request.resolver_match.url_name and 'brain' not in request.resolver_match.url_name %}font-medium text-ok bg-ok/10{% else %}text-muted hover:text-text hover:bg-panel-hi{% endif %}">
-            {% if 'settings' in request.resolver_match.url_name and 'brain' not in request.resolver_match.url_name %}<span class="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-ok"></span>{% endif %}
+           class="relative flex items-center gap-3 px-3 py-1.5 rounded-md text-sm transition-colors {% if 'settings' in request.resolver_match.url_name and 'brain' not in request.resolver_match.url_name and request.resolver_match.url_name != 'webhook_settings' %}font-medium text-ok bg-ok/10{% else %}text-muted hover:text-text hover:bg-panel-hi{% endif %}">
+            {% if 'settings' in request.resolver_match.url_name and 'brain' not in request.resolver_match.url_name and request.resolver_match.url_name != 'webhook_settings' %}<span class="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-ok"></span>{% endif %}
             {% icon "settings" %}
             <span>Settings</span>
         </a>

@@ -508,6 +508,19 @@ class SettingsPageTests(_Fixture, TestCase):
         self.assertIn("60/min · 30/s", detail)
         self.assertNotIn("gets 401", detail)
 
+    def test_the_sidebar_marks_scripts_not_the_global_settings(self):
+        # 2.5 test pass: the page's URL name holds "settings" and not
+        # "script", which lit the global Settings item instead of Scripts.
+        self.user.is_superuser = True  # only superusers see the Settings item
+        self.user.save(update_fields=["is_superuser"])
+        page = self.client.get(self.url).content.decode()
+
+        def anchor(href):
+            return page.split(f'href="{href}"', 1)[1].split(">", 1)[0]
+
+        self.assertIn("font-medium text-ok", anchor(reverse("cpanel:script_list")))
+        self.assertNotIn("font-medium text-ok", anchor(reverse("cpanel:settings")))
+
 
 class BackupAndForkTests(_Fixture, TestCase):
     def setUp(self):

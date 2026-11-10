@@ -390,7 +390,8 @@ class CapTests(_Fixture, TestCase):
             deep = [deep]
         with self.assertLogs("core.services.run_events", "WARNING"):
             event = self._webhook("[[[...]]]", deep)
-        self.assertTrue(event["truncated"])
+        # Not a size cut: the body stays, as text only (2.5 test pass, F1).
+        self.assertNotIn("truncated", event)
         self.assertNotIn("body_json", event)
         self.assertEqual(event["body"], "[[[...]]]")
 
