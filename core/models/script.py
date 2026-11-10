@@ -310,6 +310,21 @@ class Script(models.Model):
         help_text="Webhook calls accepted within any one second.",
     )
 
+    # Webhook reply mode (2.5, T22). Async answers as soon as the run is
+    # queued; sync waits for the run and answers with what the script set
+    # with pyrunner_run.respond() (core.services.webhook_reply). A call can
+    # ask for sync itself with ?sync=1.
+    class WebhookMode(models.TextChoices):
+        ASYNC = "async", "Async: answer as soon as the run is queued"
+        SYNC = "sync", "Sync: wait for the run and answer with its reply"
+
+    webhook_mode = models.CharField(
+        max_length=10,
+        choices=WebhookMode.choices,
+        default=WebhookMode.ASYNC,
+        help_text="How a webhook call is answered: at once (async) or with the run's reply (sync).",
+    )
+
     # Script as an MCP tool (2.5, T14; core.api.script_tools holds the rules).
     # On: MCP tools/list shows the script as the tool ``tool_name`` to tokens
     # that may run it, and calling the tool is scripts.run with wait. Exposed

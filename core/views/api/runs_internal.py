@@ -4,6 +4,7 @@ about itself through ``pyrunner_run``.
 
 POST /internal/runs/result    body: {"result": {...}}
 POST /internal/runs/progress  body: {"pct": 40, "message": "..."}  (either or both)
+POST /internal/runs/respond   body: {"status": 200, "body": ..., "headers": {...}}
 
 Authenticated by the same signed per-run token as the other internal routes.
 The run is the one named in that token, never one named in the body, so a
@@ -20,7 +21,7 @@ from django.http import HttpRequest, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
-from core.services.run_reports import RunReportError, store_progress, store_result
+from core.services.run_reports import RunReportError, store_progress, store_response, store_result
 from core.views.api.decorators import internal_datastore_token_required
 
 logger = logging.getLogger(__name__)
@@ -72,3 +73,15 @@ def progress(request: HttpRequest) -> JsonResponse:
     except RunReportError as e:
         return _error(run_id, e)
     return JsonResponse({"ok": True, "progress": stored})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@internal_datastore_token_required
+def respond(request: HttpRequest) -> JsonResponse:
+    run_id = request.datastore_run.get("run_id")
+    try:
+        size = store_response(run_id, _json_object(request))
+    except RunReportError as e:
+        return _error(run_id, e)
+    return JsonResponse({"ok": True, "bytes": size})

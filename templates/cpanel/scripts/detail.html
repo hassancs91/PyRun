@@ -288,6 +288,10 @@
             </div>
             <dl class="space-y-2 text-sm" id="webhook-settings-summary">
                 <div class="flex items-center justify-between gap-3">
+                    <dt class="text-muted">Reply</dt>
+                    <dd class="text-text text-right">{% if script.webhook_mode == 'sync' %}Sync <span class="text-faint text-xs">waits for the run</span>{% else %}Async <span class="text-faint text-xs">at once</span>{% endif %}</dd>
+                </div>
+                <div class="flex items-center justify-between gap-3">
                     <dt class="text-muted">Signature</dt>
                     <dd class="text-text text-right">{% if script.webhook_signature != 'none' %}{{ script.get_webhook_signature_display }}{% if webhook_signature_header %} <span class="text-faint font-mono text-xs">{{ webhook_signature_header }}</span>{% endif %}{% else %}<span class="text-muted">None</span>{% endif %}</dd>
                 </div>
@@ -295,15 +299,22 @@
                     <dt class="text-muted">Rate limit</dt>
                     <dd class="text-text font-mono tnum text-xs">{{ script.webhook_rate_per_minute }}/min · {{ script.webhook_rate_burst }}/s</dd>
                 </div>
-                <div><a href="{% url 'cpanel:webhook_settings' pk=script.pk %}" class="text-xs text-info hover:underline">Signature and limits</a></div>
+                <div><a href="{% url 'cpanel:webhook_settings' pk=script.pk %}" class="text-xs text-info hover:underline">Reply, signature and limits</a></div>
             </dl>
             <div>
-                <button type="button" id="curl-toggle-btn" onclick="toggleCurlExample()" class="text-xs text-info hover:underline">Show curl example</button>
-                {% if script.webhook_signature != 'none' %}<p class="text-xs text-faint mt-1">Calls must carry a valid {{ script.get_webhook_signature_display }} signature: an unsigned call like this example gets 401.</p>{% endif %}
-                <pre id="curl-example" class="hidden mt-2 p-3 bg-ink border border-line-soft rounded-lg text-xs font-mono text-muted overflow-x-auto">curl -X POST \
+                <button type="button" id="curl-toggle-btn" onclick="toggleCurlExample()" class="text-xs text-info hover:underline">Show curl examples</button>
+                {% if script.webhook_signature != 'none' %}<p class="text-xs text-faint mt-1">Calls must carry a valid {{ script.get_webhook_signature_display }} signature: an unsigned call like the examples below gets 401.</p>{% endif %}
+                <pre id="curl-example" class="hidden mt-2 p-3 bg-ink border border-line-soft rounded-lg text-xs font-mono text-muted overflow-x-auto"># {% if script.webhook_mode == 'sync' %}Waits for the run and answers with its reply (sync mode){% else %}Answers at once with the run id{% endif %}
+curl -X POST \
   -H "Content-Type: application/json" \
   -d '{"key": "value"}' \
-  "{{ request.scheme }}://{{ request.get_host }}{% url 'webhook_trigger' token=script.webhook_token %}"</pre>
+  "{{ request.scheme }}://{{ request.get_host }}{% url 'webhook_trigger' token=script.webhook_token %}"{% if script.webhook_mode != 'sync' %}
+
+# Waits for the run and answers with its reply
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"key": "value"}' \
+  "{{ request.scheme }}://{{ request.get_host }}{% url 'webhook_trigger' token=script.webhook_token %}?sync=1"{% endif %}</pre>
             </div>
             <div class="flex items-center gap-3 pt-1">
                 <form method="post" action="{% url 'cpanel:webhook_regenerate' pk=script.pk %}" onsubmit="return confirm('Regenerate webhook URL? The old URL will stop working.');">
@@ -499,10 +510,10 @@ function toggleCurlExample() {
     var toggleBtn = document.getElementById('curl-toggle-btn');
     if (curlExample.classList.contains('hidden')) {
         curlExample.classList.remove('hidden');
-        toggleBtn.textContent = 'Hide curl example';
+        toggleBtn.textContent = 'Hide curl examples';
     } else {
         curlExample.classList.add('hidden');
-        toggleBtn.textContent = 'Show curl example';
+        toggleBtn.textContent = 'Show curl examples';
     }
 }
 </script>

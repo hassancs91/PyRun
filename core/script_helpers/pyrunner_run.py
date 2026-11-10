@@ -5,8 +5,9 @@ it, its id, and a way to report back a structured result and live progress.
 Stdlib only. ``inputs()``, ``event()`` and ``run_id()`` read what PyRun hands
 every run (the ``PYRUNNER_RUN_FILE`` JSON file and ``PYRUNNER_RUN_ID``). ``set_result()`` and
 ``progress()`` POST to PyRun's internal loopback API with this run's signed
-token, so a script can only ever report on its own run. PyRun masks secret
-values in both before it stores them.
+token, so a script can only ever report on its own run, and so does
+``respond()`` (the reply a webhook call that waits for the run gets). PyRun
+masks secret values in all of them before it stores them.
 
 Usage:
     import pyrunner_run
@@ -16,6 +17,7 @@ Usage:
     pyrunner_run.progress(10, "Fetching pages")
     ...
     pyrunner_run.set_result({"pages": 12, "ok": True})
+    pyrunner_run.respond(200, {"ok": True})     # the reply a waiting webhook call gets
 
     @pyrunner_run.on_stop                      # Stop button, SDK cancel or timeout
     def save_work():
@@ -27,6 +29,7 @@ import http.client
 import json
 import math
 import os
+import re
 import signal
 import sys
 import threading
@@ -35,7 +38,7 @@ import traceback
 import urllib.error
 import urllib.request
 
-__all__ = ["RunError", "event", "inputs", "on_stop", "progress", "run_id", "set_result"]
+__all__ = ["RunError", "event", "inputs", "on_stop", "progress", "respond", "run_id", "set_result"]
 
 # Same limits PyRun enforces (core/services/run_reports.py); checked here too so
 # a mistake fails in the script with a clear message instead of a refused request.
@@ -150,8 +153,10 @@ def set_result(result: dict) -> None:
     ``result`` must be a dict that ``json.dumps`` can encode (no NaN or
     Infinity), at most 256 KB as JSON. It shows on the run page, in the
     plugin SDK's ``RunView`` and in notifications. Calling it again replaces
-    the earlier result. Raises ``RunError`` when PyRun refuses or can't be
-    reached, so a lost result never goes unnoticed.
+    the earlier result, but keeps a webhook reply set with ``respond()``
+    (unless ``result`` has its own ``http_response``). Raises ``RunError``
+    when PyRun refuses or can't be reached, so a lost result never goes
+    unnoticed.
     """
     if not isinstance(result, dict):
         raise TypeError(f"set_result() takes a dict (a JSON object), not {type(result).__name__}")
@@ -166,6 +171,103 @@ def set_result(result: dict) -> None:
             "Store large data in a DataStore or Storage and return a reference to it."
         )
     _post("result", ('{"result":' + text + "}").encode("utf-8"), _RESULT_TIMEOUT)
+
+
+# The headers a reply may set (PyRun's rules: core/services/webhook_reply.py).
+RESPONSE_HEADERS = ("Content-Type", "Cache-Control", "Content-Language", "Retry-After")
+RESPONSE_CONTENT_TYPES = (
+    "application/json",
+    "application/x-www-form-urlencoded",
+    "application/xml",
+    "text/csv",
+    "text/plain",
+    "text/xml",
+)
+RESPONSE_HEADER_MAX_CHARS = 1000
+_JSON_SUFFIX_RE = re.compile(r"^application/[a-z0-9][a-z0-9.!#$&^_-]*\+json$")
+
+
+def _response_content_type_allowed(value: str) -> bool:
+    media = value.split(";", 1)[0].strip().lower()
+    if media in RESPONSE_CONTENT_TYPES:
+        return True
+    # application/problem+json, application/vnd.api+json, ...
+    return bool(_JSON_SUFFIX_RE.match(media))
+
+
+def _response_headers(headers) -> dict:
+    if headers is None:
+        return {}
+    if not isinstance(headers, dict):
+        raise TypeError(f"headers must be a dict, not {type(headers).__name__}")
+    names = {name.lower(): name for name in RESPONSE_HEADERS}
+    checked = {}
+    for name, value in headers.items():
+        canonical = names.get(name.lower()) if isinstance(name, str) else None
+        if canonical is None:
+            raise ValueError(
+                f"respond() can't set the header {name!r}: a reply may set only "
+                + ", ".join(RESPONSE_HEADERS) + "."
+            )
+        if canonical in checked:
+            raise ValueError(f"The {canonical} header is given twice.")
+        if isinstance(value, int) and not isinstance(value, bool):
+            value = str(value)  # Retry-After=30
+        if not isinstance(value, str):
+            raise TypeError(f"The {canonical} header's value must be a string, not {type(value).__name__}")
+        if len(value) > RESPONSE_HEADER_MAX_CHARS or any(c in value for c in "\r\n\0"):
+            raise ValueError(
+                f"The {canonical} header's value must be one line of at most "
+                f"{RESPONSE_HEADER_MAX_CHARS} characters."
+            )
+        if canonical == "Content-Type" and not _response_content_type_allowed(value):
+            raise ValueError(
+                f"Content-Type {value!r} isn't allowed: use application/json (or "
+                "application/...+json), text/plain, text/csv, application/xml, text/xml "
+                "or application/x-www-form-urlencoded."
+            )
+        checked[canonical] = value
+    return checked
+
+
+def respond(status=200, body=None, headers=None) -> None:
+    """Set the HTTP reply a webhook call that waits for this run gets.
+
+    A webhook call waits for the run when the script's webhook mode is sync,
+    or when the caller adds ``?sync=1`` to the URL. Once the run has ended,
+    the caller gets ``status`` (an integer; PyRun sends it clamped to
+    200-599), ``body`` and ``headers``:
+
+    - ``body`` ``None`` sends an empty body; a ``str`` is sent as text
+      (``text/plain; charset=utf-8``); a dict, list, number or bool is sent
+      as JSON (``application/json``).
+    - ``headers`` may set only Content-Type (a data type such as
+      ``application/json``, ``text/plain`` or ``text/xml``, never a web
+      page), Cache-Control, Content-Language and Retry-After.
+
+    The reply is stored in the run's result under ``http_response`` (the rest
+    of the result is kept, and ``set_result()`` keeps the reply), masked like
+    the result. Calling it again replaces the reply. A call that doesn't wait
+    gets its answer at once, so the reply is only stored. Raises ``RunError``
+    when PyRun refuses or can't be reached, ``TypeError`` / ``ValueError`` for
+    wrong arguments.
+    """
+    if isinstance(status, bool) or not isinstance(status, int):
+        raise TypeError(f"status must be an integer, not {type(status).__name__}")
+    if isinstance(body, (bytes, bytearray)):
+        raise TypeError("body must be text, a JSON value or None: decode bytes first")
+    reply = {"status": status, "headers": _response_headers(headers), "body": body}
+    try:
+        text = json.dumps(reply, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+    except (TypeError, ValueError, RecursionError) as e:
+        raise ValueError(f"The body can't be sent as JSON: {e}") from None
+    size = len(text.encode("utf-8"))
+    if size > RESULT_MAX_BYTES:
+        raise ValueError(
+            f"The reply is {size:,} bytes as JSON; a result, reply included, is at most "
+            f"{RESULT_MAX_BYTES:,}."
+        )
+    _post("respond", text.encode("utf-8"), _RESULT_TIMEOUT)
 
 
 # --------------------------------------------------------------------------- #

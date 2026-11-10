@@ -297,6 +297,19 @@ begins tracking at the current release; earlier history is in the git log.
   limits** on the script page. Guide: "Webhook signatures" and "Webhook rate
   limits" in `docs/run-context.md`, with recipes for Stripe, GitHub and
   Shopify.
+- **A webhook call can wait for the script's reply.** Add `?sync=1` to the
+  URL, or set the script's reply mode to Sync, and the call waits for the run
+  and gets the reply the script sets with `pyrunner_run.respond(status, body,
+  headers)`: its status (200 to 599), a text or JSON body, and a few safe
+  headers. The reply is stored in the run's result, with secret values masked.
+  A call waits at most the script's timeout or 55 seconds; past that it gets
+  202 with the run's id and a `Location` for the API's `runs.get`. At most 4
+  calls wait at once, together with the API's waits (the rest get 202 at
+  once); with no worker running a waiting call gets 503, and a script that is
+  already running under the Skip policy answers 409. Calls without `?sync=1`
+  on a script left in Async mode are answered as before. Set the mode under
+  **Webhook → Reply, signature and limits**. Guide: "Synchronous replies" in
+  `docs/run-context.md`, with a Slack slash-command example.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

@@ -432,7 +432,7 @@ class SettingsPageTests(_Fixture, TestCase):
 
     def _save(self, expect_errors=False, **fields):
         data = {
-            "webhook_signature": "none", "webhook_signature_encoding": "hex",
+            "webhook_mode": "async", "webhook_signature": "none", "webhook_signature_encoding": "hex",
             "webhook_signature_tolerance": 300, "webhook_rate_per_minute": 60, "webhook_rate_burst": 30,
         }
         data.update(fields)
@@ -460,7 +460,7 @@ class SettingsPageTests(_Fixture, TestCase):
         self.assertIn("Stripe", detail)
         self.assertIn("Stripe-Signature", detail)
         self.assertIn("10/min · 5/s", detail)
-        self.assertIn("an unsigned call like this example gets 401", detail)
+        self.assertIn("an unsigned call like the examples below gets 401", detail)
 
     def test_a_blank_secret_keeps_the_stored_one_and_none_clears_it(self):
         self._save(webhook_signature="github", signature_secret="first")

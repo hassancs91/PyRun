@@ -309,7 +309,7 @@ class BundledDocsTests(SimpleTestCase):
             ("Webhook signatures", "docs/run-context.md",
              BASE + "docs/run-context.md#webhook-signatures"),
         )
-        self.assertIn("Signature and limits", best["snippet"])
+        self.assertIn("Reply, signature and limits", best["snippet"])
 
 
 class MissingCorpusTests(SimpleTestCase):

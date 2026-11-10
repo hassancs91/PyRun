@@ -237,9 +237,10 @@ class Run(models.Model):
 
     # Webhook v2 (2.5, T20): the HTTP status the webhook call that created
     # this run was answered with (200 queued or skipped, 503 maintenance, 500
-    # failed to queue). NULL for other triggers, for retries (no call made
-    # them) and for webhook runs from before 2.5. The script page's Recent
-    # deliveries shows it.
+    # failed to queue; a sync call (T22): its reply's status, 202 when the
+    # wait ran out, 409 skipped). NULL for other triggers, for retries (no
+    # call made them) and for webhook runs from before 2.5. The script page's
+    # Recent deliveries shows it.
     response_code = models.PositiveSmallIntegerField(
         null=True,
         blank=True,

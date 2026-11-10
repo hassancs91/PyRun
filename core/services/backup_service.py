@@ -183,6 +183,8 @@ class BackupService:
     # signature and the default limits). A value that isn't valid falls back
     # to its default (core.services.webhook_signatures.restored_settings); an
     # unknown preset restores as none and is named in the warnings.
+    # ``webhook_mode`` on scripts (async | sync; older backups and anything
+    # else: async).
     BACKUP_VERSION = "1.13.0"
     MAX_BACKUP_SIZE_MB = 100
     # Default cap on a gzip backup's expanded size (F92, zip-bomb guard);
@@ -486,6 +488,7 @@ class BackupService:
                 "webhook_signature_tolerance": script.webhook_signature_tolerance,
                 "webhook_rate_per_minute": script.webhook_rate_per_minute,
                 "webhook_rate_burst": script.webhook_rate_burst,
+                "webhook_mode": script.webhook_mode,
                 "notify_on": script.notify_on,
                 "notify_email": script.notify_email,
                 "notify_webhook_url": script.notify_webhook_url,

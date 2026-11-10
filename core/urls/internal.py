@@ -22,6 +22,7 @@ from core.views.api.datastore_internal import (
 )
 from core.views.api.runs_internal import (
     progress as runs_progress,
+    respond as runs_respond,
     result as runs_result,
 )
 from core.views.api.storage_internal import (
@@ -47,6 +48,7 @@ urlpatterns = [
     path("databases/<str:name>/dsn", resolve_dsn, name="databases_dsn"),
     path("runs/result", runs_result, name="runs_result"),
     path("runs/progress", runs_progress, name="runs_progress"),
+    path("runs/respond", runs_respond, name="runs_respond"),
     path("storage/put", storage_put, name="storage_put"),
     path("storage/get", storage_get, name="storage_get"),
     path("storage/delete", storage_delete, name="storage_delete"),

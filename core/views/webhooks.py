@@ -5,16 +5,18 @@ Webhook views for triggering scripts via HTTP.
 import base64
 import json
 import logging
+from contextlib import ExitStack
 
 from django.conf import settings
 from django.core.exceptions import RequestDataTooBig
-from django.http import JsonResponse, HttpRequest, UnreadablePostError
+from django.http import HttpResponse, JsonResponse, HttpRequest, UnreadablePostError
+from django.urls import reverse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from core.models import Script, Run
 from core.ratelimit import client_ip, rate_limit_exceeded, rate_limit_over, seconds_to_window_reset
-from core.services import webhook_signatures
+from core.services import run_wait, webhook_reply, webhook_signatures
 from core.services.run_events import webhook_event
 from core.services.script_inputs import ScriptInputsError, prepare_inputs
 from core.services.webhook_request import BODY_BASE64, event_headers
@@ -34,7 +36,7 @@ WEBHOOK_AUTHFAIL_LIMIT = 30
 
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
-def webhook_trigger_view(request: HttpRequest, token: str) -> JsonResponse:
+def webhook_trigger_view(request: HttpRequest, token: str) -> HttpResponse:
     """
     Public endpoint to trigger script execution via webhook.
 
@@ -46,6 +48,10 @@ def webhook_trigger_view(request: HttpRequest, token: str) -> JsonResponse:
     Args:
         request: The HTTP request
         token: The webhook token (64-char URL-safe string)
+
+    A call waits for its run when the script's webhook mode is sync or the
+    URL has ``?sync=1`` (core.services.webhook_reply): it is answered with the
+    reply the script set with ``pyrunner_run.respond()`` once the run ends.
 
     Returns:
         JsonResponse with:
@@ -70,7 +76,17 @@ def webhook_trigger_view(request: HttpRequest, token: str) -> JsonResponse:
           failures this minute, or the script's own limit is reached
         - 500: Failed to queue
 
-    When a run was created (200, 503, 500), the status sent is stored on it
+    A sync call is answered differently in four cases:
+        - the run ended within the wait (at most the script's timeout and 55
+          seconds): the script's reply (any status from 200 to 599), or
+          without one 200 with the run's status and result (500 when the run
+          didn't succeed)
+        - 202: the wait ran out, or every wait slot is taken; the run keeps
+          going (``run_id``, ``Location`` = the API's runs.get for it)
+        - 409: skipped, the script is already running (Skip policy)
+        - 503: no worker is alive (``Retry-After``), no run
+
+    When a run was created, the status sent is stored on it
     (``response_code``) for the script page's Recent deliveries.
     """
     # Rate limiting by IP (fixed window, shared helper). client_ip honors
@@ -152,78 +168,152 @@ def webhook_trigger_view(request: HttpRequest, token: str) -> JsonResponse:
     except (RequestDataTooBig, UnreadablePostError) as e:
         return _body_refused(script, e)
 
-    # Create a new Run record. No user/session here — the run inherits its
-    # workspace from the script (tenancy Stage 1). ``response_code`` is the
-    # answer every outcome below gets but a maintenance block or a failure to
-    # queue, which set their own before answering. It is set here, before a
-    # task exists, so no worker's save of the run can race it.
-    run = Run.objects.create(
-        script=script,
-        workspace_id=script.workspace_id,
-        status=Run.Status.PENDING,
-        triggered_by=None,  # Webhook-triggered, no user
-        trigger_type=Run.TriggerType.API,
-        code_snapshot=script.code,
-        inputs=inputs,
-        event=webhook_event(
-            webhook_data,
-            path=_event_path(request, token),
-            headers=event_headers(request.headers),
-            remote_ip=ip,
-        ),
-        response_code=200,
-    )
+    with ExitStack() as stack:
+        # A sync call holds a wait slot (shared with the API's waits) before
+        # the run exists: with no worker alive it gets 503 and no run. With
+        # every slot taken the run is still queued and the call gets 202.
+        waiter = None
+        if _wants_sync(request, script):
+            try:
+                waiter = stack.enter_context(
+                    run_wait.reserve(run_wait.budget(script.timeout_seconds))
+                )
+            except run_wait.WorkersUnavailable:
+                return _workers_unavailable(script)
 
-    # Queue for async execution
-    try:
-        queue_script_run(run, webhook_data=webhook_data)
-        logger.info(f"Webhook triggered run {run.id} for script {script.name}")
-
-        if run.is_maintenance_skipped:
-            # A 503 with Retry-After: senders that retry deliver it again
-            # once the window is over. The run is cancelled, no task.
-            _record_response_code(run, 503)
-            block = run.maintenance_block
-            response = JsonResponse({
-                "status": "maintenance",
-                "error": "Paused for maintenance. Try again later.",
-                "until": block.until.isoformat(),
-                "run_id": str(run.id),
-                "script": script.name,
-            }, status=503)
-            response["Retry-After"] = str(block.retry_after())
-            return response
-        if run.is_skipped:
-            # A 200: the call did what the script asked for. A non-2xx would
-            # make most senders retry into the same running script.
-            return JsonResponse({
-                "status": "skipped",
-                "reason": "already_running",
-                "run_id": str(run.id),
-                "script": script.name,
-            })
-        return JsonResponse({
-            "status": "queued",
-            "run_id": str(run.id),
-            "script": script.name,
-        })
-
-    except ScriptInputsError as e:
-        # The schema changed since the check above; queue_script_run already
-        # deleted the row, so don't save it back as a failed run.
-        return _inputs_rejected(e)
-
-    except Exception as e:
-        run.status = Run.Status.FAILED
-        run.stderr = f"Failed to queue task: {str(e)}"
-        run.response_code = 500
-        run.save()
-        logger.error(f"Webhook failed to queue run {run.id}: {e}")
-
-        return JsonResponse(
-            {"error": "Failed to queue script execution"},
-            status=500,
+        # Create a new Run record. No user/session here — the run inherits its
+        # workspace from the script (tenancy Stage 1). ``response_code`` is the
+        # answer every outcome below gets but a maintenance block, a failure to
+        # queue, a sync call's skip and a sync call whose run ended in time,
+        # which set their own before answering (202 is what a sync call gets
+        # when the wait runs out first). It is set here, before a task exists,
+        # so no worker's save of the run can race it.
+        run = Run.objects.create(
+            script=script,
+            workspace_id=script.workspace_id,
+            status=Run.Status.PENDING,
+            triggered_by=None,  # Webhook-triggered, no user
+            trigger_type=Run.TriggerType.API,
+            code_snapshot=script.code,
+            inputs=inputs,
+            event=webhook_event(
+                webhook_data,
+                path=_event_path(request, token),
+                headers=event_headers(request.headers),
+                remote_ip=ip,
+            ),
+            response_code=200 if waiter is None else 202,
         )
+
+        # Queue for async execution
+        try:
+            queue_script_run(run, webhook_data=webhook_data)
+            logger.info(f"Webhook triggered run {run.id} for script {script.name}")
+
+            if run.is_maintenance_skipped:
+                # A 503 with Retry-After: senders that retry deliver it again
+                # once the window is over. The run is cancelled, no task.
+                _record_response_code(run, 503)
+                block = run.maintenance_block
+                response = JsonResponse({
+                    "status": "maintenance",
+                    "error": "Paused for maintenance. Try again later.",
+                    "until": block.until.isoformat(),
+                    "run_id": str(run.id),
+                    "script": script.name,
+                }, status=503)
+                response["Retry-After"] = str(block.retry_after())
+                return response
+            if run.is_skipped:
+                if waiter is not None:
+                    # A sync caller waits for a reply this call will never
+                    # produce: 409. The run is cancelled, no task.
+                    _record_response_code(run, 409)
+                    return JsonResponse({
+                        "status": "skipped",
+                        "reason": "already_running",
+                        "error": "The script is already running.",
+                        "run_id": str(run.id),
+                        "script": script.name,
+                    }, status=409)
+                # A 200: the call did what the script asked for. A non-2xx would
+                # make most senders retry into the same running script.
+                return JsonResponse({
+                    "status": "skipped",
+                    "reason": "already_running",
+                    "run_id": str(run.id),
+                    "script": script.name,
+                })
+            if waiter is None:
+                return JsonResponse({
+                    "status": "queued",
+                    "run_id": str(run.id),
+                    "script": script.name,
+                })
+
+        except ScriptInputsError as e:
+            # The schema changed since the check above; queue_script_run already
+            # deleted the row, so don't save it back as a failed run.
+            return _inputs_rejected(e)
+
+        except Exception as e:
+            run.status = Run.Status.FAILED
+            run.stderr = f"Failed to queue task: {str(e)}"
+            run.response_code = 500
+            run.save()
+            logger.error(f"Webhook failed to queue run {run.id}: {e}")
+
+            return JsonResponse(
+                {"error": "Failed to queue script execution"},
+                status=500,
+            )
+
+        # Sync: the run is queued, so nothing from here on may mark it failed.
+        outcome = waiter.wait(run)
+
+    if outcome == run_wait.FINISHED:
+        # The worker has written the run's final state, so this one-column
+        # update can't be overwritten by its save.
+        response = webhook_reply.finished_reply(run)
+        _record_response_code(run, response.status_code)
+        return response
+    return _accepted(run, outcome)
+
+
+def _wants_sync(request: HttpRequest, script: Script) -> bool:
+    """Wait for the run: the script's webhook mode is sync, or the call asks
+    with ``?sync=1`` (or ``true``)."""
+    if script.webhook_mode == Script.WebhookMode.SYNC:
+        return True
+    return request.GET.get("sync", "").lower() in ("1", "true")
+
+
+def _workers_unavailable(script: Script) -> JsonResponse:
+    """503 for a sync call when no worker is alive: nothing would run it."""
+    logger.warning(f"Sync webhook call for script {script.name} refused: no worker is alive")
+    response = JsonResponse({
+        "status": "unavailable",
+        "error": "No worker is running, so the script can't run now. Try again later.",
+    }, status=503)
+    response["Retry-After"] = str(run_wait.WorkersUnavailable.retry_after)
+    return response
+
+
+def _accepted(run: Run, outcome: str) -> JsonResponse:
+    """202 for a sync call whose run hasn't ended: the wait ran out, or every
+    wait slot was taken (``wait`` says which). The run keeps going; Location
+    points at the API's runs.get for it."""
+    location = reverse("api:endpoint", args=["runs.get"]) + f"?run={run.id}"
+    response = JsonResponse({
+        "status": run.status,
+        "wait": outcome,
+        "run_id": str(run.id),
+        "script": run.script.name,
+        "next": "The run hasn't ended yet. Read its result with the API's runs.get "
+        "(a token with runs:read), at the Location given.",
+    }, status=202)
+    response["Location"] = location
+    return response
 
 
 def _rate_limited(retry_after: int, message: str = "Rate limit exceeded. Try again later.") -> JsonResponse:
@@ -293,7 +383,9 @@ def _request_body(request: HttpRequest) -> bytes:
 
 
 def _record_response_code(run: Run, code: int) -> None:
-    """Store the status a call is about to get, on a run with no task."""
+    """Store the status a call is about to get, on a run with no task or one
+    that has ended (a worker's full save of a running run would write back
+    the value it read)."""
     run.response_code = code
     Run.objects.filter(pk=run.pk).update(response_code=code)
 

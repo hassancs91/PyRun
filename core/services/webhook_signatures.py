@@ -203,12 +203,12 @@ def _verify_custom(secret, headers, body, script, now) -> str | None:
 
 
 def restored_settings(data: dict) -> tuple[dict, bool]:
-    """A backup's webhook signature and rate fields, made safe to store.
+    """A backup's webhook signature, rate and reply-mode fields, made safe to store.
 
     Returns ``(fields, dropped)``: an older backup has none of them (no
-    signature, the default limits); a value that isn't valid falls back to
-    its default, and ``dropped`` is True when that cost the script its
-    signature (an unknown preset), so the restore can warn about it.
+    signature, the default limits, async replies); a value that isn't valid
+    falls back to its default, and ``dropped`` is True when that cost the
+    script its signature (an unknown preset), so the restore can warn about it.
     """
     signature = data.get("webhook_signature", Preset.NONE)
     dropped = signature not in Preset.values
@@ -216,6 +216,7 @@ def restored_settings(data: dict) -> tuple[dict, bool]:
         signature = Preset.NONE
     encoding = data.get("webhook_signature_encoding")
     secret = data.get("webhook_signature_secret_encrypted")
+    mode = data.get("webhook_mode")
 
     def text(key, max_length):
         value = data.get(key)
@@ -240,5 +241,6 @@ def restored_settings(data: dict) -> tuple[dict, bool]:
             "webhook_rate_per_minute", 60, Script.MAX_WEBHOOK_RATE_PER_MINUTE
         ),
         "webhook_rate_burst": number("webhook_rate_burst", 30, Script.MAX_WEBHOOK_RATE_PER_MINUTE),
+        "webhook_mode": mode if mode in Script.WebhookMode.values else Script.WebhookMode.ASYNC,
     }
     return fields, dropped

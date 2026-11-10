@@ -46,8 +46,9 @@ FORK_RESET_FIELDS = (
     "owner_key",
     "webhook_token",  # a token names exactly one script; the fork starts without
     # The rest of the webhook's settings go with it: the fork's webhook, once
-    # enabled, starts unsigned with the default limits (a signing secret is
-    # one sender's, not something to copy around).
+    # enabled, starts unsigned with the default limits and async replies (a
+    # signing secret is one sender's, not something to copy around).
+    "webhook_mode",
     "webhook_signature",
     "webhook_signature_secret_encrypted",
     "webhook_signature_header",

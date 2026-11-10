@@ -4419,7 +4419,8 @@ class MaintenanceWindowForm(forms.ModelForm):
 
 
 class WebhookSettingsForm(forms.ModelForm):
-    """A script's webhook signature and rate limits (Script → Webhook card).
+    """A script's webhook reply mode, signature and rate limits (Script →
+    Webhook card).
 
     The signing secret is write-only: it is never shown again, a blank field
     keeps the stored one, and choosing no signature clears it.
@@ -4435,6 +4436,7 @@ class WebhookSettingsForm(forms.ModelForm):
     class Meta:
         model = Script
         fields = [
+            "webhook_mode",
             "webhook_signature",
             "webhook_signature_header",
             "webhook_signature_prefix",
@@ -4445,6 +4447,7 @@ class WebhookSettingsForm(forms.ModelForm):
             "webhook_rate_burst",
         ]
         widgets = {
+            "webhook_mode": forms.Select(attrs={"class": INPUT_CLASS}),
             "webhook_signature": forms.Select(attrs={"class": INPUT_CLASS}),
             "webhook_signature_header": forms.TextInput(
                 attrs={"class": INPUT_CLASS, "placeholder": "X-Signature"}
@@ -4467,6 +4470,7 @@ class WebhookSettingsForm(forms.ModelForm):
             ),
         }
         labels = {
+            "webhook_mode": "Reply",
             "webhook_signature": "Signature",
             "webhook_signature_header": "Signature header",
             "webhook_signature_prefix": "Prefix",
@@ -4477,6 +4481,9 @@ class WebhookSettingsForm(forms.ModelForm):
             "webhook_rate_burst": "Calls per second (burst)",
         }
         help_texts = {
+            "webhook_mode": "Sync waits for the run (at most the script's timeout and 55 "
+            "seconds) and answers with what the script sets with pyrunner_run.respond(). "
+            "A call can also ask for it with ?sync=1.",
             "webhook_signature_prefix": "Text before the signature in the header, if any.",
             "webhook_signature_timestamp_header": "Optional. When set, the signed text is "
             "<timestamp>.<body> and the timestamp (Unix seconds) must be recent.",

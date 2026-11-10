@@ -3,9 +3,10 @@
 Every run of a script knows which run it is, what it was started with (its
 **inputs**) and what started it (its **event**: the webhook call, the chat
 message, the schedule tick...), and can report back two things: a **result**
-(a JSON object) and **progress** (a percentage and a status line). The
-`pyrunner_run` helper reads and writes all of
-it. It is part of PyRun's script helpers: no install, standard library only.
+(a JSON object) and **progress** (a percentage and a status line). A webhook
+call can also wait for the run and get the **reply** the script sets (see
+[Synchronous replies](#synchronous-replies)). The `pyrunner_run` helper reads
+and writes all of it. It is part of PyRun's script helpers: no install, standard library only.
 
 ```python
 import pyrunner_run
@@ -225,16 +226,18 @@ mid-body) gets **400** and no run.
 **Recent deliveries.** The script page's Webhook card lists the last 20 calls:
 their run's status, how long it ran, and the HTTP status PyRun answered with
 (200 queued or skipped, 503 during a maintenance window, 500 if the run
-couldn't be queued). Calls refused before a run exists (a wrong URL, a missing
-or wrong signature, a rate limit, a disabled script, a required input with no
-default, a body cut short, 413) aren't listed. Retries of a failed run aren't calls and aren't
+couldn't be queued; for a [synchronous](#synchronous-replies) call, the
+status of its reply, 202 when the wait ran out or 409 when it was skipped).
+Calls refused before a run exists (a wrong URL, a missing or wrong signature,
+a rate limit, a disabled script, a required input with no default, a body cut
+short, 413, a synchronous call with no worker running) aren't listed. Retries of a failed run aren't calls and aren't
 listed either.
 
 #### Webhook signatures
 
 The webhook URL is a secret: anyone who has it can start the script. To also
 make sure a call really comes from the service you expect, set a signature:
-on the script page, **Webhook → Signature and limits**. PyRun then verifies
+on the script page, **Webhook → Reply, signature and limits**. PyRun then verifies
 each call's signature over the body exactly as it was received, before it
 creates a run. A call whose signature is missing or wrong gets **401** and no
 run:
@@ -327,8 +330,8 @@ are in the event's `headers` like the others (`x-hub-signature-256`,
 #### Webhook rate limits
 
 By default each script's webhook takes at most **60 calls a minute** and **30
-calls in any one second**. Change both under **Webhook → Signature and
-limits**. A call over either limit gets **429** with a `Retry-After` header
+calls in any one second**. Change both under **Webhook → Reply, signature
+and limits**. A call over either limit gets **429** with a `Retry-After` header
 and no run. The
 windows are fixed and follow the clock (a minute starts at :00), so up to
 twice a limit can pass across the turn of a window.
@@ -346,6 +349,87 @@ Behind a reverse proxy, set `RATELIMIT_TRUSTED_PROXY_DEPTH` so the address is
 the caller's and not the proxy's. Before 2.5 the only limit was 30 calls a
 minute per address.
 
+#### Synchronous replies
+
+By default a webhook call is answered as soon as its run is queued (`200`,
+`{"status": "queued", "run_id": ...}`). A **synchronous** call waits for the
+run instead and is answered with the reply the script sets with
+`pyrunner_run.respond(status, body, headers)`. A call is synchronous when:
+
+- the script's reply mode is **Sync** (**Webhook → Reply, signature and
+  limits**): every call waits; or
+- the URL ends in `?sync=1` (or `?sync=true`): that call waits, whatever the
+  mode. (`sync` is still part of the call's `query`, like any parameter.)
+
+A Slack slash command, for example, posts a form and shows the reply it gets
+back. Give Slack the webhook URL with `?sync=1` and reply with what Slack
+expects:
+
+```python
+import urllib.parse
+
+import pyrunner_run
+
+form = urllib.parse.parse_qs(pyrunner_run.event().get("body", ""))
+city = form.get("text", ["Beirut"])[0]           # /weather Paris -> "Paris"
+pyrunner_run.respond(200, {
+    "response_type": "in_channel",
+    "text": f"Weather in {city}: 21 °C, clear",
+})
+```
+
+**The time budget.** A call waits at most the script's **timeout** or **55
+seconds**, whichever is shorter, counted from when PyRun has queued the run
+(the time the run waits for a worker counts too). It also ends 10 seconds
+inside `GUNICORN_TIMEOUT`. The reply is sent when the run ends, not when
+`respond()` is called. Senders have their own limits: Slack gives up after **3
+seconds**, so keep such a script short, or post a slower answer to the
+command's `response_url` from the script instead. Past the budget the call
+gets **202** and the run keeps going.
+
+| Case | HTTP | Body |
+|---|---|---|
+| The run ended and the script called `respond()` | the reply's status | the reply's body and headers |
+| The run succeeded without `respond()` | 200 | `{"status": "success", "run_id", "script", "result"}` |
+| The run failed, timed out or was stopped, without `respond()` | 500 | the same, with `"error"` |
+| The wait ran out; the run keeps going | 202 | `{"status", "wait": "timeout", "run_id", "script", "next"}` and `Location: /api/v1/runs.get?run=<run_id>` |
+| Every wait slot is taken; the run is queued, not waited for | 202 | the same, with `"wait": "busy"` |
+| Skipped: the script is already running and its concurrency policy is Skip | 409 | `{"status": "skipped", "reason": "already_running", "error", "run_id", "script"}` |
+| No worker is running; no run is created | 503, `Retry-After: 60` | `{"status": "unavailable", "error"}` |
+| A maintenance window blocks webhook calls | 503, `Retry-After` | as for any webhook call |
+
+The `Location` is the API's [`runs.get`](api.md) for the run: read it with an
+API token that has `runs:read` to get the result later. The reply the script
+set is sent however the run ended (even when it failed after calling
+`respond()`). With a retry policy, the call gets the first attempt's answer.
+
+A wait holds one of the server's web threads, so at most **4** calls wait at
+once across the instance, together with the API's `scripts.run` calls with
+`wait` (`PYRUNNER_SYNC_WAIT_SLOTS`; see [api.md](api.md)). When no worker has
+reported in the last 3 minutes, a synchronous call gets 503 at once instead of
+waiting out the budget.
+
+**What a reply can hold.** `respond(status=200, body=None, headers=None)`:
+
+- `status`: an integer, sent clamped to 200–599.
+- `body`: `None` sends an empty body; a string is sent as text (`text/plain;
+  charset=utf-8`); a dict, list, number or bool is sent as JSON
+  (`application/json`).
+- `headers`: only `Content-Type`, `Cache-Control`, `Content-Language` and
+  `Retry-After`. `Content-Type` must be a data type: `application/json` (or
+  any `application/...+json`), `text/plain`, `text/csv`, `application/xml`,
+  `text/xml` (a Twilio TwiML reply, say) or
+  `application/x-www-form-urlencoded`. The reply comes from PyRun's own
+  address, the console's, so a script can't set cookies, redirect or serve a
+  web page there; PyRun also sends every script reply with
+  `Content-Security-Policy: sandbox`.
+
+The reply is stored in the run's result under `http_response`
+(`{"status", "headers", "body"}`), so it shows in the run page's Result card
+and to the API. Secret values in its body and header values are masked
+before it is stored, like the rest of the result, and the reply is sent from
+that masked copy.
+
 ---
 
 ## `pyrunner_run`
@@ -355,7 +439,8 @@ minute per address.
 | `inputs()` | The run's inputs as a dict (every input, JSON ones too). `{}` when the script declares none. |
 | `event()` | What started the run, as a dict (see [The run event](#the-run-event)). |
 | `run_id()` | The run's id (same as `PYRUNNER_RUN_ID`). |
-| `set_result(result)` | Stores `result`, a dict, as the run's result. Calling it again replaces it. |
+| `set_result(result)` | Stores `result`, a dict, as the run's result. Calling it again replaces it (a reply set with `respond()` stays). |
+| `respond(status=200, body=None, headers=None)` | Sets the reply a webhook call that waits for the run gets (see [Synchronous replies](#synchronous-replies)). |
 | `progress(pct=None, message=None)` | Shows how far the run is, live on its run page. |
 | `on_stop(callback)` | Runs `callback()` when PyRun stops the run, before it is killed (see [Stopping a run](#stopping-a-run)). |
 
@@ -366,6 +451,15 @@ Storage; return a reference to it. Wrong arguments raise `TypeError` or
 reached, `set_result` raises `pyrunner_run.RunError` (its `code` says why, for
 example `RESULT_TOO_LARGE` or `RUN_NOT_RUNNING`), so a lost result never goes
 unnoticed.
+
+**`respond`** stores the reply in the result under `http_response` and keeps
+the rest of the result; `set_result()` keeps a reply `respond()` set (unless
+the new result has its own `http_response`), and calling `respond()` again
+replaces it. The reply counts toward the result's 256 KB. A header it can't
+send, or a body `json.dumps` can't encode, raises `ValueError` /
+`TypeError` before anything is sent; a refusal raises `RunError`, as for
+`set_result`. A call that doesn't wait was answered when the run was queued,
+so its reply is only stored.
 
 **`progress`** takes a number from 0 to 100 and/or a status line of at most
 500 characters. What you leave out keeps its last value; `message=""` clears
@@ -483,8 +577,9 @@ PyRun refuses to store it and `set_result` raises `RunError` with code
 `inputs()`, `event()` and `run_id()` only read the run file and the
 environment. The event is stored as it was received (the script needs the real
 values) and masked only where PyRun shows it.
-`set_result()` and `progress()` POST to PyRun's internal API over loopback
-(`/internal/runs/result`, `/internal/runs/progress`) with the run's signed
+`set_result()`, `respond()` and `progress()` POST to PyRun's internal API
+over loopback (`/internal/runs/result`, `/internal/runs/respond`,
+`/internal/runs/progress`) with the run's signed
 token (`PYRUNNER_INTERNAL_TOKEN`). The run is the one named in that token,
 never one named in the request, so a script can only report on its own run,
 and PyRun refuses any write once the run has finished. The run file sits in

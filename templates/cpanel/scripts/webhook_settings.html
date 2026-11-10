@@ -8,7 +8,7 @@
 <span>Webhook settings</span>
 {% endblock %}
 {% block heading %}Webhook settings{% endblock %}
-{% block subtitle %}Signature and rate limits for {{ script.name }}'s webhook{% endblock %}
+{% block subtitle %}Reply, signature and rate limits for {{ script.name }}'s webhook{% endblock %}
 
 {% block page %}
 <form method="post" class="rounded-2xl border border-line bg-panel p-6 space-y-5">
@@ -16,6 +16,18 @@
     {% include "cpanel/_form_errors.html" %}
 
     <div>
+        <h3 class="text-sm font-semibold">Reply</h3>
+        <p class="text-xs text-faint mt-1">Async answers each call as soon as its run is queued. Sync waits for the run and answers with the reply the script sets; past the wait, the call gets 202 with the run's id.</p>
+    </div>
+
+    <div>
+        <label for="{{ form.webhook_mode.id_for_label }}" class="block text-sm font-medium text-text mb-1.5">{{ form.webhook_mode.label }}</label>
+        {{ form.webhook_mode }}
+        <p class="text-xs text-faint mt-1">{{ form.webhook_mode.help_text }}</p>
+        {% include "cpanel/_field_errors.html" with field=form.webhook_mode %}
+    </div>
+
+    <div class="pt-4 border-t border-line-soft">
         <h3 class="text-sm font-semibold">Signature</h3>
         <p class="text-xs text-faint mt-1">PyRun checks every call's signature before it starts a run. A call with a missing or wrong signature gets 401 and no run.</p>
     </div>

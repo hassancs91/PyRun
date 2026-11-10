@@ -4,8 +4,9 @@ progress (2.5 Stage 0, ticket T02).
 
 The script's helper POSTs to the internal loopback endpoints
 (``core/views/api/runs_internal.py``), which hand the run id from the signed
-per-run token (never from the body) to ``store_result`` / ``store_progress``.
-Both:
+per-run token (never from the body) to ``store_result`` / ``store_progress``
+(and ``store_response``, the webhook reply ``respond()`` sets, which lives in
+the result; T22). All of them:
 
 - mask secret values with the same set execution masks output with
   (``core.executor.mask_set_for_display``) BEFORE anything is stored, and refuse
@@ -71,8 +72,12 @@ def _running_run(run_id):
     return run
 
 
-def _mask(run, value):
-    """``value`` with the run's secret values masked, or refuse to store it."""
+def _mask(run, value, *values):
+    """``value`` with the run's secret values masked, or refuse to store it.
+
+    With more ``values``, a tuple of each one masked (the secrets are
+    resolved once).
+    """
     from core.executor import mask_secrets_in_value, mask_set_for_display
     from core.services.secret_backends import SecretResolutionError
 
@@ -86,9 +91,10 @@ def _mask(run, value):
             503,
         ) from None
     try:
-        return mask_secrets_in_value(value, masks)
+        masked = tuple(mask_secrets_in_value(v, masks) for v in (value, *values))
     except RecursionError:
         raise RunReportError("BAD_REQUEST", "The value is nested too deeply.") from None
+    return masked if values else masked[0]
 
 
 def _write(run, **fields) -> None:
@@ -101,17 +107,9 @@ def _write(run, **fields) -> None:
         )
 
 
-def store_result(run_id, value) -> int:
-    """Mask and store ``value`` as the run's result. Returns its size in bytes.
-
-    Replaces any earlier result: the last ``set_result()`` call wins.
-    """
-    if not isinstance(value, dict):
-        raise RunReportError("BAD_REQUEST", "'result' must be a JSON object.")
-    run = _running_run(run_id)
-    masked = _mask(run, value)
+def _checked_size(result) -> int:
     try:
-        size = json_size(masked)
+        size = json_size(result)
     except ValueError:
         raise RunReportError("BAD_REQUEST", "NaN and Infinity aren't valid JSON.") from None
     except RecursionError:
@@ -123,7 +121,62 @@ def store_result(run_id, value) -> int:
             "Store large data in a DataStore or Storage and return a reference to it.",
             413,
         )
+    return size
+
+
+def _stored_response(run):
+    """The webhook reply ``respond()`` stored in the run's result (masked), or None."""
+    from core.services.webhook_reply import RESPONSE_KEY
+
+    if isinstance(run.result, dict) and RESPONSE_KEY in run.result:
+        return run.result[RESPONSE_KEY]
+    return None
+
+
+def store_result(run_id, value) -> int:
+    """Mask and store ``value`` as the run's result. Returns its size in bytes.
+
+    Replaces any earlier result: the last ``set_result()`` call wins. A
+    webhook reply set with ``respond()`` is kept unless ``value`` has its
+    own (``webhook_reply.RESPONSE_KEY``).
+    """
+    from core.services.webhook_reply import RESPONSE_KEY
+
+    if not isinstance(value, dict):
+        raise RunReportError("BAD_REQUEST", "'result' must be a JSON object.")
+    run = _running_run(run_id)
+    masked = _mask(run, value)
+    reply = _stored_response(run)
+    if reply is not None and RESPONSE_KEY not in masked:
+        masked = {**masked, RESPONSE_KEY: reply}
+    size = _checked_size(masked)
     _write(run, result=masked)
+    return size
+
+
+def store_response(run_id, data: dict) -> int:
+    """Store the webhook reply ``data`` (``status``, ``body``, ``headers``)
+    in the run's result, masked. Returns the result's size in bytes.
+
+    The rest of the result is kept; an earlier reply is replaced.
+    """
+    from core.services.webhook_reply import RESPONSE_KEY, check_response
+
+    try:
+        reply = check_response(data)
+    except ValueError as e:
+        raise RunReportError("BAD_REQUEST", str(e)) from None
+    run = _running_run(run_id)
+    # Header values and the body are masked. The status stays a number (a
+    # clamped three-digit code can't hold a secret: masking skips values
+    # under four characters), and the names are the allowed ones.
+    names = list(reply["headers"])
+    values, reply["body"] = _mask(run, [reply["headers"][n] for n in names], reply["body"])
+    reply["headers"] = dict(zip(names, values))
+    result = dict(run.result) if isinstance(run.result, dict) else {}
+    result[RESPONSE_KEY] = reply
+    size = _checked_size(result)
+    _write(run, result=result)
     return size
 
 
