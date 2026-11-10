@@ -89,7 +89,9 @@ class DeclarationTests(SimpleTestCase):
                              (20, 20, 5))
 
 
-@override_settings(CACHES=LOCMEM, SYNC_WAIT_SLOTS=4)
+# The threads here stand in for several web processes: the per-process cap
+# (SYNC_WAIT_SLOTS_PER_PROCESS) is lifted except where a test is about it.
+@override_settings(CACHES=LOCMEM, SYNC_WAIT_SLOTS=4, SYNC_WAIT_SLOTS_PER_PROCESS=4)
 class SlotTests(SimpleTestCase):
     """The in-flight cap, with real threads (no database involved)."""
 
@@ -126,6 +128,43 @@ class SlotTests(SimpleTestCase):
         for thread in threads:
             thread.join(10)
         self.assertEqual(self._taken(), [])
+
+    @override_settings(SYNC_WAIT_SLOTS_PER_PROCESS=3)
+    def test_one_process_holds_at_most_its_threads_minus_one_waits(self):
+        """2.5 test pass, F5: gunicorn's threads belong to one process each.
+        With all of a process's threads waiting, the requests it accepted
+        hang, the loopback calls of the waited-for runs among them; so a
+        process keeps one thread free even while instance slots are left."""
+        held, ready, release = [], threading.Semaphore(0), threading.Event()
+
+        def caller():
+            with run_wait.reserve(30) as waiter:
+                held.append(waiter.held)
+                ready.release()
+                release.wait(10)
+
+        threads = [threading.Thread(target=caller) for _ in range(4)]
+        try:
+            for thread in threads:
+                thread.start()
+            for _ in threads:
+                self.assertTrue(ready.acquire(timeout=10))
+            self.assertEqual(sorted(held), [False, True, True, True])
+            self.assertEqual(len(self._taken()), 3)  # the fourth instance slot stays free
+        finally:
+            release.set()
+            for thread in threads:
+                thread.join(10)
+        self.assertEqual(self._taken(), [])
+        with run_wait.reserve(30) as waiter:  # the process's count went back down
+            self.assertTrue(waiter.held)
+
+    @override_settings(SYNC_WAIT_SLOTS_PER_PROCESS=1)
+    def test_a_process_slot_is_given_back_when_no_instance_slot_is_free(self):
+        with override_settings(SYNC_WAIT_SLOTS=0), run_wait.reserve(30) as waiter:
+            self.assertFalse(waiter.held)
+        with run_wait.reserve(30) as waiter:
+            self.assertTrue(waiter.held)
 
     def test_a_slot_is_released_when_the_block_raises(self):
         with self.assertRaises(RuntimeError):
@@ -312,7 +351,7 @@ class RunTests(_Fixture, TestCase):
         # Without wait the run is queued, as Run now would.
         self.assertEqual(self.post("scripts.run", {"script": str(self.b.id)}).status_code, 202)
 
-    @override_settings(SYNC_WAIT_SLOTS=4)
+    @override_settings(SYNC_WAIT_SLOTS=4, SYNC_WAIT_SLOTS_PER_PROCESS=4)
     def test_with_every_slot_taken_the_next_wait_answers_at_once(self):
         with ExitStack() as stack:
             for _ in range(4):

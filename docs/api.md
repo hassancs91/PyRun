@@ -203,8 +203,10 @@ when no worker has reported in the last 3 minutes, and at most 4 calls wait at
 once across the instance, synchronous webhook calls included (see
 [run-context.md](run-context.md#synchronous-replies); set
 `PYRUNNER_SYNC_WAIT_SLOTS`; it is capped below
-`GUNICORN_WORKERS` × `GUNICORN_THREADS`, so the console always keeps a thread,
-and 0 turns waiting off). A wait also ends 10 seconds inside `GUNICORN_TIMEOUT`,
+`GUNICORN_WORKERS` × `GUNICORN_THREADS`, and 0 turns waiting off). One web
+process also holds at most `GUNICORN_THREADS` − 1 waits (3 by default), so
+each process keeps a thread for the console and for the calls the waited-for
+runs make back to PyRun; a call past either limit gets `busy` at once. A wait also ends 10 seconds inside `GUNICORN_TIMEOUT`,
 and over MCP 3 seconds before the call's budget (`MCP_CALL_BUDGET_SECONDS`). A retry the script's retry policy
 starts after a failure is a new run: the wait returns the failed attempt.
 

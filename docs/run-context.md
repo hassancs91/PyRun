@@ -223,6 +223,13 @@ the two it is set while the event has no `body_json`.
 A body that arrives shorter than its `Content-Length` (the sender hung up
 mid-body) gets **400** and no run.
 
+A body sent in chunks (`Transfer-Encoding: chunked`, no `Content-Length`)
+reaches the script whole, within the same 2.5 MB (a bigger one gets 413),
+when PyRun runs under its own server (gunicorn, as in the Docker image), which
+puts the chunks back together. Any other server (Django's `runserver`, say)
+can't tell where such a body ends: the call gets **411** and no run. A
+signature is checked over the body as put back together.
+
 **Recent deliveries.** The script page's Webhook card lists the last 20 calls:
 their run's status, how long it ran, and the HTTP status PyRun answered with
 (200 queued or skipped, 503 during a maintenance window, 500 if the run
@@ -230,7 +237,7 @@ couldn't be queued; for a [synchronous](#synchronous-replies) call, the
 status of its reply, 202 when the wait ran out or 409 when it was skipped).
 Calls refused before a run exists (a wrong URL, a missing or wrong signature,
 a rate limit, a disabled script, a required input with no default, a body cut
-short, 413, a synchronous call with no worker running) aren't listed. Retries of a failed run aren't calls and aren't
+short, 411, 413, a synchronous call with no worker running) aren't listed. Retries of a failed run aren't calls and aren't
 listed either.
 
 #### Webhook signatures
@@ -405,7 +412,10 @@ set is sent however the run ended (even when it failed after calling
 
 A wait holds one of the server's web threads, so at most **4** calls wait at
 once across the instance, together with the API's `scripts.run` calls with
-`wait` (`PYRUNNER_SYNC_WAIT_SLOTS`; see [api.md](api.md)). When no worker has
+`wait` (`PYRUNNER_SYNC_WAIT_SLOTS`; see [api.md](api.md)), and at most
+`GUNICORN_THREADS` − 1 (3 by default) in any one web process, which keeps a
+thread free for the console and for `respond()` itself. A call past either
+limit gets 202 with `"wait": "busy"`. When no worker has
 reported in the last 3 minutes, a synchronous call gets 503 at once instead of
 waiting out the budget.
 

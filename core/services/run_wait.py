@@ -22,6 +22,14 @@ up to ``MAX_WAIT_SECONDS``, so it is protected three ways:
    cache culling a key, can let one wait more through, briefly. With every
    slot taken the run is still queued, and the caller answers with the run id
    at once (202).
+   Gunicorn's threads belong to one process each (``--workers`` processes of
+   ``--threads`` threads), and a request waits for a thread of the process
+   that accepted it. So one process also holds at most
+   ``settings.SYNC_WAIT_SLOTS_PER_PROCESS`` waits (its threads minus one):
+   with all its threads waiting, the requests it had accepted would hang,
+   among them the loopback calls (``pyrunner_run.respond()``,
+   ``set_result()``) of the very runs being waited for, which then time out
+   and fail (2.5 test pass, F5). Past that cap the caller answers 202 too.
 3. **A budget.** At most ``MAX_WAIT_SECONDS``, and never past
    ``settings.SYNC_WAIT_MAX_SECONDS`` (10 s inside ``GUNICORN_TIMEOUT``, which
    would kill the thread), polling the run's status every 0.5 s at first,
@@ -36,6 +44,7 @@ Usage::
 """
 
 import logging
+import threading
 import time
 import uuid
 from contextlib import contextmanager
@@ -79,6 +88,30 @@ class WorkersUnavailable(Exception):
 
 def slot_count() -> int:
     return max(0, int(getattr(settings, "SYNC_WAIT_SLOTS", 4)))
+
+
+def process_slot_count() -> int:
+    return max(0, int(getattr(settings, "SYNC_WAIT_SLOTS_PER_PROCESS", 3)))
+
+
+# Waits held by this web process (see point 2 in the module docstring).
+_process_lock = threading.Lock()
+_process_held = 0
+
+
+def _take_process_slot() -> bool:
+    global _process_held
+    with _process_lock:
+        if _process_held >= process_slot_count():
+            return False
+        _process_held += 1
+        return True
+
+
+def _release_process_slot() -> None:
+    global _process_held
+    with _process_lock:
+        _process_held = max(0, _process_held - 1)
 
 
 def budget(requested=None, remaining=None) -> float:
@@ -159,9 +192,12 @@ def reserve(seconds):
     """
     if not workers_alive():
         raise WorkersUnavailable(WorkersUnavailable.message)
-    key, owner = _take_slot(int(seconds) + SLOT_SLACK_SECONDS)
+    local = _take_process_slot()
+    key, owner = _take_slot(int(seconds) + SLOT_SLACK_SECONDS) if local else (None, None)
     try:
         yield Waiter(seconds, key is not None)
     finally:
         if key is not None:
             _release_slot(key, owner)
+        if local:
+            _release_process_slot()

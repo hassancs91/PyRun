@@ -724,6 +724,13 @@ SYNC_WAIT_SLOTS = max(0, min(
     int(os.environ.get("PYRUNNER_SYNC_WAIT_SLOTS", "4")),
     MCP_PARALLEL_CALLS - 1,
 ))
+# Gunicorn's threads belong to one process each, and a threaded process keeps
+# accepting requests while all its threads are busy (they queue for its own
+# threads): one process holds at most its threads minus one waits, so it can
+# still answer the console and the loopback calls of the runs being waited
+# for. (With one thread gunicorn runs sync workers, which accept a request
+# only when free, so a process with one thread may hold one wait.)
+SYNC_WAIT_SLOTS_PER_PROCESS = max(1, int(os.environ.get("GUNICORN_THREADS", "4")) - 1)
 # A wait (at most 55 s) ends 10 s inside the gunicorn timeout, which would
 # otherwise kill the thread mid-wait.
 SYNC_WAIT_MAX_SECONDS = max(0, min(55, int(os.environ.get("GUNICORN_TIMEOUT", "120")) - 10))

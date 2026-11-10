@@ -310,7 +310,9 @@ class RespondEndpointTests(TestCase):
 # --------------------------------------------------------------------------- #
 
 
-@override_settings(CACHES=LOCMEM, SYNC_WAIT_SLOTS=4)
+# One test process stands in for the instance: the per-process cap is lifted
+# (SYNC_WAIT_SLOTS_PER_PROCESS) except where a test is about it.
+@override_settings(CACHES=LOCMEM, SYNC_WAIT_SLOTS=4, SYNC_WAIT_SLOTS_PER_PROCESS=4)
 class SyncCallTests(_Fixture, TestCase):
     def setUp(self):
         super().setUp()
@@ -449,6 +451,24 @@ class SyncCallTests(_Fixture, TestCase):
         self.assertEqual((resp.status_code, resp.json()["wait"]), (202, "busy"))
         run = Run.objects.get(script=script)
         self.assertEqual((run.response_code, run.task_id), (202, "t22-task"))  # queued all the same
+
+    @override_settings(SYNC_WAIT_SLOTS_PER_PROCESS=3)
+    def test_a_process_whose_wait_threads_all_wait_answers_202_at_once(self):
+        """2.5 test pass, F5: a fourth sync call accepted by a process already
+        holding three waits isn't held (its threads would all wait, and the
+        runs' own loopback calls would queue behind them), even with an
+        instance slot free."""
+        script = self._webhook_script()
+        with ExitStack() as stack:
+            for _ in range(3):
+                self.assertTrue(stack.enter_context(run_wait.reserve(30)).held)
+            with mock.patch.object(run_wait, "_sleep") as sleep:
+                resp = self._call(script, "?sync=1")
+            sleep.assert_not_called()
+            self.assertIsNone(cache.get(run_wait.SLOT_KEY.format(3)))
+        self.assertEqual((resp.status_code, resp.json()["wait"]), (202, "busy"))
+        self.assertEqual(Run.objects.get(script=script).response_code, 202)
+        self.assertTrue(self._slots_free())
 
     def test_nine_concurrent_sync_calls_four_wait_and_five_get_202_at_once(self):
         """Each waiting call makes the next call while it waits, so up to four

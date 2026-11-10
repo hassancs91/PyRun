@@ -70,6 +70,8 @@ def webhook_trigger_view(request: HttpRequest, token: str) -> HttpResponse:
           wrong (``reason``); no run. Counts as an auth failure.
         - 403: Script is disabled
         - 404: Invalid token (counts as an auth failure)
+        - 411: A body sent without a Content-Length (chunked) on a server
+          that can't hand it over whole (no run)
         - 413: The body is over DATA_UPLOAD_MAX_MEMORY_SIZE (no run)
         - 429: Rate limit exceeded (``Retry-After``): the caller's address
           sent over WEBHOOK_RATE_LIMIT calls or WEBHOOK_AUTHFAIL_LIMIT auth
@@ -342,8 +344,15 @@ def _script_rate_limited(script: Script) -> int | None:
 
 
 def _body_refused(script: Script, error: Exception) -> JsonResponse:
-    """413 for a body over DATA_UPLOAD_MAX_MEMORY_SIZE, 400 for one that
-    couldn't be read (the sender hung up mid-body)."""
+    """413 for a body over DATA_UPLOAD_MAX_MEMORY_SIZE, 411 for a body with no
+    Content-Length the server can't end, 400 for one that couldn't be read
+    (the sender hung up mid-body)."""
+    if isinstance(error, BodyLengthRequired):
+        logger.info(f"Webhook body without a Content-Length refused for script {script.name}")
+        return JsonResponse(
+            {"error": "Send the body with a Content-Length header."},
+            status=411,
+        )
     if isinstance(error, RequestDataTooBig):
         limit = settings.DATA_UPLOAD_MAX_MEMORY_SIZE
         logger.info(f"Webhook body over {limit} bytes refused for script {script.name}")
@@ -363,6 +372,11 @@ def _inputs_rejected(error: ScriptInputsError) -> JsonResponse:
     )
 
 
+class BodyLengthRequired(UnreadablePostError):
+    """A body sent without a Content-Length that the server can't hand over
+    whole: the call gets 411 and no run."""
+
+
 def _request_body(request: HttpRequest) -> bytes:
     """The request's body, all of it.
 
@@ -371,15 +385,52 @@ def _request_body(request: HttpRequest) -> bytes:
     mid-body doesn't always fail the read: the WSGI server hands over the
     bytes that arrived. A body shorter than its Content-Length is refused
     the same way, so no run starts on part of a payload.
+
+    A chunked body (``Transfer-Encoding`` and no Content-Length) is read
+    from the server's input, which ``request.body`` would read as empty.
     """
-    body = request.body
-    try:
-        declared = int(request.META.get("CONTENT_LENGTH") or 0)
-    except ValueError:
-        declared = 0
-    if len(body) < declared:
-        raise UnreadablePostError(f"the body ended after {len(body)} of {declared} bytes")
+    cached = getattr(request, "_webhook_body", None)
+    if cached is not None:
+        return cached
+    if request.META.get("HTTP_TRANSFER_ENCODING") and not request.META.get("CONTENT_LENGTH"):
+        body = _unsized_body(request)
+    else:
+        body = request.body
+        try:
+            declared = int(request.META.get("CONTENT_LENGTH") or 0)
+        except ValueError:
+            declared = 0
+        if len(body) < declared:
+            raise UnreadablePostError(f"the body ended after {len(body)} of {declared} bytes")
+    request._webhook_body = body
     return body
+
+
+def _unsized_body(request: HttpRequest) -> bytes:
+    """A body with no Content-Length, read up to DATA_UPLOAD_MAX_MEMORY_SIZE.
+
+    Only a server that marks its input as ending with the body
+    (``wsgi.input_terminated``, as gunicorn does: it decodes the chunks)
+    can hand it over; with any other, the end of the body can't be found,
+    so the call is refused (BodyLengthRequired). A sender that hangs up
+    mid-body makes the server's read fail: UnreadablePostError.
+    """
+    if not request.META.get("wsgi.input_terminated"):
+        raise BodyLengthRequired("a body without a Content-Length on a server that can't end it")
+    limit = settings.DATA_UPLOAD_MAX_MEMORY_SIZE
+    stream = request.META["wsgi.input"]
+    chunks, size = [], 0
+    try:
+        while chunk := stream.read(64 * 1024):
+            size += len(chunk)
+            if limit is not None and size > limit:
+                raise RequestDataTooBig(
+                    "Request body exceeded settings.DATA_UPLOAD_MAX_MEMORY_SIZE."
+                )
+            chunks.append(chunk)
+    except OSError as e:
+        raise UnreadablePostError(*e.args) from e
+    return b"".join(chunks)
 
 
 def _record_response_code(run: Run, code: int) -> None:

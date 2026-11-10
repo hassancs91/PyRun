@@ -24,6 +24,7 @@ What this pins, roughly in order of how much it would hurt to get wrong:
 
 import base64
 import hashlib
+import hmac
 import io
 import json
 import os
@@ -502,6 +503,122 @@ class CutShortBodyTests(_Fixture, TestCase):
         self.assertEqual(resp.status_code, 200, resp.content)
         run = Run.objects.get(script=script)
         self.assertEqual(run.event["body"], body.decode())
+
+
+class _CutReader(io.BytesIO):
+    """A server input whose sender hangs up mid-body: gunicorn's chunked
+    reader raises an IOError (NoMoreData, ChunkMissingTerminator)."""
+
+    def read(self, size=-1):
+        data = super().read(size)
+        if not data:
+            raise OSError("No more data")
+        return data
+
+
+class ChunkedBodyTests(_Fixture, TestCase):
+    """A chunked body, sent with ``Transfer-Encoding: chunked`` and no
+    Content-Length (2.5 test pass, F3). Django reads such a body as empty,
+    so the script got none. Now it is read from the server's input when the
+    server ends it there (``wsgi.input_terminated``: gunicorn decodes the
+    chunks); on a server that doesn't, the call gets 411 and no run."""
+
+    def _chunked(self, script, sent, terminated=True, suffix="", content_type="application/json",
+                 stream=None, **headers):
+        url = reverse("webhook_trigger", args=[script.webhook_token]) + suffix
+        # No data for the client: it would add a Content-Length (and only
+        # then a content type).
+        environ = {"wsgi.input": stream or io.BytesIO(sent), "CONTENT_TYPE": content_type}
+        if terminated:
+            environ["wsgi.input_terminated"] = True
+        with mock.patch("core.tasks.async_task", return_value="t") as task:
+            resp = self.client.generic(
+                "POST", url, headers={"Transfer-Encoding": "chunked", **headers}, **environ,
+            )
+        self.task_data = task.call_args.args[2] if task.called else None
+        return resp
+
+    def test_the_script_gets_the_whole_body(self):
+        script = self._webhook_script()
+        body = b'{"order": 7, "items": ["a", "b"]}'
+        resp = self._chunked(script, body)
+        self.assertEqual(resp.status_code, 200, resp.content)
+        run = Run.objects.get(script=script)
+        self.assertEqual(run.event["body"], body.decode())
+        self.assertEqual(run.event["body_json"], {"order": 7, "items": ["a", "b"]})
+        self.assertEqual(run.event["body_size"], len(body))
+        self.assertEqual(raw_body(self.task_data), body)
+        self.assertNotIn("transfer-encoding", run.event["headers"])
+
+    def test_a_body_that_is_not_text_reaches_the_body_file_byte_for_byte(self):
+        script = self._webhook_script()
+        body = bytes(range(256)) * 3
+        resp = self._chunked(script, body, content_type="application/octet-stream")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(raw_body(self.task_data), body)
+        self.assertTrue(Run.objects.get(script=script).event["body_binary"])
+
+    @override_settings(DATA_UPLOAD_MAX_MEMORY_SIZE=1000)
+    def test_a_body_over_the_upload_limit_gets_413_and_no_run(self):
+        script = self._webhook_script()
+        resp = self._chunked(script, b"a" * 1001, content_type="text/plain")
+        self.assertEqual(resp.status_code, 413, resp.content)
+        self.assertIn("1000 bytes", resp.json()["error"])
+        self.assertFalse(Run.objects.filter(script=script).exists())
+
+    @override_settings(DATA_UPLOAD_MAX_MEMORY_SIZE=1000)
+    def test_a_body_at_the_limit_is_taken(self):
+        script = self._webhook_script()
+        resp = self._chunked(script, b"a" * 1000, content_type="text/plain")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(len(self.task_data["body"]), 1000)
+
+    def test_a_server_that_does_not_end_the_input_gets_411_and_no_run(self):
+        script = self._webhook_script()
+        resp = self._chunked(script, b'{"order": 1}', terminated=False)
+        self.assertEqual(resp.status_code, 411, resp.content)
+        self.assertEqual(resp.json(), {"error": "Send the body with a Content-Length header."})
+        self.assertFalse(Run.objects.filter(script=script).exists())
+        self.assertIsNone(self.task_data)
+
+    def test_a_sender_that_hangs_up_mid_body_gets_400_and_no_run(self):
+        script = self._webhook_script()
+        with self.assertLogs("core.views.webhooks", "WARNING"):
+            resp = self._chunked(script, b"", stream=_CutReader(b'{"order": 1'))
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertFalse(Run.objects.filter(script=script).exists())
+
+    def test_a_signed_script_verifies_the_dechunked_bytes(self):
+        script = self._webhook_script(webhook_signature=Script.WebhookSignature.GITHUB)
+        script.set_webhook_signature_secret("chunk-secret")
+        script.save()
+        body = b'{"action": "opened"}'
+        good = "sha256=" + hmac.new(b"chunk-secret", body, hashlib.sha256).hexdigest()
+        resp = self._chunked(script, body, **{"X-Hub-Signature-256": good})
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(Run.objects.get(script=script).event["body"], body.decode())
+
+        bad = "sha256=" + hmac.new(b"chunk-secret", b"", hashlib.sha256).hexdigest()
+        resp = self._chunked(script, body, **{"X-Hub-Signature-256": bad})
+        self.assertEqual(resp.status_code, 401, resp.content)
+        self.assertEqual(Run.objects.filter(script=script).count(), 1)
+
+    def test_a_signed_script_without_an_ended_input_gets_411_before_the_signature(self):
+        script = self._webhook_script(webhook_signature=Script.WebhookSignature.GITHUB)
+        script.set_webhook_signature_secret("chunk-secret")
+        script.save()
+        resp = self._chunked(script, b"{}", terminated=False,
+                             **{"X-Hub-Signature-256": "sha256=" + "0" * 64})
+        self.assertEqual(resp.status_code, 411, resp.content)
+        self.assertFalse(Run.objects.filter(script=script).exists())
+
+    def test_a_post_with_no_body_and_no_length_is_still_an_empty_body(self):
+        script = self._webhook_script()
+        url = reverse("webhook_trigger", args=[script.webhook_token])
+        with mock.patch("core.tasks.async_task", return_value="t"):
+            resp = self.client.generic("POST", url, **{"wsgi.input": io.BytesIO(b"")})
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(Run.objects.get(script=script).event["body"], "")
 
 
 # --------------------------------------------------------------------------- #
