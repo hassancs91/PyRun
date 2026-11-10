@@ -94,6 +94,8 @@
             {% endif %}
         </section>
         {% endif %}
+
+        {% include "cpanel/plugins/_connections.html" with requirements=connection_requirements next=request.get_full_path %}
     </div>
 
     {# About / metadata #}

@@ -22,6 +22,7 @@ from django.views.decorators.http import require_POST
 from core.forms import PluginUploadForm
 from core.models import Plugin
 from core.services import PluginInstallError, PluginService
+from core.services.plugin_connections import states_for
 from core.views.decorators import superuser_required
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,8 @@ def plugin_detail_view(request: HttpRequest, slug: str) -> HttpResponse:
     context = {
         "plugin": plugin,
         "pending_restart": PluginService.pending_restart(),
+        # requires_connections (T25), with their status in this workspace.
+        "connection_requirements": states_for(request.workspace, plugin.slug, plugin.manifest),
     }
     return render(request, "cpanel/plugins/detail.html", context)
 

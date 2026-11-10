@@ -30,12 +30,10 @@ CHECK_CLASS = "h-4 w-4 accent-ok align-middle"
 
 # form-field name -> the clean env-var the secret injects under. The worker reads
 # the SAME env-var names from os.environ; they are wired only by matching strings.
-# (The OAuth REFRESH token is not here — it has no form field; the Connect
-# callback stores it under provisioning.OAUTH_TOKEN_KEY.)
+# (The YouTube account for posting is a PyRun connection, not a secret: see
+# provisioning.CONNECTION_KEY.)
 SECRET_FIELDS = {
     "yt_api_key": "YT_API_KEY",
-    "yt_oauth_client_id": "YT_OAUTH_CLIENT_ID",
-    "yt_oauth_client_secret": "YT_OAUTH_CLIENT_SECRET",
 }
 
 # Per-tag reply policy. `urgent` and `spam` can NEVER be auto — a locked
@@ -246,16 +244,7 @@ class YtCommentsConfigForm(forms.Form):
         help_text="A cost cap. Comments over the cap stay pending and are analyzed next run.",
     )
 
-    # ---- Reply automation (Stage 3 — OAuth + per-tag policy) ----
-    yt_oauth_client_id = _text(
-        label="Google OAuth client ID", required=False,
-        help_text="A 'Web application' OAuth client from Google Cloud Console. "
-                  "Needed only for posting replies and spam moderation.",
-    )
-    yt_oauth_client_secret = _secret(
-        label="Google OAuth client secret", required=False,
-        help_text="Stored encrypted; leave blank to keep the saved value.",
-    )
+    # ---- Reply automation (Stage 3 — per-tag policy; posting needs the YouTube connection) ----
     auto_post_daily_cap = _number(
         label="Auto-publish daily cap", min_value=1, max_value=200, initial=10,
         help_text="At most this many auto-published replies per day (UTC). "

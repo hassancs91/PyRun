@@ -60,6 +60,9 @@ from core.api.exceptions import ApiError as BrainError  # noqa: F401 — SDK sur
 # Qdrant; worker scripts reach the same collections through the
 # pyrunner_vectors helper.
 # 2.7 (additive): BrainAPI — owned brains and grant-checked shared read handlers.
+# PyRun 2.5 adds, before the one version bump at the end of its train:
+# ConnectionAPI (+ ConnectionView, ConnectionRequirement, ConnectionUnavailable)
+# and plugin.json ``requires_connections``.
 API_VERSION = "2.7"
 
 
@@ -182,6 +185,202 @@ class SecretAPI:
             grant.active = active
             grant.save(update_fields=["active"])
         return grant
+
+
+# --------------------------------------------------------------------------- #
+# Connections — accounts on outside services (PyRun 2.5, T25)
+# --------------------------------------------------------------------------- #
+
+class ConnectionUnavailable(Exception):
+    """A connection the plugin can't use right now.
+
+    ``code`` says why: CONNECTION_NOT_FOUND (nothing connected for that key),
+    CONNECTION_EXPIRED / CONNECTION_REVOKED (reconnect it), CONNECTION_REFRESH_FAILED
+    (the provider is unreachable: try again later), CONNECTION_UNREADABLE,
+    CONNECTION_UNSUPPORTED.
+    """
+
+    def __init__(self, message, code="CONNECTION_UNAVAILABLE"):
+        super().__init__(message)
+        self.message = message
+        self.code = code
+
+
+@dataclass(frozen=True)
+class ConnectionView:
+    """What plugin code may know about a connection: never a credential."""
+
+    id: str
+    name: str
+    provider: str
+    auth_kind: str
+    status: str
+    account_label: str
+    scopes: tuple
+    key: Optional[str]  # the requirement key it serves for this plugin
+
+    @classmethod
+    def _from(cls, connection):
+        return cls(
+            id=str(connection.pk),
+            name=connection.name,
+            provider=connection.provider,
+            auth_kind=connection.auth_kind,
+            status=connection.status,
+            account_label=connection.account_label,
+            scopes=tuple(connection.scopes or ()),
+            key=connection.owner_key,
+        )
+
+
+@dataclass(frozen=True)
+class ConnectionRequirement:
+    """A requirement and how it stands.
+
+    ``status`` is missing, ok, missing_scopes, expired, revoked or error;
+    ``missing_scopes`` lists the asked-for scopes the account didn't grant.
+    """
+
+    key: str
+    provider: str
+    scopes: tuple
+    label: str
+    status: str
+    connection: Optional[ConnectionView]
+    missing_scopes: tuple = ()
+
+    @property
+    def ok(self) -> bool:
+        return self.status == "ok"
+
+
+class ConnectionAPI:
+    """The accounts a plugin signs in to (Google, GitHub, an SMTP login...).
+
+    A plugin declares what it needs in ``plugin.json`` (``requires_connections``);
+    the user connects it, or picks one of the workspace's connections, on the
+    plugin page. The connection serving requirement ``key`` is the one this
+    plugin holds for it in the workspace. Plugin scripts get it through
+    ``grant()`` and read it with ``pyrunner_connections``, like any script;
+    plugin code in the web process reads it with ``credentials()``. Refresh
+    tokens and client secrets never leave PyRun.
+    """
+
+    def __init__(self, owner, workspace=None):
+        if not owner:
+            raise ValueError("ConnectionAPI needs the plugin's slug: connections are held per plugin.")
+        self.owner = owner
+        self._workspace = workspace
+
+    def _ws(self):
+        return _resolve_workspace(self._workspace)
+
+    def _connection(self, key):
+        from core.services.plugin_connections import connection_for
+
+        return connection_for(self._ws(), self.owner, key)
+
+    def require(self, provider, scopes=(), label="", *, key=None):
+        """How the requirement (``provider``, ``scopes``, ``label``) stands: a ConnectionRequirement.
+
+        ``key`` defaults to ``provider``. Raises ValueError for an unknown
+        provider, a bad key or bad scopes, as the doctor does for the manifest.
+        Saves nothing: connecting happens on the plugin page, which offers the
+        manifest's entries.
+        """
+        from core.services.plugin_connections import parse_requirement, status_of
+
+        entry = {"provider": provider, "scopes": list(scopes or ()), "label": label or ""}
+        if key is not None:
+            entry["key"] = key
+        requirement = parse_requirement(entry)
+        connection = self._connection(requirement.key)
+        status, missing = status_of(requirement, connection)
+        return ConnectionRequirement(
+            key=requirement.key,
+            provider=requirement.provider,
+            scopes=requirement.scopes,
+            label=requirement.label,
+            status=status,
+            connection=ConnectionView._from(connection) if connection is not None else None,
+            missing_scopes=tuple(missing),
+        )
+
+    def requirements(self):
+        """The manifest's ``requires_connections`` with their state in the workspace.
+
+        Pass it to the ``cpanel/plugins/_connections.html`` include on the
+        plugin page (Connect, pick a connection, stop using it).
+        """
+        from core.models import Plugin
+        from core.services.plugin_connections import states_for
+
+        plugin = Plugin.objects.filter(slug=self.owner).first()
+        return states_for(self._ws(), self.owner, plugin.manifest if plugin else {})
+
+    def get(self, key):
+        """The connection serving requirement ``key`` (a ConnectionView), or None."""
+        connection = self._connection(key)
+        return ConnectionView._from(connection) if connection is not None else None
+
+    def list(self):
+        """Every connection this plugin holds in the workspace, by name."""
+        from core.models import Connection
+
+        return [
+            ConnectionView._from(c)
+            for c in Connection.objects.filter(workspace=self._ws(), owner_plugin=self.owner).order_by("name")
+        ]
+
+    def grant(self, script, connection, *, active=True):
+        """Grant ``connection`` (a key, a ConnectionView or a Connection) to ``script``.
+
+        Idempotent, like ``SecretAPI.grant``; ``active=False`` keeps the grant
+        but gives nothing. Raises ConnectionUnavailable when nothing serves the
+        key, ValueError when the script is in another workspace.
+        """
+        from core.models import Connection, ConnectionGrant
+
+        if isinstance(connection, str):
+            row = self._connection(connection)
+            if row is None:
+                raise ConnectionUnavailable(
+                    f"Nothing is connected for '{connection}' yet.", "CONNECTION_NOT_FOUND"
+                )
+        elif isinstance(connection, ConnectionView):
+            row = Connection.objects.filter(pk=connection.id).first()
+            if row is None:
+                raise ConnectionUnavailable(f"Connection '{connection.name}' was deleted.", "CONNECTION_NOT_FOUND")
+        else:
+            row = connection
+        if script.workspace_id != row.workspace_id:
+            raise ValueError("A connection can only be granted to a script of its own workspace.")
+        grant, created = ConnectionGrant.objects.get_or_create(
+            script=script, connection=row, defaults={"active": active}
+        )
+        if not created and grant.active != active:
+            grant.active = active
+            grant.save(update_fields=["active"])
+        return grant
+
+    def credentials(self, key):
+        """Fresh auth material for plugin code outside a run (a page, a "Send now" button).
+
+        The dict a script's ``pyrunner_connections.credentials()`` gets:
+        ``headers``, ``params``, ``token``, ``base_url`` (``basic`` / ``smtp``
+        per auth kind) and, for OAuth, ``expires_in``. An OAuth access token is
+        refreshed first when it is about to expire. Never a refresh token or a
+        client secret. Raises ConnectionUnavailable.
+        """
+        from core.services.connections import ConnectionLookupError, credentials_for
+
+        connection = self._connection(key)
+        if connection is None:
+            raise ConnectionUnavailable(f"Nothing is connected for '{key}' yet.", "CONNECTION_NOT_FOUND")
+        try:
+            return credentials_for(connection)
+        except ConnectionLookupError as e:
+            raise ConnectionUnavailable(e.message, e.code) from None
 
 
 # --------------------------------------------------------------------------- #

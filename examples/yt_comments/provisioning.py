@@ -14,6 +14,13 @@ One config form Save provisions, in the default workspace, all owned by the
   * a daily Schedule.
 
 Re-saving updates the same rows (idempotent on ``(owner_plugin, owner_key)``).
+
+Posting replies and moderating spam need the channel owner's Google account:
+a PyRun connection the plugin asks for in ``plugin.json``
+(``requires_connections``, key ``youtube``). The user connects it on the
+plugin page (the card from ``ConnectionAPI``); the analyzer is granted it and
+asks ``pyrunner_connections`` for an access token. PyRun keeps the refresh
+token and the OAuth client secret: neither reaches the plugin or its script.
 """
 
 from pathlib import Path
@@ -21,6 +28,8 @@ from urllib.parse import urlparse
 
 from core.plugins.api import (
     ChannelAPI,
+    ConnectionAPI,
+    ConnectionUnavailable,
     DatabaseAPI,
     DataStoreAPI,
     EnvironmentAPI,
@@ -42,9 +51,13 @@ DEFAULT_TIMEOUT = 3600  # first-run backfill + AI classification can be long
 
 YT_API = "https://www.googleapis.com/youtube/v3"
 
-# The refresh token is NOT a form field — the OAuth callback stores it. It is
-# still part of the worker contract (injected env var), so it's checked too.
-OAUTH_TOKEN_KEY = "YT_OAUTH_REFRESH_TOKEN"
+# The requirement key of the YouTube account in plugin.json (requires_connections).
+CONNECTION_KEY = "youtube"
+
+# Owner secrets of the plugin's own OAuth flow (before 0.6.0). Owned secrets
+# reach every run of the plugin's script, so an upgraded install deletes them
+# (provision) instead of leaving a refresh token in the analyzer's environment.
+LEGACY_OAUTH_SECRETS = ("YT_OAUTH_CLIENT_ID", "YT_OAUTH_CLIENT_SECRET", "YT_OAUTH_REFRESH_TOKEN")
 
 # Keys of the non-secret config persisted to the DataStore (also prefill the form
 # and form the cross-process contract checked against worker_body.py).
@@ -88,8 +101,7 @@ def _worker_code():
     we fail loudly here at Save, not silently at run time.
     """
     code = Path(__file__).with_name("worker_body.py").read_text(encoding="utf-8")
-    expected = (list(SECRET_FIELDS.values()) + [OAUTH_TOKEN_KEY]
-                + list(CONFIG_KEYS) + list(BRAIN_KEYS))
+    expected = list(SECRET_FIELDS.values()) + list(CONFIG_KEYS) + list(BRAIN_KEYS)
     missing = [token for token in expected if token not in code]
     if missing:
         raise ValueError(
@@ -159,20 +171,39 @@ def save_brain(data):
     })
 
 
-def get_oauth():
-    """The "oauth" store entry: connect metadata written by the callback +
-    health fields (status/error) the worker keeps fresh."""
-    val = _store_entry("oauth", {})
-    return val if isinstance(val, dict) else {}
+def connection_requirements():
+    """plugin.json's requires_connections with their state (for the page's card)."""
+    return ConnectionAPI(OWNER).requirements()
 
 
-def _set_oauth(**fields):
-    store = DataStoreAPI(OWNER).get(STORE_KEY)
-    if store is None:
-        raise ValueError("Save the plugin settings first.")
-    entry = store.get("oauth", {}) or {}
-    entry.update(fields)
-    store.set("oauth", entry)
+def youtube_state(requirements=None):
+    """The YouTube requirement's state (``.status``: missing, ok, missing_scopes,
+    expired, revoked or error), or None when the manifest isn't installed."""
+    states = requirements if requirements is not None else connection_requirements()
+    return next((state for state in states if state.key == CONNECTION_KEY), None)
+
+
+def legacy_oauth_secrets():
+    """The pre-0.6.0 OAuth secrets still stored (deleted by the next settings save)."""
+    api = SecretAPI(OWNER)
+    return [key for key in LEGACY_OAUTH_SECRETS if api.get(key) is not None]
+
+
+def sync_connection_grant(script=None):
+    """Grant the YouTube connection the plugin holds to the analyzer (idempotent).
+
+    Called by every settings save and by the plugin page: the user may connect
+    (or pick another connection) after the analyzer was provisioned. Stop
+    using / another pick drops the old grant in PyRun itself.
+    """
+    script = script if script is not None else get_script()
+    if script is None:
+        return False
+    connections = ConnectionAPI(OWNER)
+    if connections.get(CONNECTION_KEY) is None:
+        return False
+    connections.grant(script, CONNECTION_KEY)
+    return True
 
 
 def get_runs():
@@ -281,12 +312,6 @@ def initial_from_config():
     for tag, mode in (cfg.get("reply_policies") or {}).items():
         initial[f"policy_{tag}"] = mode
 
-    # The client ID is shown readable (it's not sensitive alone and users need
-    # to double-check it); the client secret stays write-only like every secret.
-    client_id = _secret_value(SECRET_FIELDS["yt_oauth_client_id"])
-    if client_id:
-        initial["yt_oauth_client_id"] = client_id
-
     script = get_script()
     if script is not None:
         initial["notify_on"] = script.notify_on
@@ -370,11 +395,6 @@ def _secret_or_saved(values, field):
     if submitted:
         return submitted
     secret = SecretAPI(OWNER).get(SECRET_FIELDS[field])
-    return secret.get_decrypted_value() if secret is not None else ""
-
-
-def _secret_value(env_key):
-    secret = SecretAPI(OWNER).get(env_key)
     return secret.get_decrypted_value() if secret is not None else ""
 
 
@@ -545,14 +565,19 @@ def provision(data, *, created_by=None):
         concurrency_policy="skip",
     )
 
-    # 7) Grants: the owner secrets that exist + the database. The refresh token
-    #    isn't a form field (the OAuth callback writes it) but must reach the
-    #    script the same way once it exists.
-    for env_key in list(SECRET_FIELDS.values()) + [OAUTH_TOKEN_KEY]:
+    # 7) Grants: the owner secrets that exist, the database, and the YouTube
+    #    connection once one is connected. The pre-0.6.0 OAuth secrets go: an
+    #    owned secret reaches the script whether granted or not.
+    for env_key in SECRET_FIELDS.values():
         secret = secrets_api.get(env_key)
         if secret is not None:
             secrets_api.grant(script, secret)
+    for env_key in LEGACY_OAUTH_SECRETS:
+        secret = secrets_api.get(env_key)
+        if secret is not None:
+            secret.delete()
     DatabaseAPI(OWNER).grant(script, database)
+    sync_connection_grant(script)
 
     # 8) Daily schedule.
     ScheduleAPI(OWNER).sync(
@@ -631,75 +656,61 @@ def schedule_summary():
 
 
 # --------------------------------------------------------------------------- #
-# OAuth connect / disconnect / immediate posting (web-process side)
+# Immediate posting from the Reply Queue (web-process side)
 # --------------------------------------------------------------------------- #
 
-def oauth_client():
-    """(client_id, client_secret) from the owner secrets — "" when unset."""
-    return _secret_value(SECRET_FIELDS["yt_oauth_client_id"]), _secret_value(
-        SECRET_FIELDS["yt_oauth_client_secret"]
-    )
+class PostError(Exception):
+    """YouTube refused or couldn't take a reply. ``reason`` is YouTube's own code when it gave one."""
+
+    def __init__(self, message, *, reason=""):
+        super().__init__(message)
+        self.reason = reason
 
 
-def oauth_ready():
-    """True when the OAuth client is saved AND the settings are provisioned —
-    the preconditions for starting a consent round-trip."""
-    cid, csec = oauth_client()
-    return bool(cid and csec and get_script() is not None)
+def post_reply(access_token, parent_id, text):
+    """``comments.insert``: post ``text`` as a reply to the top-level comment
+    ``parent_id``. Returns the new reply's YouTube id. 50 quota units."""
+    import requests
 
-
-def store_refresh_token(refresh_token, channel_id, channel_title):
-    """The tail of a successful consent: persist + grant the refresh token and
-    record the connection metadata the Settings card shows."""
-    from django.utils import timezone as dj_tz
-
-    secret = SecretAPI(OWNER).upsert(
-        OAUTH_TOKEN_KEY, refresh_token,
-        description="YouTube Comments AI — OAuth refresh token (stored by Connect)",
-    )
-    script = get_script()
-    if script is not None:
-        SecretAPI(OWNER).grant(script, secret)
-    _set_oauth(
-        connected=True,
-        status="ok",
-        error="",
-        channel_id=channel_id,
-        channel_title=channel_title,
-        connected_at=dj_tz.now().isoformat(),
-    )
-
-
-def disconnect_oauth():
-    """Disconnect = flip the store's ``connected`` flag off. The token secret is
-    kept (reconnecting the same account restores instantly; uninstall with
-    remove-data cascades it) — both posting paths gate on the flag, and the
-    user can revoke the app at myaccount.google.com/permissions."""
-    _set_oauth(connected=False, status="", error="",
-               channel_id="", channel_title="")
-
-
-def mark_invalid_grant(detail):
-    _set_oauth(status="invalid_grant", error=str(detail)[:300])
+    try:
+        resp = requests.post(
+            f"{YT_API}/comments",
+            params={"part": "snippet"},
+            json={"snippet": {"parentId": parent_id, "textOriginal": text}},
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=15,
+        )
+    except requests.exceptions.RequestException as exc:
+        raise PostError(f"Couldn't reach the YouTube API ({exc.__class__.__name__}).") from exc
+    if resp.status_code >= 400:
+        reason, message = "", f"HTTP {resp.status_code}"
+        try:
+            err = resp.json().get("error", {})
+            errors = err.get("errors", [])
+            reason = errors[0].get("reason", "") if errors else ""
+            message = err.get("message") or message
+        except (ValueError, IndexError):
+            pass
+        raise PostError(f"YouTube refused the reply: {message}", reason=reason)
+    return str(resp.json().get("id", ""))
 
 
 def post_reply_now(parent_id, text):
     """Post an approved reply immediately from the dashboard.
 
-    Returns ``(yt_reply_id, error_message)`` — exactly one is truthy. An
-    ``invalid_grant`` marks the oauth entry so the page offers Reconnect; any
-    failure leaves the row ``approved`` for the worker to retry.
+    Returns ``(yt_reply_id, error_message)``: exactly one is truthy. Any
+    failure leaves the row ``approved`` for the worker to retry. The access
+    token comes from the plugin's YouTube connection; PyRun refreshes it, and
+    marks the connection expired when Google refuses the refresh (the card
+    then offers Reconnect).
     """
-    from . import oauth as oauth_mod
-
-    cid, csec = oauth_client()
-    refresh = _secret_value(OAUTH_TOKEN_KEY)
-    if not (cid and csec and refresh and get_oauth().get("connected")):
-        return "", "YouTube isn't connected — connect it under Settings first."
     try:
-        access = oauth_mod.refresh_access_token(cid, csec, refresh)
-        return oauth_mod.post_reply(access, parent_id, text), ""
-    except oauth_mod.OAuthError as exc:
-        if exc.reason == "invalid_grant":
-            mark_invalid_grant(str(exc))
+        material = ConnectionAPI(OWNER).credentials(CONNECTION_KEY)
+    except ConnectionUnavailable as exc:
+        if exc.code == "CONNECTION_NOT_FOUND":
+            return "", "YouTube isn't connected: connect it under Settings first."
+        return "", exc.message
+    try:
+        return post_reply(material["token"], parent_id, text), ""
+    except PostError as exc:
         return "", str(exc)

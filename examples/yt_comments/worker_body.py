@@ -33,7 +33,7 @@
       Fail-soft everywhere: no storage connection / helper / network = a log
       line, never a failed run. Legacy rows (fetched before v0.5.0) get their
       avatar URL backfilled via comments.list (1 quota unit / 50 ids).
-   4. REPLY ENGINE (needs the YouTube OAuth connection): drafts replies for
+   4. REPLY ENGINE (needs the YouTube connection): drafts replies for
       newly classified comments per the user's per-tag policy (off / draft /
       auto), injecting the Reply Brain (voice / knowledge / rules /
       tag_guidance). `draft` queues for approval on the plugin page; `auto`
@@ -61,9 +61,11 @@
 
  SECRETS (injected as clean env vars, selected-mode):
    YT_API_KEY              (required — YouTube Data API v3, read-only reads)
-   YT_OAUTH_CLIENT_ID      (optional — Google OAuth client, reply automation)
-   YT_OAUTH_CLIENT_SECRET  (optional — Google OAuth client, reply automation)
-   YT_OAUTH_REFRESH_TOKEN  (optional — stored by the plugin's Connect flow)
+
+ CONNECTION (optional, reply automation): the Google account the plugin page
+ connects (plugin.json requires_connections, key "youtube"), granted to this
+ script. pyrunner_connections hands out a fresh access token; PyRun keeps the
+ refresh token and the OAuth client secret, so neither is in this environment.
 
  NON-SECRET CONFIG (channel_id, channel_title, start_date, include_replies,
  max_pages_per_run, tags, ai_enabled, ai_model, max_ai_per_run,
@@ -103,12 +105,9 @@ except Exception:
 
 # Credentials — injected as clean env vars by selected-mode grants. Read soft
 # (``.get``) so this module is importable for unit tests; main() validates the
-# required one. The three OAuth vars are optional: without them the plugin is
-# read-only (no posting/moderation) and says so in the log.
+# required one. Posting and moderation use the YouTube connection instead
+# (get_access_token); without one the plugin is read-only and says so in the log.
 YT_API_KEY = os.environ.get("YT_API_KEY", "")
-YT_OAUTH_CLIENT_ID = os.environ.get("YT_OAUTH_CLIENT_ID", "")
-YT_OAUTH_CLIENT_SECRET = os.environ.get("YT_OAUTH_CLIENT_SECRET", "")
-YT_OAUTH_REFRESH_TOKEN = os.environ.get("YT_OAUTH_REFRESH_TOKEN", "")
 
 # The plugin's owner slug + owned resources. Derive the slug from the env var
 # PyRun injects for owned-script runs so names are never hardcoded.
@@ -118,7 +117,9 @@ DB_NAME = f"{OWNER}:data"
 RUN_ID = os.environ.get("PYRUNNER_RUN_ID", "")  # ties live progress to this run
 
 YT_API = "https://www.googleapis.com/youtube/v3"
-OAUTH_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
+# The provider of the plugin's YouTube connection: the one Google connection
+# granted to this script (plugin scripts get no "all my scripts" connections).
+CONNECTION = "google"
 REQUEST_TIMEOUT = 30
 HISTORY_LIMIT = 50          # most recent N runs kept for the dashboard
 WATERMARK_OVERLAP_HOURS = 24  # refetch window below the watermark (upserts dedupe)
@@ -548,25 +549,6 @@ def write_progress(state, *, phase="", index=0, total=0):
         pass
 
 
-def record_oauth_status(status, error=""):
-    """Update the "oauth" store entry's health fields (read-modify-write, so the
-    connect metadata the plugin page wrote — channel, connected_at — survives).
-    The page shows a Reconnect button when this lands on ``invalid_grant``."""
-    try:
-        from pyrunner_datastore import DataStore
-
-        store = DataStore(STATE_STORE)
-        entry = store.get("oauth", {}) or {}
-        entry.update({
-            "status": status,
-            "error": str(error or "")[:300],
-            "checked_at": datetime.now(timezone.utc).isoformat(),
-        })
-        store["oauth"] = entry
-    except Exception:
-        pass
-
-
 def record_run(store, *, status, stats_row):
     """Append a compact record of this run to the data store for the dashboard."""
     record = {
@@ -739,70 +721,26 @@ class PostRejected(Exception):
 
 
 class OAuthUnavailable(Exception):
-    """No usable access token this run (not connected, invalid_grant, expiry…)."""
-
-
-_access_token = None
-
-
-def _oauth_connected():
-    """The store's ``oauth.connected`` flag — Disconnect on the plugin page
-    flips it off while the (recoverable) token secret stays granted, so the
-    flag is the authority, not the env var."""
-    try:
-        from pyrunner_datastore import DataStore
-
-        entry = DataStore(STATE_STORE).get("oauth", {}) or {}
-        return bool(entry.get("connected"))
-    except Exception:
-        return bool(YT_OAUTH_REFRESH_TOKEN)  # store unreadable — env decides
+    """No usable access token this run (expired or revoked connection, refresh failed...)."""
 
 
 def get_access_token():
-    """Refresh-token → access token, lazily and once per run (memoized).
+    """A fresh access token of the YouTube connection, or None when none is granted.
 
-    Returns None when OAuth isn't configured/connected. Raises
-    ``OAuthUnavailable`` when it is connected but the refresh fails — an
-    ``invalid_grant`` additionally lands in the store's "oauth" entry so the
-    plugin page shows Reconnect.
+    ``pyrunner_connections`` caches it for the run and asks PyRun again when it
+    is about to expire (PyRun refreshes it). Raises ``OAuthUnavailable`` when a
+    connection is granted but can't give a token: Google refused the refresh
+    (PyRun marks it expired and the plugin page offers Reconnect), it was
+    revoked, or the provider is unreachable.
     """
-    global _access_token
-    if _access_token:
-        return _access_token
-    if not (YT_OAUTH_CLIENT_ID and YT_OAUTH_CLIENT_SECRET and YT_OAUTH_REFRESH_TOKEN):
-        return None
-    if not _oauth_connected():
-        return None
+    import pyrunner_connections
+
     try:
-        resp = requests.post(OAUTH_TOKEN_ENDPOINT, data={
-            "grant_type": "refresh_token",
-            "refresh_token": YT_OAUTH_REFRESH_TOKEN,
-            "client_id": YT_OAUTH_CLIENT_ID,
-            "client_secret": YT_OAUTH_CLIENT_SECRET,
-        }, timeout=REQUEST_TIMEOUT)
-    except requests.exceptions.RequestException as exc:
-        raise OAuthUnavailable(f"token refresh unreachable ({exc.__class__.__name__})") from exc
-    body = {}
-    try:
-        body = resp.json()
-    except ValueError:
-        pass
-    if resp.status_code != 200 or not body.get("access_token"):
-        err = body.get("error", "")
-        detail = body.get("error_description") or err or f"HTTP {resp.status_code}"
-        if err == "invalid_grant":
-            record_oauth_status("invalid_grant", detail)
-            raise OAuthUnavailable(
-                "YouTube revoked the connection (invalid_grant) — reconnect on the "
-                "plugin page. Common causes: the Google OAuth app is still in "
-                "'Testing' (tokens expire after 7 days — publish it to Production), "
-                "or the Google password changed."
-            )
-        record_oauth_status("error", detail)
-        raise OAuthUnavailable(f"token refresh failed: {detail}")
-    record_oauth_status("ok")
-    _access_token = body["access_token"]
-    return _access_token
+        return pyrunner_connections.token(CONNECTION)
+    except pyrunner_connections.ConnectionsError as exc:
+        if exc.code == "CONNECTION_NOT_FOUND":
+            return None  # not connected (or "Stop using" on the plugin page)
+        raise OAuthUnavailable(f"{exc} [{exc.code}]") from None
 
 
 def yt_post(resource, params, json_body, *, cost):
@@ -1344,7 +1282,7 @@ def sync_avatars(conn):
 # =============================================================================
 #
 # Never runs on the seed run. Drafting needs only the AI provider; POSTING and
-# MODERATION need the OAuth connection. Everything posted is audited in the
+# MODERATION need the YouTube connection. Everything posted is audited in the
 # `replies` table; the UNIQUE(comment_id) constraint makes double-replies
 # impossible no matter how often a run retries.
 

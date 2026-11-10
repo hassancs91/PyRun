@@ -25,7 +25,6 @@ from django.test import SimpleTestCase, TestCase
 
 from . import provisioning as prov
 from . import worker_body as wb
-from . import oauth as oauth_mod
 from .forms import (
     DEFAULT_TAGS,
     RESERVED_TAGS,
@@ -38,6 +37,15 @@ from .forms import (
     tags_to_text,
 )
 
+YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl"
+# Values a run of the analyzer must never see (T25): what PyRun keeps for the
+# connection, and the secrets the plugin's own OAuth flow stored before 0.6.0.
+CLIENT_SECRET = "GOCSPX-t25-app-secret-0001"
+REFRESH_TOKEN = "1//t25-connection-refresh-0002"
+ACCESS_TOKEN = "ya29.t25-connection-access-0003"
+LEGACY_SECRET = "GOCSPX-t25-legacy-secret-0004"
+LEGACY_REFRESH = "1//t25-legacy-refresh-0005"
+
 
 # --------------------------------------------------------------------------- #
 # Cross-process worker contract — secret env names + config keys are wired to the
@@ -48,8 +56,7 @@ from .forms import (
 class WorkerContractTests(SimpleTestCase):
     def test_shipped_worker_references_every_secret_and_config_key(self):
         code = prov._worker_code()
-        expected = (list(SECRET_FIELDS.values()) + [prov.OAUTH_TOKEN_KEY]
-                    + list(prov.CONFIG_KEYS) + list(prov.BRAIN_KEYS))
+        expected = list(SECRET_FIELDS.values()) + list(prov.CONFIG_KEYS) + list(prov.BRAIN_KEYS)
         for token in expected:
             self.assertIn(token, code, f"worker_body.py is missing reference to {token}")
 
@@ -525,53 +532,66 @@ def _resp(status, body):
     return r
 
 
-class OAuthHelperTests(SimpleTestCase):
-    def test_state_roundtrip_and_tamper(self):
-        state = oauth_mod.make_state()
-        self.assertTrue(oauth_mod.check_state(state))
-        self.assertFalse(oauth_mod.check_state(state + "x"))
-        self.assertFalse(oauth_mod.check_state(""))
-
-    def test_auth_url_forces_offline_consent(self):
-        url = oauth_mod.build_auth_url("CID", "https://x/cb", "STATE")
-        for fragment in ("access_type=offline", "prompt=consent", "client_id=CID",
-                         "youtube.force-ssl"):
-            self.assertIn(fragment, url)
-
-    def test_exchange_requires_refresh_token(self):
-        with mock.patch.object(oauth_mod.requests, "post",
-                               return_value=_resp(200, {"access_token": "at"})):
-            with self.assertRaises(oauth_mod.OAuthError) as cm:
-                oauth_mod.exchange_code("id", "sec", "code", "https://x/cb")
-        self.assertIn("no refresh token", str(cm.exception))
-
-    def test_invalid_grant_reason_is_machine_readable(self):
-        with mock.patch.object(oauth_mod.requests, "post", return_value=_resp(
-                400, {"error": "invalid_grant", "error_description": "Token expired"})):
-            with self.assertRaises(oauth_mod.OAuthError) as cm:
-                oauth_mod.refresh_access_token("id", "sec", "dead-token")
-        self.assertEqual(cm.exception.reason, "invalid_grant")
-        self.assertIn("Token expired", str(cm.exception))
+class PostReplyTests(SimpleTestCase):
+    """comments.insert from the web process (the Reply Queue's Approve & post)."""
 
     def test_post_reply_returns_id_and_surfaces_rejection(self):
-        with mock.patch.object(oauth_mod.requests, "post",
-                               return_value=_resp(200, {"id": "Ugz.reply1"})):
-            self.assertEqual(oauth_mod.post_reply("at", "Ugz.parent", "hi"), "Ugz.reply1")
-        with mock.patch.object(oauth_mod.requests, "post", return_value=_resp(
+        with mock.patch("requests.post", return_value=_resp(200, {"id": "Ugz.reply1"})) as post:
+            self.assertEqual(prov.post_reply("at", "Ugz.parent", "hi"), "Ugz.reply1")
+        self.assertEqual(post.call_args.kwargs["headers"], {"Authorization": "Bearer at"})
+        with mock.patch("requests.post", return_value=_resp(
                 403, {"error": {"message": "Comments disabled",
                                 "errors": [{"reason": "commentsDisabled"}]}})):
-            with self.assertRaises(oauth_mod.OAuthError) as cm:
-                oauth_mod.post_reply("at", "Ugz.parent", "hi")
+            with self.assertRaises(prov.PostError) as cm:
+                prov.post_reply("at", "Ugz.parent", "hi")
         self.assertEqual(cm.exception.reason, "commentsDisabled")
+        self.assertIn("Comments disabled", str(cm.exception))
 
-    def test_fetch_own_channel_needs_a_channel(self):
-        with mock.patch.object(oauth_mod.requests, "get",
-                               return_value=_resp(200, {"items": []})):
-            with self.assertRaises(oauth_mod.OAuthError):
-                oauth_mod.fetch_own_channel("at")
-        with mock.patch.object(oauth_mod.requests, "get", return_value=_resp(
-                200, {"items": [{"id": "UCme", "snippet": {"title": "My Channel"}}]})):
-            self.assertEqual(oauth_mod.fetch_own_channel("at"), ("UCme", "My Channel"))
+
+class _FakeConnectionsHelper:
+    """Stands in for the run's ``pyrunner_connections`` (which needs a live run)."""
+
+    class ConnectionsError(Exception):
+        def __init__(self, message, code=""):
+            super().__init__(message)
+            self.code = code
+
+    def __init__(self, token=None, code=""):
+        self._token, self._code = token, code
+        self.asked = []
+
+    def token(self, name):
+        self.asked.append(name)
+        if self._code:
+            raise self.ConnectionsError(f"Connection '{name}' is not usable.", self._code)
+        return self._token
+
+
+class WorkerAccessTokenTests(SimpleTestCase):
+    """The analyzer asks PyRun for the YouTube access token; it never refreshes one itself."""
+
+    def _token(self, helper):
+        with mock.patch.dict("sys.modules", {"pyrunner_connections": helper}):
+            return wb.get_access_token()
+
+    def test_a_granted_connection_gives_its_token(self):
+        helper = _FakeConnectionsHelper(token="ya29.t25-access")
+        self.assertEqual(self._token(helper), "ya29.t25-access")
+        self.assertEqual(helper.asked, ["google"])
+
+    def test_no_granted_connection_means_not_connected(self):
+        self.assertIsNone(self._token(_FakeConnectionsHelper(code="CONNECTION_NOT_FOUND")))
+
+    def test_an_expired_or_unreachable_connection_stops_posting(self):
+        for code in ("CONNECTION_EXPIRED", "CONNECTION_REVOKED", "CONNECTION_REFRESH_FAILED", "AMBIGUOUS"):
+            with self.subTest(code=code), self.assertRaises(wb.OAuthUnavailable) as cm:
+                self._token(_FakeConnectionsHelper(code=code))
+            self.assertIn(code, str(cm.exception))
+
+    def test_the_worker_holds_no_oauth_client_or_refresh_token(self):
+        code = prov._worker_code()
+        for gone in ("YT_OAUTH_", "refresh_token", "client_secret", "oauth2.googleapis.com"):
+            self.assertNotIn(gone, code)
 
 
 # --------------------------------------------------------------------------- #
@@ -1040,7 +1060,7 @@ class ProvisionTests(TestCase):
         self.assertEqual([w for w in warnings if "hannel" in w], [])
         self.assertEqual(prov.get_config()["alert_channel"], "")
 
-    # ---- Stage 3: reply policies, OAuth secrets + connect flow, Brain ----
+    # ---- Stage 3: reply policies, Brain ----
 
     def test_policies_sanitized_and_persisted(self):
         prov.provision(self._data(reply_policies={
@@ -1060,48 +1080,93 @@ class ProvisionTests(TestCase):
             with self.assertRaises(ValueError, msg=locked):
                 prov.provision(self._data(reply_policies={locked: "auto"}))
 
-    def test_oauth_client_secrets_stored_and_granted(self):
-        from core.models import Secret, SecretGrant
+    # ---- Stage 3 / 0.6.0: the YouTube connection (PyRun Connections, T25) ----
 
-        script, _ = prov.provision(self._data(
-            yt_oauth_client_id="cid.apps.googleusercontent.com",
-            yt_oauth_client_secret="GOCSPX-secret",
-        ))
-        self.assertEqual(Secret.objects.filter(owner_plugin=prov.OWNER).count(), 3)
-        self.assertEqual(SecretGrant.objects.filter(script=script).count(), 3)
-        self.assertEqual(prov.oauth_client(),
-                         ("cid.apps.googleusercontent.com", "GOCSPX-secret"))
+    def _plugin_row(self):
+        from pathlib import Path
 
-    def test_store_refresh_token_grants_and_records_connection(self):
-        from core.models import Secret, SecretGrant
+        from core.models import Plugin
 
+        manifest = json.loads(Path(prov.__file__).with_name("plugin.json").read_text(encoding="utf-8"))
+        Plugin.objects.update_or_create(
+            slug=prov.OWNER, defaults={"name": manifest["name"], "version": manifest["version"],
+                                       "manifest": manifest},
+        )
+
+    def _youtube_connection(self, *, expires_in=3600, status="ok", scopes=(YOUTUBE_SCOPE,)):
+        from django.utils import timezone as dj_tz
+
+        from core.models import Connection, OAuthClient
+
+        app = OAuthClient(workspace=self.ws, provider="google", client_id="t25.apps.googleusercontent.com")
+        app.set_secret(CLIENT_SECRET)
+        app.save()
+        c = Connection(
+            workspace=self.ws, name="yt_comments-youtube", provider="google", auth_kind="oauth2",
+            config={"scope_sets": [], "extra_scopes": YOUTUBE_SCOPE}, oauth_client=app,
+            owner_plugin=prov.OWNER, owner_key=prov.CONNECTION_KEY, scopes=list(scopes), status=status,
+            account_label="channel-owner@t25.test",
+            token_expires_at=dj_tz.now() + timedelta(seconds=expires_in) if expires_in else None,
+        )
+        c.set_credentials({"access_token": ACCESS_TOKEN, "refresh_token": REFRESH_TOKEN})
+        c.save()
+        return c
+
+    def _legacy_secrets(self):
+        from core.plugins.api import SecretAPI
+
+        api = SecretAPI(prov.OWNER)
+        for key, value in (("YT_OAUTH_CLIENT_ID", "legacy.apps.googleusercontent.com"),
+                           ("YT_OAUTH_CLIENT_SECRET", LEGACY_SECRET),
+                           ("YT_OAUTH_REFRESH_TOKEN", LEGACY_REFRESH)):
+            api.upsert(key, value)
+
+    def test_the_manifest_asks_for_the_youtube_account(self):
+        from core.services import plugin_connections as pc
+
+        self._plugin_row()
+        (state,) = prov.connection_requirements()
+        self.assertEqual((state.key, state.requirement.provider), ("youtube", "google"))
+        self.assertEqual(state.requirement.wanted_scopes(), [YOUTUBE_SCOPE])
+        self.assertEqual(state.status, "missing")
+        self.assertEqual(prov.youtube_state().status, "missing")
+        # The doctor's own check of the shipped manifest finds nothing.
+        manifest = json.loads(
+            __import__("pathlib").Path(prov.__file__).with_name("plugin.json").read_text(encoding="utf-8"))
+        self.assertEqual(pc.manifest_problems(manifest["requires_connections"]), ([], []))
+
+    def test_provision_grants_the_connection_and_deletes_the_legacy_oauth_secrets(self):
+        from core.models import ConnectionGrant, Secret
+
+        self._legacy_secrets()
         script, _ = prov.provision(self._data())
-        prov.store_refresh_token("1//refresh", "UCme", "My Channel")
-        token = Secret.objects.get(owner_plugin=prov.OWNER, owner_key=prov.OAUTH_TOKEN_KEY)
-        self.assertEqual(token.get_decrypted_value(), "1//refresh")
-        self.assertTrue(SecretGrant.objects.filter(script=script, secret=token).exists())
-        entry = prov.get_oauth()
-        self.assertTrue(entry["connected"])
-        self.assertEqual(entry["status"], "ok")
-        self.assertEqual(entry["channel_title"], "My Channel")
-        # Re-provision keeps granting the callback-written token (idempotent).
-        script, _ = prov.provision(self._data())
-        self.assertTrue(SecretGrant.objects.filter(script=script, secret=token).exists())
+        self.assertFalse(ConnectionGrant.objects.filter(script=script).exists())  # nothing connected yet
+        self.assertEqual(prov.legacy_oauth_secrets(), [])
+        self.assertEqual(
+            list(Secret.objects.filter(owner_plugin=prov.OWNER).values_list("key", flat=True)), ["YT_API_KEY"])
 
-    def test_disconnect_flips_the_flag_and_blocks_posting(self):
-        prov.provision(self._data(
-            yt_oauth_client_id="cid", yt_oauth_client_secret="sec",
-        ))
-        prov.store_refresh_token("1//refresh", "UCme", "My Channel")
-        prov.disconnect_oauth()
-        entry = prov.get_oauth()
-        self.assertFalse(entry["connected"])
-        self.assertEqual(entry["status"], "")
-        # The token stays (reconnect restores instantly) but posting refuses.
-        self.assertEqual(prov._secret_value(prov.OAUTH_TOKEN_KEY), "1//refresh")
-        yt_id, error = prov.post_reply_now("Ugz.parent", "hi")
-        self.assertEqual(yt_id, "")
-        self.assertIn("isn't connected", error)
+        connection = self._youtube_connection()
+        # Connected after provisioning: the page (or the next save) grants it.
+        self.assertTrue(prov.sync_connection_grant())
+        self.assertTrue(ConnectionGrant.objects.filter(script=script, connection=connection, active=True).exists())
+        prov.provision(self._data())
+        self.assertEqual(ConnectionGrant.objects.filter(script=script).count(), 1)
+
+    def test_the_analyzer_run_env_has_no_refresh_token_or_client_secret(self):
+        """T25 acceptance: an upgraded install, connected, provisioned, then a run."""
+        from core.executor import _build_script_environment
+        from core.models import Run
+
+        self._legacy_secrets()
+        self._youtube_connection()
+        script, _ = prov.provision(self._data())
+        run = Run.objects.create(script=script, workspace=self.ws, status=Run.Status.RUNNING)
+        with mock.patch("core.executor.ClaudeService.get_script_env", return_value={}):
+            env = _build_script_environment(run=run)
+        self.assertEqual(env["YT_API_KEY"], "AIza-test")  # the secrets it does get are there
+        for value in (REFRESH_TOKEN, CLIENT_SECRET, ACCESS_TOKEN, LEGACY_SECRET, LEGACY_REFRESH):
+            self.assertFalse([k for k, v in env.items() if value in v], value)
+        self.assertFalse([k for k in env if k.startswith("YT_OAUTH_")])
 
     def test_post_reply_now_degrades_without_connection(self):
         prov.provision(self._data())
@@ -1109,19 +1174,29 @@ class ProvisionTests(TestCase):
         self.assertEqual(yt_id, "")
         self.assertIn("isn't connected", error)
 
-    def test_post_reply_now_invalid_grant_marks_reconnect(self):
-        prov.provision(self._data(
-            yt_oauth_client_id="cid", yt_oauth_client_secret="sec",
-        ))
-        prov.store_refresh_token("1//dead", "UCme", "My Channel")
-        with mock.patch.object(
-            oauth_mod, "refresh_access_token",
-            side_effect=oauth_mod.OAuthError("expired", reason="invalid_grant"),
-        ):
+    def test_post_reply_now_posts_with_the_connections_access_token(self):
+        prov.provision(self._data())
+        self._youtube_connection()
+        with mock.patch("requests.post", return_value=_resp(200, {"id": "Ugz.reply9"})) as post:
+            yt_id, error = prov.post_reply_now("Ugz.parent", "Thanks!")
+        self.assertEqual((yt_id, error), ("Ugz.reply9", ""))
+        self.assertEqual(post.call_args.kwargs["headers"], {"Authorization": f"Bearer {ACCESS_TOKEN}"})
+
+    def test_post_reply_now_on_an_expired_connection_says_reconnect(self):
+        self._plugin_row()
+        prov.provision(self._data())
+        self._youtube_connection(status="expired")
+        with mock.patch("requests.post") as post:
             yt_id, error = prov.post_reply_now("Ugz.parent", "hi")
+        post.assert_not_called()
         self.assertEqual(yt_id, "")
-        self.assertIn("expired", error)
-        self.assertEqual(prov.get_oauth()["status"], "invalid_grant")
+        self.assertIn("reconnect", error)
+        self.assertEqual(prov.youtube_state().status, "expired")
+
+    def test_a_connection_missing_the_youtube_scope_is_flagged(self):
+        self._plugin_row()
+        self._youtube_connection(scopes=("openid", "email"))
+        self.assertEqual(prov.youtube_state().status, "missing_scopes")
 
     # ---- Stage 4: weekly insights config ----
 
@@ -1166,3 +1241,110 @@ class ProvisionTests(TestCase):
     def test_brain_save_requires_provisioned_store(self):
         with self.assertRaises(ValueError):
             prov.save_brain({"voice": "x"})
+
+
+# --------------------------------------------------------------------------- #
+# The plugin page: PyRun's connections card replaces the plugin's OAuth flow.
+# --------------------------------------------------------------------------- #
+
+class ConnectionCardPageTests(TestCase):
+    """The page through the real URLconf: the plugin's URLs and templates mounted
+    the way an installed plugin gets them (the test runner only splices the path)."""
+
+    def setUp(self):
+        import types
+        from pathlib import Path
+
+        from django.conf import settings
+        from django.test import override_settings
+        from django.urls import include, path
+
+        import pyrunner.urls
+        from core.models import Plugin, User, Workspace, WorkspaceMembership
+
+        urlconf = types.ModuleType("yt_comments_test_urls")
+        urlconf.urlpatterns = list(pyrunner.urls.urlpatterns) + [
+            path("plugins/yt_comments/", include("plugins.yt_comments.urls")),
+        ]
+        templates = [dict(cfg) for cfg in settings.TEMPLATES]
+        templates[0]["DIRS"] = list(templates[0].get("DIRS", [])) + [Path(prov.__file__).parent / "templates"]
+        override = override_settings(ROOT_URLCONF=urlconf, TEMPLATES=templates)
+        override.enable()
+        self.addCleanup(override.disable)
+        for target in (
+            "core.services.setup_service.SetupService.is_setup_needed",
+            "core.services.setup_service.SetupService.needs_admin_setup",
+        ):
+            patch = mock.patch(target, return_value=False)
+            patch.start()
+            self.addCleanup(patch.stop)
+        self.ws = Workspace.get_default() or Workspace.objects.create(name="T25", is_default=True)
+        self.user = User.objects.create_superuser(username="ytc", email="ytc@t25.test", password="pw-12345678!")
+        WorkspaceMembership.objects.update_or_create(
+            user=self.user, workspace=self.ws, defaults={"role": WorkspaceMembership.ROLE_OWNER})
+        self.client.force_login(self.user)
+        manifest = json.loads(Path(prov.__file__).with_name("plugin.json").read_text(encoding="utf-8"))
+        Plugin.objects.update_or_create(
+            slug=prov.OWNER, defaults={"name": manifest["name"], "version": manifest["version"],
+                                       "manifest": manifest})
+
+    def test_the_settings_tab_shows_the_card_and_no_oauth_client_fields(self):
+        from django.urls import reverse
+
+        resp = self.client.get("/plugins/yt_comments/")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.content.decode()
+        self.assertIn('data-requirement="youtube"', body)
+        self.assertIn('data-status="missing"', body)
+        # No Google OAuth app yet: the card points at Connections → OAuth apps.
+        self.assertIn(reverse("cpanel:oauth_app_list"), body)
+        for gone in ("yt_oauth_client_id", "yt_oauth_client_secret", "oauth/start", "oauth/callback", "Disconnect"):
+            self.assertNotIn(gone, body)
+        self.assertNotIn("now signs in through PyRun", body)  # no legacy secrets
+
+    def test_connect_starts_core_oauth_for_the_youtube_scope_and_comes_back_here(self):
+        from urllib.parse import parse_qs, urlparse
+
+        from django.urls import reverse
+
+        from core.models import OAuthClient
+
+        app = OAuthClient(workspace=self.ws, provider="google", client_id="t25.apps.googleusercontent.com")
+        app.set_secret(CLIENT_SECRET)
+        app.save()
+        body = self.client.get("/plugins/yt_comments/").content.decode()
+        self.assertIn("Connect Google", body)
+        resp = self.client.post(
+            reverse("cpanel:plugin_connection_connect", args=[prov.OWNER, prov.CONNECTION_KEY]),
+            {"next": "/plugins/yt_comments/"},
+        )
+        self.assertEqual(resp.status_code, 302)
+        query = parse_qs(urlparse(resp["Location"]).query)
+        self.assertIn(YOUTUBE_SCOPE, query["scope"][0].split())
+        self.assertEqual(query["client_id"], ["t25.apps.googleusercontent.com"])
+
+    def test_legacy_secrets_get_an_upgrade_notice(self):
+        from core.plugins.api import SecretAPI
+
+        SecretAPI(prov.OWNER).upsert("YT_OAUTH_REFRESH_TOKEN", LEGACY_REFRESH)
+        body = self.client.get("/plugins/yt_comments/").content.decode()
+        self.assertIn("now signs in through PyRun", body)
+        self.assertNotIn(LEGACY_REFRESH, body)
+
+    def test_an_expired_connection_shows_reconnect_and_its_status(self):
+        from core.models import Connection, OAuthClient
+
+        app = OAuthClient(workspace=self.ws, provider="google", client_id="t25.apps.googleusercontent.com")
+        app.set_secret(CLIENT_SECRET)
+        app.save()
+        c = Connection(workspace=self.ws, name="yt_comments-youtube", provider="google", auth_kind="oauth2",
+                       oauth_client=app, owner_plugin=prov.OWNER, owner_key=prov.CONNECTION_KEY,
+                       status="expired", scopes=[YOUTUBE_SCOPE])
+        c.set_credentials({"access_token": ACCESS_TOKEN, "refresh_token": REFRESH_TOKEN})
+        c.save()
+        body = self.client.get("/plugins/yt_comments/").content.decode()
+        self.assertIn("needs attention (Expired)", body)
+        self.assertIn('data-status="expired"', body)
+        self.assertIn(">Reconnect<", body)
+        for value in (ACCESS_TOKEN, REFRESH_TOKEN, CLIENT_SECRET):
+            self.assertNotIn(value, body)

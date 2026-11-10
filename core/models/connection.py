@@ -101,7 +101,8 @@ class Connection(models.Model):
         default=False,
         help_text="Grant to every user script (not plugins') its creator made in this workspace.",
     )
-    # Plugin ownership, as on Secret (ConnectionAPI, T25). NULL = a user connection.
+    # The plugin that uses this connection, and for which of its manifest's
+    # ``requires_connections`` keys (ConnectionAPI, T25). NULL = no plugin.
     owner_plugin = models.CharField(max_length=100, null=True, blank=True, db_index=True)
     owner_key = models.CharField(max_length=100, null=True, blank=True)
     created_by = models.ForeignKey(
@@ -119,6 +120,10 @@ class Connection(models.Model):
         ordering = ["name"]
         constraints = [
             models.UniqueConstraint(fields=["workspace", "name"], name="uniq_connection_ws_name"),
+            # One connection per plugin requirement (NULLs are distinct: user connections).
+            models.UniqueConstraint(
+                fields=["workspace", "owner_plugin", "owner_key"], name="uniq_connection_ws_owner"
+            ),
         ]
 
     def __str__(self):

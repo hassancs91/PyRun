@@ -5,8 +5,8 @@ PyRun plugin. Connect a channel once; every day the plugin fetches new
 comments in a single channel-wide API sweep, classifies them with your
 instance's AI provider into your own tag taxonomy, scores sentiment, stores
 everything in a managed Postgres database, and emails you batched urgent
-alerts, testimonial finds and a digest. Connect YouTube via OAuth and it also
-**replies for you** — drafts in your voice queued for approval, or guarded
+alerts, testimonial finds and a digest. Connect the channel's Google account
+and it also **replies for you** — drafts in your voice queued for approval, or guarded
 auto-publish for the tags you trust it with.
 
 ## What you get
@@ -39,7 +39,7 @@ auto-publish for the tags you trust it with.
   **video ideas**, alongside a per-video sentiment trend vs the prior week.
   No AI provider? The email still reports counts and trends. Empty week?
   No email at all.
-- **Reply automation (OAuth)** — per-tag policy: *draft for approval* queues
+- **Reply automation (needs the YouTube connection)** — per-tag policy: *draft for approval* queues
   AI replies on the Replies tab (edit → approve posts immediately, or reject);
   *auto-publish* posts unattended behind hard guardrails. The **Reply Brain**
   (your voice, knowledge/links, rules) is injected into every draft.
@@ -80,12 +80,12 @@ auto-publish for the tags you trust it with.
   is only 2,500 units.
 - An **Environment** with `requests`, `psycopg[binary]` and (for AI)
   `claude-agent-sdk`.
-- **For reply automation only**: a Google **OAuth client** (type *Web
-  application*) from the same Cloud project — client ID + secret go in
-  Settings, and the Settings card shows the exact redirect URI to register.
-  **Set the OAuth consent screen to "In production"**: apps left in *Testing*
-  expire refresh tokens after 7 days and the connection dies weekly (the
-  one-time "unverified app" warning is fine for personal use).
+- **For reply automation only**: PyRun 2.5's **Connections** and a Google
+  **OAuth client** (type *Web application*) from the same Cloud project, added
+  under **Connections → OAuth apps** (that page shows the redirect URI to
+  register). **Set the OAuth consent screen to "In production"**: apps left in
+  *Testing* expire refresh tokens after 7 days and the connection dies weekly
+  (the one-time "unverified app" warning is fine for personal use).
 
 ## Install
 
@@ -95,9 +95,16 @@ auto-publish for the tags you trust it with.
    review the tags, choose the environment and daily time → **Save**.
 4. **Run now** to backfill. The first run seeds the archive silently — no
    alert emails, no replies — and later runs process only what's new.
-5. (Optional, for replies) Add the OAuth client ID + secret in Settings →
-   Save → **Connect YouTube** with the account that owns the channel. Teach
-   the **Brain** your voice, then set per-tag reply policies.
+5. (Optional, for replies) Add the Google OAuth app under Connections → OAuth
+   apps, then **Connect Google** on the plugin's Settings tab with the account
+   that owns the channel (or pick a Google connection you already have that
+   allows YouTube). Teach the **Brain** your voice, then set per-tag reply
+   policies.
+
+**Upgrading from 0.5.x**: the plugin's own Google client and refresh token
+(`YT_OAUTH_*` secrets) are no longer used. Add the same client under
+Connections → OAuth apps (and its redirect URI on the Google client), connect
+on the Settings tab, then save the settings once: that deletes the old secrets.
 
 ## How the fetch stays cheap
 
@@ -123,13 +130,14 @@ the backfill.
   on comments the AI tagged — comments YouTube already held are invisible to
   the plugin.
 - **Replies post as the connected Google account.** Connect the channel owner
-  (or its brand account); the plugin warns at connect time if the authorized
-  channel isn't the one it monitors.
+  (or its brand account): the card shows the account's email, not its channel,
+  so check it's the right one.
 - **A failed classification never guesses.** Comments the AI couldn't process
   stay `pending` and are retried on later runs.
-- **If YouTube revokes the OAuth connection** (`invalid_grant`), monitoring
-  continues on the API key; approved replies wait, and the page shows a
-  Reconnect button with the likely cause.
+- **If Google refuses the connection's refresh** (an expired *Testing* token, a
+  changed password, revoked access), PyRun marks it expired; monitoring
+  continues on the API key, approved replies wait, and the card offers
+  Reconnect.
 - **Avatars are other people's photos.** The plugin re-downloads an author's
   avatar whenever a newer comment shows it changed (staying on the refreshed
   side of YouTube's stored-data policy), but whether to publish a commenter's
@@ -143,8 +151,7 @@ One Save provisions (all owned by `yt_comments`, removed with the plugin):
 |---|---|---|
 | Script | `YouTube Comments AI` | the daily analyzer |
 | Secret | `YT_API_KEY` | your YouTube key (write-only in the form) |
-| Secrets | `YT_OAUTH_CLIENT_ID` / `YT_OAUTH_CLIENT_SECRET` | optional OAuth client for replies |
-| Secret | `YT_OAUTH_REFRESH_TOKEN` | stored by the Connect flow, never typed |
+| Connection grant | the plugin's Google connection (`youtube`) | optional, for replies; the connection stays in Connections when the plugin goes |
 | Database | `yt_comments:data` | `comments` + `videos` + `replies` tables |
 | DataStore | `yt_comments:state` | config + Brain + run history + live progress |
 | Schedule | daily at your chosen time | |

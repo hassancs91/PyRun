@@ -21,7 +21,6 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
-from . import oauth
 from . import provisioning as prov
 from .forms import BrainForm, YtCommentsConfigForm, guidance_to_text
 
@@ -420,13 +419,6 @@ def _build_form(request, data=None):
     )
 
 
-def _redirect_uri(request):
-    """The absolute OAuth callback URL — shown in Settings (it must be added to
-    the Google OAuth client as an authorized redirect URI) and sent with every
-    consent round-trip. Honors X-Forwarded-Proto behind a proxy."""
-    return request.build_absolute_uri(reverse("yt_comments:oauth_callback"))
-
-
 def _build_brain_form(data=None):
     if data is not None:
         return BrainForm(data)
@@ -440,8 +432,12 @@ def _build_brain_form(data=None):
 
 
 def _render(request, form, brain_form=None, force_tab=""):
-    oauth_state = prov.get_oauth()
-    client_id, client_secret = prov.oauth_client()
+    # The user may have connected YouTube (or picked another connection) on
+    # this page's card since the analyzer was provisioned: grant it now.
+    prov.sync_connection_grant()
+    requirements = prov.connection_requirements()
+    youtube = prov.youtube_state(requirements)
+    status = youtube.status if youtube is not None else "missing"
     ctx = {
         "form": form,
         "brain_form": brain_form or _build_brain_form(),
@@ -449,11 +445,11 @@ def _render(request, form, brain_form=None, force_tab=""):
         "has_environments": bool(prov.list_environments()),
         "schedule": prov.schedule_summary(),
         "is_active": prov.live_status()["active"],
-        "oauth": oauth_state,
-        "oauth_connected": bool(oauth_state.get("connected")),
-        "oauth_needs_reconnect": oauth_state.get("status") == "invalid_grant",
-        "oauth_client_configured": bool(client_id and client_secret),
-        "redirect_uri": _redirect_uri(request),
+        "connection_requirements": requirements,
+        "youtube": youtube,
+        "youtube_connected": status == "ok",
+        "youtube_needs_reconnect": status not in ("ok", "missing"),
+        "legacy_oauth": bool(prov.legacy_oauth_secrets()),
     }
     ctx.update(_dashboard_context(request))
     return render(request, "yt_comments/index.html", ctx)
@@ -521,74 +517,6 @@ def test_youtube(request):
     return JsonResponse(prov.test_youtube(request.POST))
 
 
-# --------------------------------------------------------------------------- #
-# OAuth connect flow (Connect → Google consent → callback → token stored)
-# --------------------------------------------------------------------------- #
-
-@superuser_required
-@require_POST
-def oauth_start(request):
-    """Kick off the consent round-trip (also serves as Reconnect)."""
-    if not prov.oauth_ready():
-        messages.error(
-            request,
-            "Save the settings with a Google OAuth client ID + secret first — "
-            "then Connect.",
-        )
-        return redirect(reverse("yt_comments:index") + "#settings")
-    client_id, _ = prov.oauth_client()
-    url = oauth.build_auth_url(client_id, _redirect_uri(request), oauth.make_state())
-    return redirect(url)
-
-
-@superuser_required
-def oauth_callback(request):
-    """The browser arrives here FROM Google carrying our signed state + a code."""
-    error = request.GET.get("error")
-    if error:
-        messages.error(request, f"Google returned an error: {error}")
-        return redirect(reverse("yt_comments:index") + "#settings")
-    if not oauth.check_state(request.GET.get("state", "")):
-        messages.error(request, "The sign-in link expired or was tampered with — try again.")
-        return redirect(reverse("yt_comments:index") + "#settings")
-    code = request.GET.get("code", "")
-    if not code:
-        messages.error(request, "Google sent no authorization code.")
-        return redirect(reverse("yt_comments:index") + "#settings")
-
-    client_id, client_secret = prov.oauth_client()
-    try:
-        tokens = oauth.exchange_code(client_id, client_secret, code, _redirect_uri(request))
-        channel_id, channel_title = oauth.fetch_own_channel(tokens["access_token"])
-        prov.store_refresh_token(tokens["refresh_token"], channel_id, channel_title)
-    except (oauth.OAuthError, ValueError) as exc:
-        messages.error(request, str(exc))
-        return redirect(reverse("yt_comments:index") + "#settings")
-
-    messages.success(
-        request,
-        f"YouTube connected as “{channel_title}” — replies and spam moderation are unlocked.",
-    )
-    configured = (prov.get_config().get("channel_id") or "").strip()
-    if configured and configured != channel_id:
-        messages.warning(
-            request,
-            f"Heads-up: the connected account's channel ({channel_title}, {channel_id}) "
-            f"is not the channel this plugin monitors ({configured}). Replies are "
-            "posted AS the connected account — reconnect with the channel owner "
-            "(or brand account) if that's not what you want.",
-        )
-    return redirect(reverse("yt_comments:index") + "#settings")
-
-
-@superuser_required
-@require_POST
-def oauth_disconnect(request):
-    try:
-        prov.disconnect_oauth()
-    except ValueError as exc:  # store not provisioned — nothing to disconnect
-        messages.error(request, str(exc))
-        return redirect(reverse("yt_comments:index") + "#settings")
     messages.info(
         request,
         "YouTube disconnected — replies and moderation are off; monitoring "

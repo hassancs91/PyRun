@@ -7,7 +7,7 @@ class YtCommentsConfig(PluginAppConfig):
     plugin = PyRunnerPlugin(
         slug="yt_comments",
         name="YouTube Comments AI",
-        version="0.5.0",
+        version="0.6.0",
         nav_items=[
             NavItem(
                 label="YT Comments",

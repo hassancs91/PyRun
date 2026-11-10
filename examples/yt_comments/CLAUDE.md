@@ -7,8 +7,8 @@ Postgres **Database** (the first DB-native example plugin), a state DataStore
 and a daily Schedule. It is the reference for a **database-backed** plugin and
 consumes three platform seams: Databases (`DatabaseAPI`/`pyrunner_db`), AI
 Providers (`pyrunner_ai`) and instance email (`pyrunner_notify.email(html=…)`).
-Stage 3 adds **reply automation**: a Google OAuth connect flow (`oauth.py`),
-a Reply Brain, per-tag reply policies with hard auto-publish guardrails, a
+Stage 3 adds **reply automation**: the channel's Google account as a PyRun
+connection (`requires_connections` + `ConnectionAPI`, PyRun 2.5), a Reply Brain, per-tag reply policies with hard auto-publish guardrails, a
 Reply Queue, and optional spam moderation. Stage 4 adds the **weekly insights
 email** (AI-clustered questions → FAQ/content ideas + per-video sentiment
 trend). Stage 5 adds **publish-ready testimonials**: a focused AI grading pass
@@ -24,18 +24,26 @@ cross-layer desyncs, not syntax errors.
 |---|---|
 | `apps.py`, `urls.py`, `views.py`, `forms.py`, `templates/` | `worker_body.py` (the managed analyzer script) |
 | `provisioning.py` — all SDK calls + YouTube channel resolution at Save | — |
-| `oauth.py` — Google consent flow, token exchange/refresh, immediate posting from the Reply Queue | (the worker has its own minimal copies — it can't import web modules) |
+| `provisioning.post_reply_now` — immediate posting from the Reply Queue (`ConnectionAPI.credentials`) | `get_access_token()` — `pyrunner_connections.token("google")` |
 
 The web layer talks to PyRun **only** through `core.plugins.api`; the
 dashboard reads the plugin's own tables via `DatabaseAPI(OWNER).dsn(DB_KEY)`
 + psycopg (`provisioning.db_rows`). The worker is a standalone script that
 imports only stdlib + `requests` + injected helpers (`pyrunner_db`,
-`pyrunner_datastore`, `pyrunner_ai`, `pyrunner_notify`).
+`pyrunner_datastore`, `pyrunner_ai`, `pyrunner_notify`, `pyrunner_connections`).
+
+There is no OAuth code here (0.6.0): PyRun's Connections hold the Google
+client and the refresh token, do the consent round trip and refresh the access
+token. The plugin page includes PyRun's card (`cpanel/plugins/_connections.html`
+with `ConnectionAPI(OWNER).requirements()`); `provisioning.sync_connection_grant`
+grants the connection the plugin holds (key `youtube`) to the analyzer on every
+save and page view. Never store a Google token or client in an owned secret
+again: every owned secret reaches the analyzer's environment, granted or not.
 
 ## Contracts you must not break
 
 1. **Secret/config names are a cross-process contract by convention.**
-   `forms.SECRET_FIELDS` env keys + `provisioning.OAUTH_TOKEN_KEY` +
+   `forms.SECRET_FIELDS` env keys +
    `provisioning.CONFIG_KEYS` + `provisioning.BRAIN_KEYS` must all appear
    literally in `worker_body.py`; `provisioning._worker_code()` fails **loudly
    at Save** if one goes missing. Rename on both sides or not at all.
@@ -127,14 +135,13 @@ imports only stdlib + `requests` + injected helpers (`pyrunner_db`,
   `posted` / `rejected` / `failed` — shared by string with `views.py`
   (`_REPLY_BADGE`) and the worker. Transient post failures stay `approved`
   (retried); only `PostRejected` (4xx) marks `failed`.
-- **Posting/moderation need OAuth; reads never do.** Reads stay on the API
-  key deliberately (stable, same quota) — don't switch the sweep to OAuth.
-  An `invalid_grant` must degrade: record via `record_oauth_status`, skip the
-  posting phase, keep monitoring. The page then shows Reconnect.
+- **Posting/moderation need the YouTube connection; reads never do.** Reads
+  stay on the API key deliberately (stable, same quota) — don't switch the
+  sweep to OAuth. A connection that can't give a token (`OAuthUnavailable`:
+  expired, revoked, refresh failed) must degrade: skip the posting phase, keep
+  monitoring. PyRun marks a refused refresh expired; the card shows Reconnect.
 - **The Brain lives in store entry `brain`** (own save endpoint) so a
-  Settings re-save can't clobber it; the `oauth` entry is read-modify-write
-  from both processes (web writes connect metadata, worker writes health) —
-  never replace the whole entry blindly.
+  Settings re-save can't clobber it.
 - **The web layer must tolerate a missing `replies` table** (upgraded install
   before the worker's first run): `views._reply_data()` guards separately
   from the comment queries so the Inbox never blanks.
@@ -142,11 +149,12 @@ imports only stdlib + `requests` + injected helpers (`pyrunner_db`,
 ## Keep the manifest truthful
 
 `plugin.json` must match the code: `api: "2.5"` / `min_pyrunner: "1.16.0"`
-(ChannelAPI + DatabaseAPI + StorageAPI/`pyrunner_storage`); `provisions` =
-1 script / 4 secrets (`YT_API_KEY`,
-`YT_OAUTH_CLIENT_ID`, `YT_OAUTH_CLIENT_SECRET`, `YT_OAUTH_REFRESH_TOKEN` —
-the last one written by the Connect flow, not the form) / 1 datastore /
-1 database / 1 schedule. Version bumps touch **three places**: `plugin.json`,
+(ChannelAPI + DatabaseAPI + StorageAPI/`pyrunner_storage`; 0.6.0 also needs
+`ConnectionAPI`, which ships with PyRun 2.5: raise both values when 2.5's SDK
+version is published); `provisions` =
+1 script / 1 secret (`YT_API_KEY`) / 1 datastore / 1 database / 1 schedule,
+and `requires_connections` names the Google account (key `youtube`, scope
+`youtube.force-ssl`) the page connects. Version bumps touch **three places**: `plugin.json`,
 `apps.py PyRunnerPlugin(version=…)`, `CHANGELOG.md`.
 
 ## Develop · validate · package

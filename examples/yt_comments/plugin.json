@@ -3,11 +3,11 @@
     "slug": "yt_comments",
     "publisher": "learnwithhasan",
     "name": "YouTube Comments AI",
-    "version": "0.5.0",
+    "version": "0.6.0",
     "api": "2.5",
     "min_pyrunner": "1.16.0",
     "summary": "AI-powered YouTube comment intelligence: daily fetch, tagging, sentiment, urgent alerts, a publish-graded testimonial collector with archived avatars, weekly insights and guarded AI reply automation.",
-    "description": "Connect your YouTube channel and the plugin fetches new comments daily (one channel-wide API sweep, not per-video), classifies each with the platform AI provider into your own tag taxonomy (urgent, testimonial, question, spam, ...), scores sentiment, and stores everything in a managed Postgres database. The dashboard gives you a filterable comment inbox, a testimonial collector with one-click export, batched urgent/testimonial email alerts and a daily digest. Testimonials are graded for publish-worthiness (feature / solid / generic — a story with results outranks 'great video'), and each testimonial author's avatar is archived to the instance's object storage under a stable URL, ready to publish on your own site. A weekly insights email clusters the week's repeated questions into FAQ answers and content ideas, and tracks sentiment per video against the prior week. Connect YouTube via OAuth to unlock reply automation: per-tag policies (off / draft-for-approval / auto-publish with hard guardrails and a daily cap), a Reply Brain (your voice, knowledge and rules injected into every draft), an approve/edit/reject Reply Queue, and optional spam moderation. Requires a data server (managed Databases); AI uses the instance's active AI Provider — no AI key of its own.",
+    "description": "Connect your YouTube channel and the plugin fetches new comments daily (one channel-wide API sweep, not per-video), classifies each with the platform AI provider into your own tag taxonomy (urgent, testimonial, question, spam, ...), scores sentiment, and stores everything in a managed Postgres database. The dashboard gives you a filterable comment inbox, a testimonial collector with one-click export, batched urgent/testimonial email alerts and a daily digest. Testimonials are graded for publish-worthiness (feature / solid / generic — a story with results outranks 'great video'), and each testimonial author's avatar is archived to the instance's object storage under a stable URL, ready to publish on your own site. A weekly insights email clusters the week's repeated questions into FAQ answers and content ideas, and tracks sentiment per video against the prior week. Connect your YouTube channel's Google account (a PyRun connection) to unlock reply automation: per-tag policies (off / draft-for-approval / auto-publish with hard guardrails and a daily cap), a Reply Brain (your voice, knowledge and rules injected into every draft), an approve/edit/reject Reply Queue, and optional spam moderation. Requires a data server (managed Databases); AI uses the instance's active AI Provider — no AI key of its own.",
     "icon": "assets/icon.svg",
     "icon_fallback": "💬",
     "categories": ["monitoring", "marketing", "ai"],
@@ -19,10 +19,18 @@
     "documentation": "https://learnwithhasan.com",
     "provisions": {
         "scripts": 1,
-        "secrets": 4,
+        "secrets": 1,
         "datastores": 1,
         "databases": 1,
         "schedules": 1,
-        "secret_keys": ["YT_API_KEY", "YT_OAUTH_CLIENT_ID", "YT_OAUTH_CLIENT_SECRET", "YT_OAUTH_REFRESH_TOKEN"]
-    }
+        "secret_keys": ["YT_API_KEY"]
+    },
+    "requires_connections": [
+        {
+            "key": "youtube",
+            "provider": "google",
+            "scopes": ["https://www.googleapis.com/auth/youtube.force-ssl"],
+            "label": "The YouTube channel's Google account (posts replies, holds spam for review)"
+        }
+    ]
 }

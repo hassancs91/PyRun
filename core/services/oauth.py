@@ -304,8 +304,14 @@ def read_state(value) -> dict:
     return state
 
 
-def start(request, *, preset, client, name, config, scopes, connection=None, grant_all_scripts=False) -> str:
-    """Begin connecting (or reconnecting ``connection``); returns the provider's authorize URL."""
+def start(request, *, preset, client, name, config, scopes, connection=None, grant_all_scripts=False,
+          owner=None, next_url="") -> str:
+    """Begin connecting (or reconnecting ``connection``); returns the provider's authorize URL.
+
+    ``owner`` = (plugin slug, requirement key) makes a new connection the one
+    that plugin uses for that key (T25); ``next_url`` (a local path) is where
+    the callback sends the browser instead of the connection's page.
+    """
     nonce = secrets.token_urlsafe(16)
     connection_id = str(connection.pk if connection is not None else uuid.uuid4())
     redirect = callback_url(request)
@@ -333,6 +339,8 @@ def start(request, *, preset, client, name, config, scopes, connection=None, gra
         "scopes": list(scopes),
         "grant_all_scripts": bool(grant_all_scripts),
         "new": connection is None,
+        "owner": list(owner) if owner else None,
+        "next": next_url or "",
         "redirect_uri": redirect,
         "at": time.time(),
     }
@@ -356,7 +364,7 @@ def start(request, *, preset, client, name, config, scopes, connection=None, gra
 def finish(request, *, state_value, code):
     """Complete a connect flow from the callback. Raises OAuthError.
 
-    Returns (the saved connection, its workspace).
+    Returns (the saved connection, its workspace, the flow's ``next_url`` or "").
     """
     from core.models import Workspace
 
@@ -390,6 +398,11 @@ def finish(request, *, state_value, code):
         raise OAuthError("This sign-in doesn't match the connection it was started for.")
     if connection is None and Connection.objects.filter(workspace=workspace, name=flow.get("name")).exists():
         raise OAuthError(f"A connection named \"{flow.get('name')}\" was added meanwhile: pick another name.")
+    owner = flow.get("owner") if connection is None else None
+    if owner and Connection.objects.filter(
+        workspace=workspace, owner_plugin=owner[0], owner_key=owner[1]
+    ).exists():
+        raise OAuthError("This plugin got a connection for that account meanwhile: nothing was changed.")
     tokens = exchange(
         preset, client, code=code, redirect_uri=flow["redirect_uri"], verifier=flow.get("verifier")
     )
@@ -406,6 +419,8 @@ def finish(request, *, state_value, code):
             grant_all_scripts=flow.get("grant_all_scripts") is True,
             created_by=request.user,
         )
+        if owner:
+            connection.owner_plugin, connection.owner_key = str(owner[0]), str(owner[1])
     # A refresh token belongs to the app that issued it: keep the saved one only
     # when the provider sent none and the app is the same.
     apply_tokens(connection, tokens, keep_refresh_token=connection.oauth_client_id == client.pk)
@@ -418,7 +433,7 @@ def finish(request, *, state_value, code):
     connection.last_tested_at = _now()
     connection.refreshing_until = None
     connection.save()
-    return connection, workspace
+    return connection, workspace, str(flow.get("next") or "")
 
 
 # --------------------------------------------------------------------------- #

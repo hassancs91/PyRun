@@ -110,6 +110,7 @@ reference:
 | `api` | The `core.plugins.api` version you target (see `API_VERSION`). |
 | `min_pyrunner`, `max_pyrunner` | Compatibility bounds. |
 | `provisions` | **Declares what the plugin creates** (resource counts + the secret keys it needs). Rendered before install/activation as a trust surface ("creates 1 script, 3 secrets, 1 schedule"). Counts are non-negative integers; `secret_keys` is a list of strings. |
+| `requires_connections` | **Declares the accounts the plugin signs in to** (PyRun 2.5): a list of `{provider, key, scopes, label}`. The plugin page offers Connect or a picker for each, with its status (see [Connections](#connections--accounts-on-outside-services-pyrun-25)). |
 | `provides` | **Declares what the plugin serves** — `api_resources` and `public_pages` (see [External API](#external-api--apiv1pluginsslug)). Undeclared handlers are never served: the manifest is the truth, same discipline as `provisions`. |
 
 The doctor `warn`s (advisory, never blocks) when the marketplace-recommended
@@ -753,6 +754,118 @@ Declare `"api": "2.7", "provisions": {"brains": 1}` in `plugin.json`.
 Uninstall with *remove data* deletes owned brains and their revision history;
 the delete preview includes them. Shared user brains are retained.
 
+## Connections — accounts on outside services (PyRun 2.5)
+
+A plugin that signs in to Google, GitHub, Slack, Notion, Microsoft 365, Airtable,
+an HTTP API or an SMTP server doesn't run its own OAuth flow or keep tokens in
+secrets. It declares the accounts it needs, the user connects them on the plugin
+page, and its scripts get them through an ordinary grant, read with
+[`pyrunner_connections`](run-context.md#connections) like any script. Refresh
+tokens and client secrets never leave PyRun: a script, or plugin code, only
+ever gets a short-lived access token.
+
+Declare them in `plugin.json`:
+
+```json
+"requires_connections": [
+    {"key": "mail", "provider": "google", "scopes": ["gmail_modify"], "label": "The mailbox to triage"},
+    {"key": "youtube", "provider": "google",
+     "scopes": ["https://www.googleapis.com/auth/youtube.force-ssl"]}
+]
+```
+
+| Field | Notes |
+|---|---|
+| `provider` | Required. A preset key: `google`, `microsoft`, `github`, `slack`, `notion`, `airtable`, `http`, `smtp`. |
+| `key` | How your code names this connection. Lowercase letters, digits, `_`, `-`; defaults to the provider. Two connections of one provider need their own keys. |
+| `scopes` | OAuth providers only. The preset's scope-set keys (the boxes on the connection form, e.g. `sheets`, `gmail_read`, `gmail_modify`, `drive_file`, `calendar` for Google) or raw provider scopes. Connect asks for them plus what the account lookup needs. |
+| `label` | What the account is for, shown on the plugin page. |
+
+The plugin's page in **Settings → Plugins** shows each entry with its status
+(*Not connected*, *Connected* with the account, *Missing access* when the account
+didn't allow every scope asked for, *Expired*, *Revoked*, *Error*) and:
+
+- **Connect Google** (OAuth providers, once the workspace or the instance has an
+  [OAuth app](integrations/oauth-apps.md)): the usual consent screen, then back to
+  the page. It makes a connection named `<slug>-<key>` that this plugin holds;
+  **Reconnect** asks again, for the scopes the entry needs as well as the ones
+  the connection already had.
+- **Use this one**: pick one of the workspace's own connections of that provider
+  instead, for example one made by pasting a token on the Connections page (a
+  box with no public callback) or an API-key one. It replaces the connection the
+  plugin held for that key, if any.
+- **Stop using**: the plugin lets go of it. The connection stays in
+  **Connections** (it is the user's account), and the plugin's scripts lose
+  their grants to it. Deleting the plugin with its data does the same for every
+  connection it holds: connections are never deleted with a plugin.
+
+Your own page shows the same card with one include:
+
+```python
+from core.plugins.api import ConnectionAPI
+
+def index(request):
+    return render(request, "my_flows/index.html", {
+        "connection_requirements": ConnectionAPI(OWNER).requirements(),
+    })
+```
+
+```django
+{% include "cpanel/plugins/_connections.html" with requirements=connection_requirements next=request.get_full_path %}
+```
+
+In code:
+
+```python
+from core.plugins.api import ConnectionAPI, ConnectionUnavailable
+
+conns = ConnectionAPI(OWNER)              # workspace= as everywhere else
+
+req = conns.require("google", ["gmail_modify"], "The mailbox to triage", key="mail")
+req.status          # "missing" | "ok" | "missing_scopes" | "expired" | "revoked" | "error"
+req.missing_scopes  # the scopes asked for that the account didn't grant
+req.connection      # a ConnectionView (name, provider, status, account_label, scopes, key), or None
+
+view = conns.get("mail")                  # the ConnectionView serving "mail", or None
+conns.list()                              # every connection this plugin holds
+
+# Give a worker script the connection (idempotent; active=False switches it off):
+script = ScriptAPI(OWNER).upsert(key="triage", ...)
+if view:
+    conns.grant(script, "mail")           # a key, a ConnectionView or a Connection
+
+# Plugin code outside a run (a page's "Send now"): fresh auth material.
+try:
+    material = conns.credentials("mail")  # headers, params, token, base_url, expires_in
+except ConnectionUnavailable as e:
+    e.code  # CONNECTION_NOT_FOUND, CONNECTION_EXPIRED, CONNECTION_REVOKED, CONNECTION_REFRESH_FAILED...
+```
+
+- **`require()`** checks its arguments as the doctor checks the manifest (a
+  `ValueError` for an unknown provider, a bad key or scopes) and saves nothing.
+  Only manifest entries get the page's buttons.
+- **Grants are yours to make.** The "grant to all my scripts" wildcard never
+  covers plugin scripts, so grant each script that needs the account, when you
+  provision it and on the page that shows the card (the user may connect after
+  provisioning). A script that isn't granted gets `CONNECTION_NOT_FOUND`.
+- **In the worker**, name the connection by its provider when it is the only one
+  of that provider the script is granted (`pyrunner_connections.token("google")`),
+  or pass `conns.get(key).name` to it (as an input, or in its datastore).
+- **`credentials()`** refreshes an expiring OAuth token first, like a run's
+  `token()`, and returns what `pyrunner_connections.credentials()` returns. It
+  records no masks (there is no run): don't log it.
+
+- **Moving off your own OAuth flow**: delete the secrets it stored (client
+  secret, refresh token) once the connection replaces them. A plugin's own
+  secrets reach every run of its scripts in `selected` mode, granted or not, so
+  a stale refresh token would stay in the worker's environment.
+
+The SDK Showcase example has no connection; the **YouTube Comments AI** example
+holds a Google one for posting replies (and shows the upgrade from its own OAuth
+flow: `provisioning.py`).
+
+---
+
 ## Ownership & scoped secrets
 
 Every resource the SDK creates carries your `owner_plugin` slug (a string, not an
@@ -998,9 +1111,11 @@ and run automatically at activation). Tier-1 is a **static lint** — file check
 | Manifest metadata is malformed (bad semver, `icon` escapes folder / bad ext, unknown `manifest_version`, wrong `provisions` shape) | fail |
 | `provides.api_resources` drift: declared resource with no `@resource` handler, missing `api.py`, non-GET `methods`, duplicate names, or manifest `api` < `2.3` | fail |
 | `provides.public_pages` drift: declared page with no `@page` handler, missing `api.py`, duplicate names, or manifest `api` < `2.3` | fail |
+| `requires_connections` malformed: not a list of objects, unknown provider, bad `key`, `scopes` that aren't scope names (or on a provider without OAuth), a too-long `label`, a duplicate key, more than 20 entries | fail |
 | `apps.py` has heavy/third-party top-level imports | warn |
 | Imports core internals directly instead of `core.plugins.api` | warn |
 | Missing recommended marketplace fields (`author` / `license` / `summary` / `icon`) | warn |
+| A `requires_connections` entry with a field the doctor doesn't know | warn |
 | `@resource` handler not declared in `plugin.json` (the dispatcher will 404 it) | warn |
 | `@page` handler not declared in `plugin.json` (the public view will 404 it) | warn |
 | `api.py` imports `requests` / `httpx` / `urllib` (slow-handler smell) | warn |

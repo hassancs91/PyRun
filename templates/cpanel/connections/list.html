@@ -55,6 +55,7 @@
                 </td>
                 <td data-label="Used by" class="px-3 sm:px-6 py-3.5 text-sm text-muted">
                     {% if row.used_by_count %}{{ row.used_by|join:", " }}{% if row.used_by_count > row.used_by|length %} and {{ row.used_by_count|add:"-6" }} more{% endif %}{% else %}<span class="text-faint">No scripts</span>{% endif %}
+                    {% if c.owner_plugin %}<div class="text-xs text-faint mt-0.5">Used by the plugin {{ c.owner_plugin }} ({{ c.owner_key }})</div>{% endif %}
                     {% if c.grant_all_scripts %}<div class="text-xs text-faint mt-0.5">Granted to all of {{ c.created_by.email|default:"its creator" }}'s scripts</div>{% endif %}
                 </td>
                 <td class="tc-actions px-3 sm:px-6 py-3.5">

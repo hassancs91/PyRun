@@ -282,13 +282,13 @@
 
             <!-- ================= Replies panel ================= -->
             <div id="panel-replies" class="tab-panel hidden space-y-5">
-                {% if oauth_needs_reconnect %}
+                {% if youtube_needs_reconnect %}
                 <section class="rounded-2xl border border-fail/30 bg-fail/10 p-4 text-sm text-muted">
-                    <strong class="text-fail">YouTube revoked the connection (invalid_grant).</strong>
-                    Usually the Google OAuth app is still in <em>Testing</em> (refresh tokens expire after 7 days — publish it to Production) or the Google password changed.
+                    <strong class="text-fail">The YouTube connection needs attention ({{ youtube.status_label }}).</strong>
+                    {% if youtube.status == "expired" %}Google refused to refresh it: usually the Google OAuth app is still in <em>Testing</em> (refresh tokens expire after 7 days — publish it to Production) or the Google password changed.{% elif youtube.status == "missing_scopes" %}The account didn't allow managing your YouTube channel.{% endif %}
                     Reconnect under <button type="button" onclick="showTab('settings')" class="text-ok hover:underline">Settings</button>; approved replies wait and post once reconnected.
                 </section>
-                {% elif not oauth_connected and is_configured %}
+                {% elif not youtube_connected and is_configured %}
                 <section class="rounded-2xl border border-warn/30 bg-warn/10 p-4 text-sm text-muted">
                     <strong class="text-warn">YouTube isn't connected.</strong>
                     Drafts still queue here, but nothing can be posted until you connect YouTube under
@@ -408,48 +408,29 @@
                 </section>
                 {% endif %}
 
-                <!-- YouTube OAuth connection (posting replies & moderation) -->
-                <section class="rounded-2xl border {% if oauth_needs_reconnect %}border-fail/30{% else %}border-line{% endif %} bg-panel p-5 mb-5">
-                    <div class="flex items-start justify-between gap-4 flex-wrap">
-                        <div class="min-w-0">
-                            <h2 class="text-sm font-semibold">YouTube connection <span class="text-faint font-normal">— for posting replies &amp; spam moderation</span></h2>
-                            {% if oauth_needs_reconnect %}
-                            <p class="text-xs text-fail mt-1.5">Connection revoked (<span class="font-mono">invalid_grant</span>): usually the OAuth app is still in <em>Testing</em> — publish it to <strong>Production</strong> — or the Google password changed. Reconnect below.</p>
-                            {% elif oauth_connected %}
-                            <p class="text-xs text-muted mt-1.5 inline-flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-ok"></span>Connected as <strong class="text-text">{{ oauth.channel_title|default:oauth.channel_id }}</strong>{% if oauth.connected_at %} · since {{ oauth.connected_at|slice:":10" }}{% endif %}</p>
-                            {% elif oauth_client_configured %}
-                            <p class="text-xs text-muted mt-1.5">Client saved — connect the Google account that owns your channel. Monitoring works without this; posting doesn't.</p>
-                            {% else %}
-                            <p class="text-xs text-muted mt-1.5">Optional. Save a Google OAuth client (fields below) to unlock posting replies and spam moderation.</p>
-                            {% endif %}
-                        </div>
-                        <div class="flex items-center gap-2 flex-none">
-                            {% if oauth_client_configured %}
-                            <form method="post" action="{% url 'yt_comments:oauth_start' %}">
-                                {% csrf_token %}
-                                <button type="submit" class="inline-flex items-center gap-2 text-[13px] font-medium px-3.5 py-2 rounded-lg {% if oauth_needs_reconnect %}border border-fail/30 text-fail hover:bg-fail/10{% else %}bg-ok text-ink hover:opacity-90{% endif %} transition">
-                                    {% if oauth_needs_reconnect %}Reconnect{% elif oauth_connected %}Reconnect{% else %}Connect YouTube{% endif %}
-                                </button>
-                            </form>
-                            {% if oauth_connected %}
-                            <form method="post" action="{% url 'yt_comments:oauth_disconnect' %}">
-                                {% csrf_token %}
-                                <button type="submit" onclick="return confirm('Disconnect YouTube? Approved replies will wait until you reconnect.');" class="text-[13px] font-medium px-3 py-2 rounded-lg border border-line text-muted hover:text-text hover:bg-panel-hi transition">Disconnect</button>
-                            </form>
-                            {% endif %}
-                            {% endif %}
-                        </div>
-                    </div>
-                    <details class="mt-3 text-xs text-muted">
-                        <summary class="cursor-pointer text-faint hover:text-muted">Google Cloud setup (one-time)</summary>
-                        <ol class="ml-4 mt-2 space-y-1" style="list-style: decimal">
-                            <li>In Google Cloud Console (same project as your API key), enable <em>YouTube Data API v3</em> and create an <strong>OAuth client ID</strong> of type <strong>Web application</strong>.</li>
-                            <li>Add this authorized redirect URI: <code class="font-mono text-text bg-ink px-1.5 py-0.5 rounded select-all">{{ redirect_uri }}</code></li>
-                            <li><strong class="text-warn">Set the OAuth consent screen's publishing status to “In production”.</strong> Apps left in <em>Testing</em> expire refresh tokens after 7 days and the connection dies weekly. The “unverified app” warning during consent is fine for personal use.</li>
-                            <li>Paste the client ID + secret below, <em>Save settings</em>, then Connect with the Google account (or brand account) that owns the channel.</li>
-                        </ol>
-                    </details>
+                {% if legacy_oauth %}
+                <section class="rounded-2xl border border-warn/30 bg-warn/10 p-4 text-sm text-muted mb-5">
+                    <strong class="text-warn">YouTube now signs in through PyRun's Connections.</strong>
+                    The Google client and refresh token this plugin stored itself are no longer used. Add the Google OAuth app under
+                    <a href="{% url 'cpanel:oauth_app_list' %}" class="text-ok hover:underline">Connections → OAuth apps</a>
+                    (the same client ID and secret work once its redirect URIs include the one shown there), connect below, then
+                    <em>Save settings</em> once: that removes the old secrets.
                 </section>
+                {% endif %}
+
+                <!-- YouTube connection (posting replies & moderation): PyRun's connections card -->
+                <div class="mb-5">
+                    {% include "cpanel/plugins/_connections.html" with requirements=connection_requirements next=request.get_full_path %}
+                </div>
+                <details class="rounded-2xl border border-line bg-panel p-5 mb-5 text-xs text-muted">
+                    <summary class="cursor-pointer text-faint hover:text-muted">Google Cloud setup for posting replies (one-time)</summary>
+                    <ol class="ml-4 mt-2 space-y-1" style="list-style: decimal">
+                        <li>In Google Cloud Console (same project as your API key), enable <em>YouTube Data API v3</em> and create an <strong>OAuth client ID</strong> of type <strong>Web application</strong>.</li>
+                        <li>Add it under <a href="{% url 'cpanel:oauth_app_list' %}" class="text-ok hover:underline">Connections → OAuth apps</a>, and register the redirect URI that page shows on the Google client.</li>
+                        <li><strong class="text-warn">Set the OAuth consent screen's publishing status to “In production”.</strong> Apps left in <em>Testing</em> expire refresh tokens after 7 days and the connection dies weekly. The “unverified app” warning during consent is fine for personal use.</li>
+                        <li>Connect above with the Google account (or brand account) that owns the channel: replies are posted as that account.</li>
+                    </ol>
+                </details>
 
                 <form id="settings-form" method="post" action="{% url 'yt_comments:save' %}" class="rounded-2xl border border-line bg-panel overflow-hidden">
                     {% csrf_token %}
@@ -501,10 +482,6 @@
                         <div>
                             <h3 class="eyebrow text-faint mb-3">Reply automation</h3>
                             <p class="text-xs text-faint mb-3">Per tag: <strong class="text-text">Draft for approval</strong> queues AI replies on the Replies tab; <strong class="text-text">Auto-publish</strong> posts without asking — guarded (no links outside the Brain knowledge, never on comments containing links, length checks, {{ form.auto_post_daily_cap.value|default:10 }}/day cap) and anything suspicious is demoted to the queue. <span class="text-warn">urgent</span> and <span class="text-warn">spam</span> can never auto-publish. Posting needs the YouTube connection above; drafts cost AI credits.</p>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                                {% include "yt_comments/_field.html" with field=form.yt_oauth_client_id %}
-                                {% include "yt_comments/_field.html" with field=form.yt_oauth_client_secret %}
-                            </div>
                             <div class="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3 mb-4">
                                 {% for tag, field in form.policy_fields %}
                                 <div>

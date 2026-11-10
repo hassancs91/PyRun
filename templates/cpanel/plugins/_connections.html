@@ -1,0 +1,64 @@
+{% comment %}
+The accounts a plugin needs (plugin.json requires_connections, 2.5 T25), with Connect / Use / Stop using.
+
+Include it from a plugin page with the SDK's states:
+    {% include "cpanel/plugins/_connections.html" with requirements=connection_requirements next=request.get_full_path %}
+where connection_requirements = ConnectionAPI(OWNER).requirements(). `next` is where the buttons come back to.
+{% endcomment %}
+{% if requirements %}
+<section class="rounded-2xl border border-line bg-panel p-6" data-plugin-connections>
+    <h2 class="text-sm font-semibold text-text mb-1">Connections this plugin needs</h2>
+    <p class="text-xs text-faint mb-4">Accounts it signs in to. They live in <a href="{% url 'cpanel:connection_list' %}" class="text-info hover:underline">Connections</a>, and only this plugin's scripts are granted them.</p>
+    <ul class="space-y-4">
+        {% for st in requirements %}
+        <li class="rounded-xl border border-line-soft p-4" data-requirement="{{ st.key }}">
+            <div class="flex flex-wrap items-start justify-between gap-2">
+                <div class="min-w-0">
+                    <div class="text-sm text-text">{{ st.label }}</div>
+                    <div class="text-xs text-faint mt-0.5">{{ st.provider_label }}{% if st.scope_labels %} · {{ st.scope_labels|join:", " }}{% endif %}</div>
+                </div>
+                <span class="text-xs {% if st.ok %}text-ok{% elif st.status == 'missing' %}text-muted{% else %}text-warn{% endif %}" data-status="{{ st.status }}">
+                    {{ st.status_label }}{% if st.connection and st.connection.account_label %} · {{ st.connection.account_label }}{% endif %}
+                </span>
+            </div>
+            {% if st.connection %}
+            <p class="text-xs text-muted mt-2">Uses <a href="{% url 'cpanel:connection_edit' pk=st.connection.pk %}" class="font-mono text-info hover:underline">{{ st.connection.name }}</a>.
+                {% if st.missing_scopes %}The account didn't allow: <span class="font-mono">{{ st.missing_scopes|join:" " }}</span>. Reconnect to ask again.{% endif %}
+                {% if st.status == "expired" %}Its sign-in expired: reconnect it.{% elif st.status == "revoked" %}It was revoked: enter its credentials again, or pick another.{% elif st.status == "error" and st.connection.last_error %}Last test: {{ st.connection.last_error }}{% endif %}
+            </p>
+            {% endif %}
+            <div class="flex flex-wrap items-center gap-2 mt-3">
+                {% if st.is_oauth %}
+                    {% if st.has_oauth_app %}
+                    <form method="post" action="{% url 'cpanel:plugin_connection_connect' st.slug st.key %}" class="inline">
+                        {% csrf_token %}<input type="hidden" name="next" value="{{ next }}">
+                        <button type="submit" class="text-[13px] px-3 py-1.5 rounded-lg bg-ok text-ink font-medium hover:opacity-90 transition">{% if st.connection %}Reconnect{% else %}Connect {{ st.provider_label }}{% endif %}</button>
+                    </form>
+                    {% else %}
+                    <span class="text-xs text-faint">Connect needs a {{ st.provider_label }} OAuth app: add one in <a href="{% url 'cpanel:oauth_app_list' %}" class="text-info hover:underline">Connections → OAuth apps</a>, or paste a token in a new connection and pick it here.</span>
+                    {% endif %}
+                {% elif not st.connection %}
+                    <a href="{% url 'cpanel:connection_create' %}?provider={{ st.requirement.provider|urlencode }}" class="text-[13px] px-3 py-1.5 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Add a {{ st.provider_label }} connection</a>
+                {% endif %}
+                {% if st.choices %}
+                <form method="post" action="{% url 'cpanel:plugin_connection_use' st.slug st.key %}" class="inline-flex items-center gap-2">
+                    {% csrf_token %}<input type="hidden" name="next" value="{{ next }}">
+                    <label class="sr-only" for="pc-{{ st.slug }}-{{ st.key }}">Use an existing connection</label>
+                    <select id="pc-{{ st.slug }}-{{ st.key }}" name="connection" class="text-[13px] bg-ink border border-line rounded-lg px-2 py-1.5 text-text">
+                        {% for c in st.choices %}<option value="{{ c.pk }}">{{ c.name }}{% if c.account_label %} ({{ c.account_label }}){% endif %}</option>{% endfor %}
+                    </select>
+                    <button type="submit" class="text-[13px] px-3 py-1.5 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">{% if st.connection %}Use this instead{% else %}Use this one{% endif %}</button>
+                </form>
+                {% endif %}
+                {% if st.connection %}
+                <form method="post" action="{% url 'cpanel:plugin_connection_release' st.slug st.key %}" class="inline">
+                    {% csrf_token %}<input type="hidden" name="next" value="{{ next }}">
+                    <button type="submit" class="text-[13px] px-3 py-1.5 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Stop using</button>
+                </form>
+                {% endif %}
+            </div>
+        </li>
+        {% endfor %}
+    </ul>
+</section>
+{% endif %}

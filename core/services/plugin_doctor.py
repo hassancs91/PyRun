@@ -133,6 +133,7 @@ def run_doctor(path) -> DoctorReport:
     _check_sdk_usage(folder, report)
     _check_api_resources(folder, report)
     _check_public_pages(folder, report)
+    _check_connections(folder, report)
     return report
 
 
@@ -618,6 +619,26 @@ def _check_public_pages(folder: Path, report: DoctorReport):
 # --------------------------------------------------------------------------- #
 # AST helpers
 # --------------------------------------------------------------------------- #
+
+def _check_connections(folder: Path, report: DoctorReport):
+    """``requires_connections`` (2.5 T25): known providers, valid keys and scopes, no duplicates.
+
+    A malformed entry FAILs (the plugin page couldn't offer it); an unknown
+    field in an entry only WARNs.
+    """
+    from core.services.plugin_connections import manifest_problems
+
+    manifest = _manifest_dict(folder)
+    if not manifest or "requires_connections" not in manifest:
+        return
+    failures, warnings = manifest_problems(manifest.get("requires_connections"))
+    if failures:
+        report.add("connections", FAIL, " ".join(failures))
+    for warning in warnings:
+        report.add("connections", WARN, warning)
+    if not failures and not warnings:
+        report.add("connections", PASS, "requires_connections entries are valid.")
+
 
 def _base_name(node):
     if isinstance(node, ast.Name):

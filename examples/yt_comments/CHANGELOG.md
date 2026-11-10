@@ -1,5 +1,28 @@
 # Changelog — YouTube Comments AI
 
+## 0.6.0 (unreleased)
+
+The YouTube account for replies and spam moderation is now a **PyRun
+connection** (PyRun 2.5 Connections). `plugin.json` asks for it
+(`requires_connections`: a Google account with the `youtube.force-ssl`
+scope) and the Settings tab shows PyRun's card: **Connect Google**, pick a
+Google connection you already have, or stop using it. PyRun holds the OAuth
+client and the refresh token and refreshes the access token; the analyzer is
+granted the connection and asks `pyrunner_connections` for a token, so its
+environment no longer holds a client secret or a refresh token.
+
+- Removed: the plugin's own OAuth flow (`oauth.py`, the `oauth/start`,
+  `oauth/callback` and `oauth/disconnect` routes), the client ID and secret
+  fields, and the worker's own token refresh.
+- Upgrading: the old `YT_OAUTH_CLIENT_ID`, `YT_OAUTH_CLIENT_SECRET` and
+  `YT_OAUTH_REFRESH_TOKEN` secrets are deleted by the next settings save (the
+  page says so until then). Add the same Google client under Connections →
+  OAuth apps, with the redirect URI shown there, and connect again.
+- A refused refresh (an expired *Testing* token, a changed password) now marks
+  the connection expired in PyRun; the card offers Reconnect. The connect-time
+  warning about a different channel is gone: the card shows the account's
+  email.
+
 ## 0.5.0 (unreleased)
 
 One run at a time, everywhere: the analyzer script uses PyRun's **Skip**

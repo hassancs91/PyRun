@@ -23,6 +23,7 @@ from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
 from core import netguard
@@ -447,7 +448,7 @@ def oauth_callback_view(request: HttpRequest) -> HttpResponse:
         messages.error(request, f"Not connected: the provider answered {code} (nothing was saved).")
         return redirect("cpanel:connection_list")
     try:
-        connection, workspace = oauth.finish(
+        connection, workspace, next_url = oauth.finish(
             request, state_value=request.GET.get("state", ""), code=request.GET.get("code", "")
         )
     except oauth.OAuthError as e:
@@ -456,7 +457,20 @@ def oauth_callback_view(request: HttpRequest) -> HttpResponse:
         return redirect("cpanel:connection_list")
     account = f" as {connection.account_label}" if connection.account_label else ""
     messages.success(request, f'Connection "{connection.name}" connected{account}.')
+    if next_url and local_url(request, next_url):
+        # A plugin page's Connect button (T25) comes back to that page.
+        return redirect(next_url)
     return redirect(_edit_url(request.user, workspace, connection))
+
+
+def local_url(request, url) -> bool:
+    """True for a path on this site (where a ``next`` may send the browser)."""
+    return (
+        isinstance(url, str)
+        and url.startswith("/")
+        and not url.startswith("//")
+        and url_has_allowed_host_and_scheme(url, allowed_hosts={request.get_host()})
+    )
 
 
 class OAuthClientForm(forms.Form):

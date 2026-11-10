@@ -97,6 +97,11 @@ from core.views.connections import (
     oauth_app_form_view,
     oauth_app_list_view,
 )
+from core.views.plugin_connections import (
+    plugin_connection_connect_view,
+    plugin_connection_release_view,
+    plugin_connection_use_view,
+)
 from core.views.secrets import (
     secret_list_view,
     secret_create_view,
@@ -346,6 +351,13 @@ urlpatterns = [
     path("connections/apps/new/", oauth_app_form_view, name="oauth_app_create"),
     path("connections/apps/<uuid:pk>/", oauth_app_form_view, name="oauth_app_edit"),
     path("connections/apps/<uuid:pk>/delete/", oauth_app_delete_view, name="oauth_app_delete"),
+    # A plugin's requires_connections (T25): its page's Connect / Use / Stop using.
+    path("connections/plugin/<slug:slug>/<slug:key>/connect/", plugin_connection_connect_view,
+         name="plugin_connection_connect"),
+    path("connections/plugin/<slug:slug>/<slug:key>/use/", plugin_connection_use_view,
+         name="plugin_connection_use"),
+    path("connections/plugin/<slug:slug>/<slug:key>/release/", plugin_connection_release_view,
+         name="plugin_connection_release"),
 
     # Channels
     path("channels/", channel_list_view, name="channel_list"),

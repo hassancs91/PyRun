@@ -341,6 +341,21 @@ begins tracking at the current release; earlier history is in the git log.
   marks the connection **Expired** and emails its creator. Backups carry the
   apps (secrets still encrypted). Setup guide for each provider, including
   Google's consent screen: `docs/integrations/oauth-apps.md`.
+- **Plugins sign in through Connections.** A plugin lists the accounts it needs
+  in `plugin.json` (`requires_connections`: provider, scopes, a label), and its
+  page in **Settings → Plugins** shows each one with its status (not connected,
+  connected as which account, missing access, expired) and a **Connect** button,
+  or lets you pick one of the workspace's connections instead (one made by
+  pasting a token, for a box with no public callback). The plugin's scripts get
+  it through an ordinary grant and only ever see the access token. Plugin
+  authors use the new `ConnectionAPI` (`require`, `get`, `grant`,
+  `credentials`) and a ready-made card for their own page; the plugin doctor
+  checks the manifest entries. **Stop using** (or deleting the plugin with its
+  data) lets go of the connection without deleting it. The YouTube Comments AI
+  example now posts replies through a Google connection: its own OAuth flow and
+  client settings are gone, so after upgrading connect YouTube again on its page
+  and save its settings once (that deletes the old OAuth secrets). Guide:
+  "Connections" in `docs/plugins.md`.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

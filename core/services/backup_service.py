@@ -2110,6 +2110,7 @@ class BackupService:
         warnings: List[str] = []
         count = 0
         taken = set()
+        held = set()  # (workspace, plugin, key): one connection per plugin requirement (T25)
         for row in rows:
             workspace = cls._resolve_workspace(row.get("workspace_id"), ws_map, default_ws)
             name = str(row.get("name") or "")[:100]
@@ -2117,6 +2118,16 @@ class BackupService:
                 warnings.append(f"Connection '{name}': skipped (no name, or the name is taken in its workspace).")
                 continue
             taken.add((workspace.pk, name))
+            owner_plugin = str(row.get("owner_plugin") or "")[:100] or None
+            owner_key = str(row.get("owner_key") or "")[:100] or None
+            if owner_plugin and (workspace.pk, owner_plugin, owner_key) in held:
+                warnings.append(
+                    f"Connection '{name}': restored without its plugin ({owner_plugin}), "
+                    "which already has a connection for that account."
+                )
+                owner_plugin = owner_key = None
+            elif owner_plugin:
+                held.add((workspace.pk, owner_plugin, owner_key))
             status = row.get("status") if row.get("status") in Connection.Status.values else Connection.Status.OK
             last_error = str(row.get("last_error") or "")
             preset = get_preset(row.get("provider"))
@@ -2146,8 +2157,8 @@ class BackupService:
                 last_tested_at=cls._deserialize_datetime(row.get("last_tested_at")),
                 last_error=last_error,
                 grant_all_scripts=row.get("grant_all_scripts") is True,
-                owner_plugin=row.get("owner_plugin"),
-                owner_key=row.get("owner_key"),
+                owner_plugin=owner_plugin,
+                owner_key=owner_key,
                 oauth_client_id=oauth_client_id or None,
                 token_expires_at=cls._deserialize_datetime(row.get("token_expires_at")),
                 created_by=user_map.get(row.get("created_by_email"), current_user),

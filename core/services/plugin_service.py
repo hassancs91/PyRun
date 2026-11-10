@@ -501,6 +501,15 @@ class PluginService:
                     "Owned-%s cleanup skipped for plugin %r: %s", label, slug, exc
                 )
 
+        # Connections (2.5 T25) are the user's accounts, not the plugin's data:
+        # they are released (the plugin's scripts lose their grants), never deleted.
+        try:
+            from core.services.plugin_connections import release_all
+
+            release_all(slug)
+        except Exception as exc:
+            logger.warning("Releasing the connections of plugin %r failed: %s", slug, exc)
+
         # Vector collections: the row AND its Local store file — the service owns
         # both, so they go through it rather than a bare queryset delete.
         try:

@@ -274,17 +274,12 @@ def info(connection) -> dict:
     return out
 
 
-def issue(run, connection) -> dict:
-    """The auth material for ``run``, its secret values recorded as masks first.
+def _usable(connection):
+    """(connection, preset, credentials) when it may hand out credentials; refreshed first.
 
-    Only while the run is running: a finished run's token can't fetch credentials.
+    Raises ConnectionLookupError (unknown provider, revoked, expired, a failed
+    refresh, unreadable credentials).
     """
-    from core.models import Run
-
-    if run.status != Run.Status.RUNNING:
-        raise ConnectionLookupError(
-            "RUN_NOT_RUNNING", f"This run is {run.status}: it can't get credentials any more.", 409
-        )
     preset = get_preset(connection.provider)
     if preset is None or connection.auth_kind not in preset.auth_kinds:
         raise ConnectionLookupError(
@@ -317,22 +312,52 @@ def issue(run, connection) -> dict:
             f"Connection '{connection.name}' couldn't be decrypted (was ENCRYPTION_KEY changed?).",
             503,
         ) from None
-    material = auth_material(preset, connection.auth_kind, connection.config, credentials)
+    return connection, preset, credentials
+
+
+def _handout(connection, preset, credentials) -> dict:
+    out = {
+        **info(connection),
+        **auth_material(preset, connection.auth_kind, connection.config, credentials),
+    }
+    if connection.auth_kind == OAUTH2:
+        # Seconds the access token is still good for (None: it doesn't expire),
+        # so the caller knows when to ask again.
+        expires = connection.token_expires_at
+        out["expires_in"] = (
+            max(0, int((expires - timezone.now()).total_seconds())) if expires else None
+        )
+    return out
+
+
+def issue(run, connection) -> dict:
+    """The auth material for ``run``, its secret values recorded as masks first.
+
+    Only while the run is running: a finished run's token can't fetch credentials.
+    """
+    from core.models import Run
+
+    if run.status != Run.Status.RUNNING:
+        raise ConnectionLookupError(
+            "RUN_NOT_RUNNING", f"This run is {run.status}: it can't get credentials any more.", 409
+        )
+    connection, preset, credentials = _usable(connection)
     # Recorded BEFORE the values leave: a script that prints one at once is
     # still masked by the final pass.
     _record_masks(
         run.pk,
         mask_values(connection.name, preset, connection.auth_kind, connection.config, credentials),
     )
-    out = {**info(connection), **material}
-    if connection.auth_kind == OAUTH2:
-        # Seconds the access token is still good for (None: it doesn't expire),
-        # so the helper knows when to ask again.
-        expires = connection.token_expires_at
-        out["expires_in"] = (
-            max(0, int((expires - timezone.now()).total_seconds())) if expires else None
-        )
-    return out
+    return _handout(connection, preset, credentials)
+
+
+def credentials_for(connection) -> dict:
+    """What ``issue()`` hands a run, for plugin code outside a run (ConnectionAPI, T25).
+
+    The same checks and refresh; no run, so no masks are recorded. Never a
+    refresh token or a client secret.
+    """
+    return _handout(*_usable(connection))
 
 
 # --------------------------------------------------------------------------- #
