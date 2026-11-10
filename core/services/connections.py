@@ -274,9 +274,11 @@ def info(connection) -> dict:
     return out
 
 
-def _usable(connection):
+def _usable(connection, refused=None):
     """(connection, preset, credentials) when it may hand out credentials; refreshed first.
 
+    ``refused`` is the SHA-256 hex digest of an access token the service
+    answered 401 to: an OAuth connection still holding it is refreshed now.
     Raises ConnectionLookupError (unknown provider, revoked, expired, a failed
     refresh, unreadable credentials).
     """
@@ -302,7 +304,7 @@ def _usable(connection):
     if connection.auth_kind == OAUTH2:
         from core.services.oauth import ensure_fresh
 
-        connection = ensure_fresh(connection)
+        connection = ensure_fresh(connection, refused=refused)
     try:
         credentials = connection.get_credentials()
     except Exception:
@@ -330,10 +332,11 @@ def _handout(connection, preset, credentials) -> dict:
     return out
 
 
-def issue(run, connection) -> dict:
+def issue(run, connection, refused=None) -> dict:
     """The auth material for ``run``, its secret values recorded as masks first.
 
     Only while the run is running: a finished run's token can't fetch credentials.
+    ``refused``: see ``_usable``.
     """
     from core.models import Run
 
@@ -341,7 +344,7 @@ def issue(run, connection) -> dict:
         raise ConnectionLookupError(
             "RUN_NOT_RUNNING", f"This run is {run.status}: it can't get credentials any more.", 409
         )
-    connection, preset, credentials = _usable(connection)
+    connection, preset, credentials = _usable(connection, refused)
     # Recorded BEFORE the values leave: a script that prints one at once is
     # still masked by the final pass.
     _record_masks(
@@ -351,13 +354,13 @@ def issue(run, connection) -> dict:
     return _handout(connection, preset, credentials)
 
 
-def credentials_for(connection) -> dict:
+def credentials_for(connection, refused=None) -> dict:
     """What ``issue()`` hands a run, for plugin code outside a run (ConnectionAPI, T25).
 
     The same checks and refresh; no run, so no masks are recorded. Never a
-    refresh token or a client secret.
+    refresh token or a client secret. ``refused``: see ``_usable``.
     """
-    return _handout(*_usable(connection))
+    return _handout(*_usable(connection, refused))
 
 
 # --------------------------------------------------------------------------- #

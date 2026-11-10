@@ -5,12 +5,14 @@ A run gets no connection credentials in its environment. The helper asks here,
 with the signed per-run token the other internal APIs use; the run (and so the
 script whose grants decide) comes from the token, never from the body.
 
-POST /internal/connections/token  {"connection": "<name or provider>"}
+POST /internal/connections/token  {"connection": "<name or provider>", "refused": "<sha256 hex>"?}
     -> the auth material: headers and query parameters for the base URL, the
        bare token (API key and bearer kinds, or an OAuth connection's access
        token, refreshed first when it is about to expire, with ``expires_in``),
        the basic-auth pair or the SMTP login, plus what /info gives. Every secret value in it is recorded on the
        run first (core.services.connections.issue), so the run's output masks it.
+       ``refused`` (the SHA-256 of a token the service answered 401 to) makes
+       PyRun refresh an OAuth access token that is still that one.
 POST /internal/connections/info   {"connection": "..."}  -> no secrets
 POST /internal/connections/list   {}                     -> the granted connections, no secrets
 
@@ -21,6 +23,7 @@ Errors: 404 CONNECTION_NOT_FOUND (missing and not granted look the same),
 """
 
 import json
+import re
 
 from django.http import HttpRequest, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -29,6 +32,7 @@ from django.views.decorators.http import require_http_methods
 from core.views.api.decorators import internal_datastore_token_required
 
 _MAX_BODY_BYTES = 16 * 1024
+_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 def _error(code, message, status):
@@ -57,12 +61,12 @@ def _lookup(request):
 
     data, err = _payload(request)
     if err:
-        return None, None, err
+        return None, None, None, err
     try:
         run, connection = resolve_for_run(_run_id(request), data.get("connection"))
     except ConnectionLookupError as e:
-        return None, None, _error(e.code, e.message, e.status)
-    return run, connection, None
+        return None, None, None, _error(e.code, e.message, e.status)
+    return run, connection, data, None
 
 
 @csrf_exempt
@@ -71,11 +75,14 @@ def _lookup(request):
 def token(request: HttpRequest) -> JsonResponse:
     from core.services.connections import ConnectionLookupError, issue
 
-    run, connection, err = _lookup(request)
+    run, connection, data, err = _lookup(request)
     if err:
         return err
+    refused = data.get("refused")
+    if refused is not None and not (isinstance(refused, str) and _DIGEST_RE.match(refused)):
+        return _error("BAD_REQUEST", "refused must be the SHA-256 hex digest of a token", 400)
     try:
-        material = issue(run, connection)
+        material = issue(run, connection, refused=refused)
     except ConnectionLookupError as e:
         return _error(e.code, e.message, e.status)
     return JsonResponse({"ok": True, **material})
@@ -87,7 +94,7 @@ def token(request: HttpRequest) -> JsonResponse:
 def info(request: HttpRequest) -> JsonResponse:
     from core.services.connections import info as connection_info
 
-    _run, connection, err = _lookup(request)
+    _run, connection, _data, err = _lookup(request)
     if err:
         return err
     return JsonResponse({"ok": True, **connection_info(connection)})

@@ -27,6 +27,7 @@ the refresh token and the app's client secret never leave the server.
 
 import base64
 import hashlib
+import hmac
 import http.client
 import json
 import logging
@@ -39,6 +40,7 @@ import uuid
 from datetime import timedelta
 
 from django.core import signing
+from django.core.cache import cache
 from django.db import connection as db_connection
 from django.db import transaction
 from django.db.models import Q
@@ -59,6 +61,9 @@ TOKEN_TIMEOUT = 15  # seconds, for a token request
 # How long a SQLite refresh claim holds: past it, another process may take over.
 REFRESH_LEASE = timedelta(seconds=TOKEN_TIMEOUT * 2)
 _WAIT_STEP = 0.2  # seconds between looks while another process refreshes
+# A token a service refused (HTTP 401) is refreshed early at most this often per
+# connection, so a script retrying in a loop can't hammer the provider.
+REFUSED_REFRESH_EVERY = 60  # seconds
 _TOKEN_MAX_BYTES = 64 * 1024
 
 
@@ -517,8 +522,34 @@ def _refresh_row(row):
     return ("expired" if _mark_expired(row, message) else "already_expired"), message
 
 
-def ensure_fresh(connection):
+def holds_token(connection, digest) -> bool:
+    """True when ``connection``'s access token hashes to ``digest`` and it has a refresh token."""
+    if connection.auth_kind != OAUTH2 or not digest:
+        return False
+    try:
+        credentials = connection.get_credentials()
+    except Exception:
+        return False  # unreadable: the refresh path reports it
+    token = credentials.get("access_token") or ""
+    if not token or not credentials.get("refresh_token"):
+        return False
+    return hmac.compare_digest(hashlib.sha256(token.encode("utf-8")).hexdigest(), str(digest))
+
+
+def _refused_now(connection, refused) -> bool:
+    """Whether to refresh ``connection`` early because a service refused its token (``refused`` digest)."""
+    if not refused or not holds_token(connection, refused):
+        return False
+    # cache.add is atomic: one early refresh per connection per window.
+    return cache.add(f"pyrunner:oauth:refused:{connection.pk}", 1, REFUSED_REFRESH_EVERY)
+
+
+def ensure_fresh(connection, refused=None):
     """``connection`` with an access token good for at least a minute, refreshing it if needed.
+
+    ``refused`` is the SHA-256 hex digest of an access token a service answered
+    401 to: if the connection still holds that token (and can refresh it), it
+    is refreshed now, once per ``REFUSED_REFRESH_EVERY`` seconds at most.
 
     Returns the connection as stored now. Raises ConnectionLookupError:
     CONNECTION_EXPIRED (409) when the provider refused the refresh (the
@@ -527,8 +558,10 @@ def ensure_fresh(connection):
     """
     from core.services.connections import ConnectionLookupError
 
-    if not needs_refresh(connection):
+    force = _refused_now(connection, refused)
+    if not force and not needs_refresh(connection):
         return connection
+    refused = refused if force else None
     if db_connection.vendor == "postgresql":
         # The row lock makes every other refresher wait here, then see the new token.
         with transaction.atomic():
@@ -537,12 +570,12 @@ def ensure_fresh(connection):
                 outcome, message = "revoked", ""
             elif row.status == Connection.Status.EXPIRED:
                 outcome, message = "already_expired", row.last_error
-            elif needs_refresh(row):
+            elif needs_refresh(row) or holds_token(row, refused):
                 outcome, message = _refresh_row(row)
             else:
                 outcome, message = "ok", ""
     else:
-        outcome, message, row = _refresh_claimed(connection)
+        outcome, message, row = _refresh_claimed(connection, refused)
     if outcome == "revoked":
         raise ConnectionLookupError(
             "CONNECTION_REVOKED",
@@ -572,21 +605,29 @@ def ensure_fresh(connection):
     return Connection.objects.get(pk=row.pk)
 
 
-def _refresh_claimed(connection):
-    """SQLite: claim the refresh with a conditional UPDATE, or wait for whoever has it."""
+def _refresh_claimed(connection, refused=None):
+    """SQLite: claim the refresh with a conditional UPDATE, or wait for whoever has it.
+
+    ``refused`` (a refused token's digest) claims it whatever the expiry, then
+    refreshes only if the row still holds that token.
+    """
     deadline = time.monotonic() + REFRESH_LEASE.total_seconds()
     while True:
         now = _now()
-        claimed = (
+        claim = (
             Connection.objects.filter(pk=connection.pk, status__in=(Connection.Status.OK, Connection.Status.ERROR))
-            .filter(token_expires_at__lte=now + REFRESH_EARLY)
             .filter(Q(refreshing_until__isnull=True) | Q(refreshing_until__lt=now))
-            .update(refreshing_until=now + REFRESH_LEASE)
         )
+        if not refused:
+            claim = claim.filter(token_expires_at__lte=now + REFRESH_EARLY)
+        claimed = claim.update(refreshing_until=now + REFRESH_LEASE)
         row = Connection.objects.get(pk=connection.pk)
         if claimed:
             try:
-                outcome, message = _refresh_row(row)
+                if needs_refresh(row) or holds_token(row, refused):
+                    outcome, message = _refresh_row(row)
+                else:
+                    outcome, message = "ok", ""  # refreshed by someone else meanwhile
             finally:
                 Connection.objects.filter(pk=row.pk).update(refreshing_until=None)
             return outcome, message, row
@@ -594,7 +635,7 @@ def _refresh_claimed(connection):
             return "already_expired", row.last_error, row
         if row.status == Connection.Status.REVOKED:
             return "revoked", "", row
-        if not needs_refresh(row):
+        if not needs_refresh(row) and not holds_token(row, refused):
             return "ok", "", row  # someone else refreshed it
         if time.monotonic() > deadline:
             return "transient", "Another refresh of it is taking too long.", row

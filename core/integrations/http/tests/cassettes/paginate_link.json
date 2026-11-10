@@ -1,0 +1,47 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Recorded with PYRUNNER_RECORD_CASSETTES=1; credentials scrubbed. Check it for personal data before committing it.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "/v1/repos"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json",
+          "x-ratelimit-remaining": "99",
+          "link": "<{base_url:api}/v1/repos?page=2>; rel=\"next\""
+        },
+        "json": [
+          {
+            "id": 1
+          },
+          {
+            "id": 2
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/v1/repos?page=2"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json",
+          "x-ratelimit-remaining": "99",
+          "link": "<{base_url:api}/v1/repos?page=1>; rel=\"prev\""
+        },
+        "json": [
+          {
+            "id": 3
+          }
+        ]
+      }
+    }
+  ]
+}

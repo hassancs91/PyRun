@@ -37,6 +37,7 @@ it when it is about to expire. Clients from ``client()`` pick up the new token
 on their next request by themselves.
 """
 
+import hashlib
 import json as _json
 import os
 import smtplib
@@ -110,16 +111,24 @@ def info(name):
     return data
 
 
-def credentials(name):
+def credentials(name, *, refused=False):
     """The raw auth material of ``name`` (headers, params, token, basic, smtp).
 
     For a library that wants the pieces itself; ``client()`` and ``smtp()`` use
     them for you. Cached for the rest of the run, or, for an OAuth access token,
     until a minute before it expires.
+
+    ``refused=True`` says the service refused what this returned last (an HTTP
+    401): PyRun is asked again, and refreshes an OAuth access token that is
+    still the one refused (at most once a minute per connection). Other kinds
+    come back as they are stored now (changed only if someone edited them).
     """
     cached = _cache.get(name)
-    if cached is None or (cached[1] is not None and time.monotonic() >= cached[1]):
-        data = _post("token", {"connection": name})
+    if refused or cached is None or (cached[1] is not None and time.monotonic() >= cached[1]):
+        payload = {"connection": name}
+        if refused and cached is not None and cached[0].get("token"):
+            payload["refused"] = hashlib.sha256(cached[0]["token"].encode("utf-8")).hexdigest()
+        data = _post("token", payload)
         data.pop("ok", None)
         expires_in = data.get("expires_in")
         again = None

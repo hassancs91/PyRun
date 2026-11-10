@@ -864,6 +864,50 @@ The SDK Showcase example has no connection; the **YouTube Comments AI** example
 holds a Google one for posting replies (and shows the upgrade from its own OAuth
 flow: `provisioning.py`).
 
+### Testing code that uses connections
+
+Code that calls a service through a connection, with
+[`pyrunner_integrations`](integrations/framework.md) or
+`pyrunner_connections.credentials()` / `token()`, can be tested with no
+account and no network with PyRun's testing kit, `core.integrations.testing`.
+Put the calls in functions your worker script and your tests both import, then:
+
+```python
+from core.integrations import testing
+
+from . import worker  # your plugin's module that calls the service
+
+
+class FetchTests(testing.IntegrationTestCase):
+    def test_new_items_are_fetched(self):
+        self.use_connection("crm", provider="http", auth_kind="bearer",
+                            config={"base_url": "https://crm.example.com"})
+        fake = self.fake_http()
+        fake.add("GET", "/v1/items", json={"items": [{"id": 1}, {"id": 2}]})
+        self.assertEqual(worker.new_item_ids(), [1, 2])
+        self.assertEqual(fake.requests[0].params, {"since": "0"})
+
+    def test_an_expired_connection_is_reported(self):
+        self.use_connection("crm", provider="http", error=("CONNECTION_EXPIRED", 409))
+        self.assertEqual(worker.new_item_ids(), [])
+
+    def test_against_a_recording(self):
+        self.use_connection("crm", provider="http", auth_kind="bearer",
+                            config={"base_url": "https://crm.example.com"})
+        with self.cassette("items"):  # cassettes/items.json beside this file
+            self.assertEqual(len(worker.new_item_ids()), 3)
+```
+
+`use_connection()` stands in for PyRun's loopback (made-up credentials unless
+you pass some), `fake_http()` for the service, and `cassette()` replays a
+recorded exchange; nothing reaches the network unless a test records. Import
+`testing` before the code under test: it makes `pyrunner_integrations` and
+`pyrunner_connections` importable by the names a script uses. Use
+`testing.IntegrationTestMixin` with a `TestCase` when the test needs the
+database. Run them with `manage.py test plugins.<slug>` (or `examples.<slug>`).
+Recording cassettes, the fake service's options and the conformance suite are
+in [the integrations guide](integrations/framework.md#the-testing-kit).
+
 ---
 
 ## Ownership & scoped secrets

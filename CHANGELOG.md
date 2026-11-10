@@ -356,6 +356,26 @@ begins tracking at the current release; earlier history is in the git log.
   client settings are gone, so after upgrading connect YouTube again on its page
   and save its settings once (that deletes the old OAuth secrets). Guide:
   "Connections" in `docs/plugins.md`.
+- **Integrations for scripts.** `pyrunner_integrations` gives scripts typed
+  calls per service on top of a connection. The first module, `http`, calls any
+  HTTP API with an HTTP API connection: `http.get("/v1/me")`,
+  `post`/`put`/`patch`/`delete` and `paginate` (cursor, Link header or page
+  numbers), returning parsed JSON. Every module shares one client: credentials
+  only to the connection's base URL (also across redirects), retries with
+  backoff on 429 and 5xx (Retry-After honoured), one re-auth after a 401 (PyRun
+  refreshes an OAuth token the service refused) and one exception,
+  `IntegrationError(code, status, retry_after)`, with no credential in its
+  message. Standard library only; `requests` is used when installed. For
+  integration and plugin authors there is a testing kit,
+  `core.integrations.testing`: stand-in connections, a fake service, cassettes
+  recorded from the real service with `PYRUNNER_RECORD_CASSETTES=1` (every
+  credential scrubbed) and replayed offline, and a conformance suite every
+  module passes. `manage.py new_integration <key>` scaffolds a module that
+  passes it as generated, `manage.py integration_smoke <key>` runs live checks
+  with a real connection, and `manage.py integration_docs` writes each module's
+  page in `docs/integrations/` from its docstrings (searched by `help.search`).
+  Guide: `docs/integrations/framework.md`; plugin tests: "Testing code that uses
+  connections" in `docs/plugins.md`.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

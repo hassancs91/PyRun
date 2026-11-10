@@ -1,0 +1,24 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Recorded with PYRUNNER_RECORD_CASSETTES=1; credentials scrubbed. Check it for personal data before committing it.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "/v1/items/404"
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "content-type": "application/json",
+          "x-ratelimit-remaining": "99"
+        },
+        "json": {
+          "error": {
+            "message": "No item 404 (you sent [MASKED])"
+          }
+        }
+      }
+    }
+  ]
+}

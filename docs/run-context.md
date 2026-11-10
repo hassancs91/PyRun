@@ -620,6 +620,24 @@ credentials can't be decrypted: was `ENCRYPTION_KEY` changed?),
 `RUN_NOT_RUNNING` (asked after the run ended), `NOT_HTTP` / `NOT_SMTP` /
 `NO_TOKEN` (the wrong function for its kind).
 
+`credentials(name, refused=True)` is for a client that got a 401 with what
+`credentials()` returned last: PyRun hands the credentials out again, and
+refreshes an OAuth access token first if it is still the one refused (once a
+minute at most per connection).
+
+**Integrations** go a step further: `pyrunner_integrations` has typed calls per
+service on top of a connection, with retries on 429 and 5xx replies, one
+re-auth after a 401 and one exception, `IntegrationError`:
+
+```python
+from pyrunner_integrations import http
+
+items = http.get("/v1/items", connection="crm")     # parsed JSON
+```
+
+The modules and how they behave are in `docs/integrations/framework.md`; each
+has its own page there (`docs/integrations/http.md`).
+
 ### OAuth connections
 
 Google (Sheets, Gmail, Drive, Calendar), Microsoft 365 (Outlook mail,
