@@ -133,6 +133,14 @@ class _Provider(http.server.BaseHTTPRequestHandler):
             return self._reply(401, {"error": "invalid_client"})
         if st.fail == "down":
             return self._reply(503, {"error": "temporarily_unavailable"})
+        if st.fail == "page":  # a proxy's or a maintenance page, sent with HTTP 200
+            body = b"<html><body>Down for maintenance</body></html>"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return None
         if form.get("grant_type") == "authorization_code":
             entry = st.codes.pop(form.get("code"), None)
             if entry is None or entry["redirect_uri"] != form.get("redirect_uri"):
@@ -570,6 +578,24 @@ class RefreshTests(_ProviderMixin, _Fixture, TestCase):
                 self._issue(c)
         self.assertEqual(ctx.exception.code, "CONNECTION_REFRESH_FAILED")
         self.assertEqual(Connection.objects.get(pk=c.pk).status, "ok")
+
+    def test_a_reply_with_neither_tokens_nor_an_error_doesnt_expire_it(self):
+        # Test pass 5 (F7): an HTTP 200 page with no access token was taken for a
+        # refusal, so the connection expired and its creator was emailed.
+        self.st.fail = "page"
+        c = self._oauth(app=self.app, expires_in=10)
+        with mock.patch("core.services.notification_service.NotificationService.send_email") as send:
+            with self.assertRaises(svc.ConnectionLookupError) as ctx:
+                self._issue(c)
+        self.assertEqual((ctx.exception.code, ctx.exception.status), ("CONNECTION_REFRESH_FAILED", 503))
+        self.assertIn("without an access token", ctx.exception.message)
+        c.refresh_from_db()
+        self.assertEqual((c.status, c.last_error), ("ok", ""))
+        send.assert_not_called()
+        self.st.fail = ""
+        token = self._issue(c)["token"]  # the next try refreshes
+        self.assertEqual(token, Connection.objects.get(pk=c.pk).get_credentials()["access_token"])
+        self.assertNotEqual(token, c.get_credentials()["access_token"])
 
     def test_a_revoke_during_the_refresh_is_reported_as_revoked(self):
         c = self._oauth(app=self.app, expires_in=10)

@@ -455,6 +455,24 @@ def http_check(preset, config, material) -> str:
     return label or (config or {}).get("username", "")
 
 
+def _masked_error(message, masks) -> str:
+    """``message`` with the connection's values masked, also as Python escapes them.
+
+    An error can quote a value through repr() (http.client's "Invalid header
+    value b'...'"), where a quote, a backslash or a control character is escaped
+    and the plain value no longer matches.
+    """
+    from core.executor import mask_secrets_in_value
+
+    message = mask_secrets_in_value(message, masks)
+    for escape in (lambda v: repr(v)[1:-1], lambda v: repr(v.encode("utf-8"))[2:-1]):
+        escaped = {label: escape(value) for label, value in masks.items()}
+        message = mask_secrets_in_value(
+            message, {label: value for label, value in escaped.items() if value != masks[label]}
+        )
+    return message
+
+
 def check_connection(connection) -> tuple[bool, str]:
     """Test ``connection`` and store the outcome (status, label, last test, error).
 
@@ -483,9 +501,7 @@ def check_connection(connection) -> tuple[bool, str]:
         else:
             label = http_check(preset, connection.config, material)
     except Exception as e:
-        from core.executor import mask_secrets_in_value
-
-        message = mask_secrets_in_value(str(e) or e.__class__.__name__, masks_for(connection))
+        message = _masked_error(str(e) or e.__class__.__name__, masks_for(connection))
         message = message[:LAST_ERROR_MAX_CHARS]
         logger.warning("Connection %s test failed: %s", connection.pk, message)
         Connection.objects.filter(pk=connection.pk).update(

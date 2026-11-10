@@ -13,6 +13,7 @@ instance default a superuser set.
 """
 
 import logging
+import re
 
 from django import forms
 from django.contrib import messages
@@ -35,6 +36,9 @@ from core.services import connections as svc
 from core.services import oauth
 
 logger = logging.getLogger(__name__)
+
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+
 
 def _form_field(field, editing):
     """The Django form field for one preset field."""
@@ -134,6 +138,11 @@ class ConnectionForm(forms.Form):
         data = super().clean()
         for field in self.preset_fields:
             value = data.get(field.name)
+            if isinstance(value, str) and _CONTROL_CHARS.search(value):
+                # No key, token, password or header holds one; a pasted line break
+                # would only break the request (and come back escaped in its error).
+                self.add_error(field.name, "Remove the line breaks and other control characters.")
+                continue
             if field.kind != "url" or not value:
                 continue
             if not value.lower().startswith(("https://", "http://")):

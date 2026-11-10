@@ -642,6 +642,38 @@ class ConsoleTests(_Fixture, TestCase):
         self.assertIn("[connection:airtable.api_key:MASKED]", c.last_error)
         self.assertNotIn(AIRTABLE_KEY, resp.content.decode())
 
+    def test_a_value_python_escapes_in_the_error_is_masked_too(self):
+        # Test pass 5 (F6): http.client refused a key holding a line break with
+        # "Invalid header value b'...'", where the escaped key didn't match the
+        # plain value, so the key was stored and shown in the error.
+        key = "t23-key-with-break\r\nX-Evil: 1"
+        c = self._connection(provider="http", config={"base_url": "https://x.test", "location": "header",
+                                                     "param_name": "X-API-Key", "test_path": "/me"},
+                             credentials={"api_key": key})
+        opener = mock.Mock()
+        opener.open.side_effect = ValueError(f"Invalid header value {key.encode()!r}")
+        with _netguard_ok(), mock.patch("core.netguard.guarded_opener", return_value=opener):
+            ok, message = svc.check_connection(c)
+        self.assertFalse(ok)
+        c.refresh_from_db()
+        for text in (message, c.last_error):
+            self.assertNotIn("t23-key-with-break", text)
+            self.assertEqual(text, "Invalid header value b'[connection:airtable.api_key:MASKED]'")
+
+    def test_a_field_with_a_line_break_is_refused(self):
+        data = {"provider": "http", "auth_kind": "api_key", "name": "crm", "base_url": "https://api.crm.test",
+                "api_key": "first-line\nsecond-line", "location": "header", "param_name": "X-API-Key",
+                "prefix": ""}
+        with _netguard_ok():
+            resp = self.client.post(reverse("cpanel:connection_create"), data)
+            self.assertContains(resp, "Remove the line breaks and other control characters.")
+            self.assertFalse(Connection.objects.exists())
+            data.update(api_key="k", param_name="X-API-Key\r\nX-Evil")
+            self.assertContains(self.client.post(reverse("cpanel:connection_create"), data), "control characters")
+            data.update(param_name="X-API-Key")
+            self.client.post(reverse("cpanel:connection_create"), data)
+        self.assertEqual(Connection.objects.get(name="crm").get_credentials(), {"api_key": "k"})
+
     def test_an_smtp_test_logs_in_through_the_guard(self):
         c = self._connection(name="mail", provider="smtp", auth_kind="smtp",
                              config={"host": "smtp.example.com", "port": 587, "security": "starttls",

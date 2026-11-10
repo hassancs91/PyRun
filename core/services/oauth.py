@@ -184,6 +184,10 @@ def _token_request(preset, client, data) -> dict:
     if status >= 500 or status == 429:
         raise OAuthError(f"{host} answered HTTP {status}; try again later.")
     access = reply.get("access_token")
+    if status < 400 and not reply.get("error") and (not isinstance(access, str) or not access):
+        # Neither tokens nor a refusal (a proxy's or a maintenance page, say): the
+        # provider didn't say no, so the connection doesn't expire over it.
+        raise OAuthError(f"{host} answered without an access token; try again later.")
     if status >= 400 or not isinstance(access, str) or not access:
         error = str(reply.get("error") or f"HTTP {status}")
         description = str(reply.get("error_description") or "")
