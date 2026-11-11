@@ -1,0 +1,80 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "/repos/octo/shop/actions/workflows/deploy.yml/runs?event=workflow_dispatch&per_page=2"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8",
+          "link": "<{base_url:github}/repos/octo/shop/actions/workflows/deploy.yml/runs?event=workflow_dispatch&per_page=2&page=2>; rel=\"next\", <{base_url:github}/repos/octo/shop/actions/workflows/deploy.yml/runs?event=workflow_dispatch&per_page=2&page=2>; rel=\"last\""
+        },
+        "json": {
+          "total_count": 3,
+          "workflow_runs": [
+            {
+              "id": 30433642,
+              "name": "Deploy",
+              "workflow_id": 161335,
+              "head_branch": "main",
+              "event": "workflow_dispatch",
+              "status": "in_progress",
+              "conclusion": null,
+              "run_number": 642,
+              "html_url": "https://github.com/octo/shop/actions/runs/30433642",
+              "created_at": "2026-11-11T09:05:00Z",
+              "updated_at": "2026-11-11T09:06:00Z"
+            },
+            {
+              "id": 30433641,
+              "name": "Deploy",
+              "workflow_id": 161335,
+              "head_branch": "main",
+              "event": "workflow_dispatch",
+              "status": "completed",
+              "conclusion": "success",
+              "run_number": 641,
+              "html_url": "https://github.com/octo/shop/actions/runs/30433641",
+              "created_at": "2026-11-11T09:05:00Z",
+              "updated_at": "2026-11-11T09:06:00Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/repos/octo/shop/actions/runs?per_page=100"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "total_count": 1,
+          "workflow_runs": [
+            {
+              "id": 30433642,
+              "name": "Deploy",
+              "workflow_id": 161335,
+              "head_branch": "main",
+              "event": "workflow_dispatch",
+              "status": "in_progress",
+              "conclusion": null,
+              "run_number": 642,
+              "html_url": "https://github.com/octo/shop/actions/runs/30433642",
+              "created_at": "2026-11-11T09:05:00Z",
+              "updated_at": "2026-11-11T09:06:00Z"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

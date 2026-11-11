@@ -439,6 +439,23 @@ begins tracking at the current release; earlier history is in the git log.
   nothing). For module authors, the testing kit gains `fake_smtp()` (a mail
   server with no socket, recording every message) and `SmtpConformanceSuite`,
   and no test reaches a real mail server.
+- **Slack and GitHub integrations.** `pyrunner_integrations.slack` posts
+  messages (Slack markup or Block Kit, in a thread, to a channel's id or
+  `#name`), updates them, uploads files (Slack's three-step upload: the file
+  goes to Slack's file host without the token), lists channels and people,
+  finds a channel by name and reads a channel's messages. Slack's
+  `"ok": false` replies raise `IntegrationError` with a matching code and
+  Slack's own error name (`slack_error`), and `invalid_auth` or
+  `token_expired` gets new credentials and one retry, as a 401 does.
+  `pyrunner_integrations.github` lists, opens, updates and comments on issues,
+  reads a file (text, bytes, over 1 MB too) and creates or replaces one with
+  a commit, starts a workflow (`dispatch_workflow`) and lists workflow runs;
+  GitHub's rate limit raises `RATE_LIMITED` with the seconds until it resets.
+  `github.new_issues(state)` returns the issues opened since the last call,
+  for a scheduled script and for the coming "new GitHub issue" watcher
+  (`github_new_issue`). Both work on a Slack or GitHub connection (Connect or
+  a pasted token), have a generated page with an example script in
+  `docs/integrations/` and a `manage.py integration_smoke` check.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

@@ -18,9 +18,11 @@ script: `http.md` (any HTTP API with an API key, bearer token or basic auth),
 `google_sheets.md` (read, append, update and find rows, list sheets, create
 spreadsheets, new rows since last time), `google_drive.md` (list, upload,
 download, folders, share links), `gmail.md` (search, read, send and reply,
-labels, attachments, new mail since last time) and `smtp.md` (send email with
-attachments through any SMTP server). More services build on the same
-framework.
+labels, attachments, new mail since last time), `smtp.md` (send email with
+attachments through any SMTP server), `slack.md` (post and update messages,
+upload files, list channels and people, read a channel) and `github.md`
+(issues and comments, read and commit files, start Actions workflows, new
+issues since last time). More services build on the same framework.
 
 ## What every integration does
 
@@ -66,7 +68,7 @@ changelog. `pyrunner_integrations.__version__` says which version a script has.
 core/integrations/<key>/
     preset.py            the connection preset (shared with Connections)
     api.py               INTEGRATION = Integration(...): module, functions, example, smoke checks
-    triggers.py          optional: TRIGGERS, watcher adapters for Triggers (google_sheets and gmail have one)
+    triggers.py          optional: TRIGGERS, watcher adapters for Triggers (google_sheets, gmail and github have one)
     tests/test_api.py    the conformance suite and cassette tests
     tests/cassettes/     recorded exchanges, replayed offline
 core/script_helpers/pyrunner_integrations/<key>.py   what scripts import
@@ -110,7 +112,16 @@ limit=None)` returns `(events, new_state)`, each event `{"id", "item"}`, and
 reports nothing on its first call (`state` None). `framework.load_triggers(key)`
 reads them (the Triggers feature runs them). `google_sheets`' `sheets_new_row` is built on
 `google_sheets.new_rows`, `gmail`'s `gmail_new_message` (a label, a search) on
-`gmail.new_messages`.
+`gmail.new_messages`, `github`'s `github_new_issue` (a repository, labels) on
+`github.new_issues`.
+
+A service that answers some failures with a 2xx reply (Slack's `"ok": false`)
+gives its client `check=`: a function of the reply and its parsed body that
+raises the `IntegrationError`. When it raises `UNAUTHORIZED`, the client asks
+PyRun once for new credentials and sends the request again, as after a 401.
+A module may add a paragraph of its own to the generated page's errors section
+(`ERRORS_NOTE`) and codes to its table (`ERROR_CODES`, the shared ones plus its
+own: Slack's `SLACK_ERROR`).
 
 An SMTP integration (`smtp`) has no base URL, retries or 401s: its module sets
 `ERROR_CODES` (its own codes) and `ERRORS` (the paragraph about them), which
@@ -134,7 +145,7 @@ manage.py test core.integrations.acme
 
 It refuses a key that is already an integration (`http`, `airtable`, `gmail`,
 `smtp`..., or one with an `api.py` or a module), and a key that names an existing preset
-unless `--provider` is that preset (`new_integration slack --provider slack`):
+unless `--provider` is that preset (`new_integration microsoft --provider microsoft`):
 it exits with an error and writes nothing. Files left from an earlier try are
 kept, never overwritten.
 

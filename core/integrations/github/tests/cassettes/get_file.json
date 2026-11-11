@@ -1,0 +1,140 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "/repos/octo/shop/contents/config/flags.json"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "type": "file",
+          "encoding": "base64",
+          "size": 28,
+          "name": "flags.json",
+          "path": "config/flags.json",
+          "content": "ewogICJuZXdfY2hlY2tvdXQiOiBmYWxzZQp9Cg==\n",
+          "sha": "3d21ec53a331a6f037a91c368710b99387d012c1",
+          "url": "https://api.github.com/repos/octo/shop/contents/config/flags.json?ref=main",
+          "git_url": "https://api.github.com/repos/octo/shop/git/blobs/3d21ec53a331a6f037a91c368710b99387d012c1",
+          "html_url": "https://github.com/octo/shop/blob/main/config/flags.json",
+          "download_url": "https://raw.githubusercontent.com/octo/shop/main/config/flags.json"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/repos/octo/shop/contents/docs/logo.png?ref=v2.5"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "type": "file",
+          "encoding": "base64",
+          "size": 33,
+          "name": "logo.png",
+          "path": "docs/logo.png",
+          "content": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ\n",
+          "sha": "a8f2b1e4c3d5e6f708192a3b4c5d6e7f80910a1b",
+          "url": "https://api.github.com/repos/octo/shop/contents/docs/logo.png?ref=main",
+          "git_url": "https://api.github.com/repos/octo/shop/git/blobs/a8f2b1e4c3d5e6f708192a3b4c5d6e7f80910a1b",
+          "html_url": "https://github.com/octo/shop/blob/main/docs/logo.png",
+          "download_url": "https://raw.githubusercontent.com/octo/shop/main/docs/logo.png"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/repos/octo/shop/contents/data/big.csv"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "type": "file",
+          "encoding": "none",
+          "size": 32,
+          "name": "big.csv",
+          "path": "data/big.csv",
+          "content": "",
+          "sha": "5b6c7d8e9f0a1b2c3d4e5f60718293a4b5c6d7e8",
+          "url": "https://api.github.com/repos/octo/shop/contents/data/big.csv?ref=main",
+          "git_url": "https://api.github.com/repos/octo/shop/git/blobs/5b6c7d8e9f0a1b2c3d4e5f60718293a4b5c6d7e8",
+          "html_url": "https://github.com/octo/shop/blob/main/data/big.csv",
+          "download_url": "https://raw.githubusercontent.com/octo/shop/main/data/big.csv"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/repos/octo/shop/contents/data/big.csv"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/vnd.github.raw"
+        },
+        "text": "row\nrow\nrow\nrow\nrow\nrow\nrow\nrow\n"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/repos/octo/shop/contents/docs"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": [
+          {
+            "type": "file",
+            "name": "index.md",
+            "path": "docs/index.md",
+            "sha": "e69de29b",
+            "size": 0
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/repos/octo/shop/contents/docs/logo.png?ref=v2.5"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "type": "file",
+          "encoding": "base64",
+          "size": 33,
+          "name": "logo.png",
+          "path": "docs/logo.png",
+          "content": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ\n",
+          "sha": "a8f2b1e4c3d5e6f708192a3b4c5d6e7f80910a1b",
+          "url": "https://api.github.com/repos/octo/shop/contents/docs/logo.png?ref=main",
+          "git_url": "https://api.github.com/repos/octo/shop/git/blobs/a8f2b1e4c3d5e6f708192a3b4c5d6e7f80910a1b",
+          "html_url": "https://github.com/octo/shop/blob/main/docs/logo.png",
+          "download_url": "https://raw.githubusercontent.com/octo/shop/main/docs/logo.png"
+        }
+      }
+    }
+  ]
+}

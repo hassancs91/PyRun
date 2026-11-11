@@ -299,6 +299,16 @@ def next_link(header):
     return None
 
 
+def limited(items, limit):
+    """Yield ``items`` until ``limit`` of them (all when None; none when 0 or less), without reading one more."""
+    if limit is not None and limit <= 0:
+        return
+    for count, item in enumerate(items, 1):
+        yield item
+        if limit is not None and count >= limit:
+            return
+
+
 def paginate(fetch, *, limit=None, max_pages=MAX_PAGES):
     """Yield every item of a paginated API, page by page.
 
@@ -546,12 +556,33 @@ class Client:
             return response
 
     def call(self, method, path, **kwargs):
-        """``request()``, then the body: parsed JSON for a JSON reply, the text otherwise, None when empty."""
-        response = self.request(method, path, **kwargs)
-        body = decode(response, method.upper())
-        if self.check is not None:
-            self.check(response, body)
-        return body
+        """``request()``, then the body: parsed JSON for a JSON reply, the text otherwise, None when empty.
+
+        When ``check`` raises UNAUTHORIZED for a 2xx reply (Slack's
+        ``invalid_auth``), PyRun is asked once for new credentials and, when
+        they are new, the request is sent again, as after an HTTP 401.
+        """
+        reauthed = False
+        while True:
+            response = self.request(method, path, **kwargs)
+            body = decode(response, method.upper())
+            if self.check is None:
+                return body
+            try:
+                self.check(response, body)
+            except IntegrationError as e:
+                if e.code != "UNAUTHORIZED" or reauthed or not self._renewed():
+                    raise
+                reauthed = True
+                logger.warning("%s %s: %s, retrying once with new credentials", method.upper(),
+                               safe_url(response.url), e.code)
+                continue
+            return body
+
+    def _renewed(self) -> bool:
+        """Report the current credentials as refused; True when PyRun gave different ones."""
+        used = _secret_values(self._material())
+        return _secret_values(self._material(refused=True)) != used
 
     def get(self, path, **kwargs):
         return self.call("GET", path, **kwargs)

@@ -1,0 +1,40 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "/chat.update",
+        "json": {
+          "channel": "C061EG9SL",
+          "text": "Disk on web-1 back to 61%",
+          "ts": "1731340800.000100"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "ok": true,
+          "channel": "C061EG9SL",
+          "ts": "1731340800.000100",
+          "text": "Disk on web-1 back to 61%",
+          "message": {
+            "bot_id": "B061F7JQ5",
+            "app_id": "A061F7JQ2",
+            "user": "U061F7AUR",
+            "type": "message",
+            "text": "Disk on web-1 back to 61%",
+            "edited": {
+              "user": "U061F7AUR",
+              "ts": "1731341000.000000"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

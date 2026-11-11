@@ -109,7 +109,9 @@ def render(integration) -> str:
         "replies and lost connections only for GET, PUT, DELETE and other calls that are safe to repeat. After "
         "a 401 it asks PyRun once for new credentials (an OAuth token is refreshed then) and tries again."
     )
-    lines += ["## Errors", "", intro, "", "| Code | When |", "|---|---|"]
+    # A module may add a paragraph of its own after the shared one (Slack's "ok": false replies).
+    note = getattr(module, "ERRORS_NOTE", "")
+    lines += ["## Errors", "", intro, ""] + ([note, ""] if note else []) + ["| Code | When |", "|---|---|"]
     for code, meaning in codes.items():
         lines.append(f"| `{code}` | {meaning} |")
     lines += [

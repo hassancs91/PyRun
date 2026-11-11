@@ -1,0 +1,60 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "/repos/octo/shop/issues/12"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "id": 2000000012,
+          "node_id": "I_kwDOAbc12",
+          "number": 12,
+          "title": "Checkout fails on Safari",
+          "body": "Steps:\n1. Open checkout in Safari 18",
+          "state": "open",
+          "state_reason": null,
+          "locked": false,
+          "user": {
+            "login": "octocat",
+            "id": 583231,
+            "type": "User",
+            "html_url": "https://github.com/octocat"
+          },
+          "labels": [
+            {
+              "id": 208046264,
+              "name": "bug",
+              "color": "d73a4a",
+              "default": true
+            }
+          ],
+          "assignee": null,
+          "assignees": [
+            {
+              "login": "ada",
+              "id": 1001,
+              "type": "User",
+              "html_url": "https://github.com/ada"
+            }
+          ],
+          "milestone": null,
+          "comments": 0,
+          "created_at": "2026-11-10T09:00:00Z",
+          "updated_at": "2026-11-10T09:00:00Z",
+          "closed_at": null,
+          "author_association": "OWNER",
+          "url": "https://api.github.com/repos/octo/shop/issues/12",
+          "repository_url": "https://api.github.com/repos/octo/shop",
+          "html_url": "https://github.com/octo/shop/issues/12"
+        }
+      }
+    }
+  ]
+}

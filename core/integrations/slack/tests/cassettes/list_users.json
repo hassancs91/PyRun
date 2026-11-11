@@ -1,0 +1,86 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "/users.list?limit=200"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "ok": true,
+          "members": [
+            {
+              "id": "USLACKBOT",
+              "name": "slackbot",
+              "real_name": "Slackbot",
+              "deleted": false,
+              "is_bot": false
+            },
+            {
+              "id": "U024BE7LH",
+              "name": "ada",
+              "real_name": "Ada Lovelace",
+              "deleted": false,
+              "is_bot": false,
+              "tz": "Europe/London",
+              "profile": {
+                "real_name": "Ada Lovelace",
+                "display_name": "ada"
+              }
+            },
+            {
+              "id": "U061F7AUR",
+              "name": "pyrun",
+              "real_name": "PyRun",
+              "deleted": false,
+              "is_bot": true
+            }
+          ],
+          "response_metadata": {
+            "next_cursor": "dXNlcjpVMEc5V0ZYTlo="
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/users.list?limit=200&cursor=dXNlcjpVMEc5V0ZYTlo%3D"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "ok": true,
+          "members": [
+            {
+              "id": "U0G9QF9C6",
+              "name": "grace",
+              "real_name": "Grace Hopper",
+              "deleted": true,
+              "is_bot": false
+            },
+            {
+              "id": "U0G9WFXNZ",
+              "name": "alan",
+              "real_name": "Alan Turing",
+              "deleted": false,
+              "is_bot": false
+            }
+          ],
+          "response_metadata": {
+            "next_cursor": ""
+          }
+        }
+      }
+    }
+  ]
+}

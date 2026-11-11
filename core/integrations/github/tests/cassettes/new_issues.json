@@ -1,0 +1,368 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "/repos/octo/shop/issues?state=all&sort=created&direction=desc&per_page=1"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8",
+          "link": "<{base_url:github}/repositories/1296269/issues?state=all&sort=created&direction=desc&per_page=1&page=2>; rel=\"next\", <{base_url:github}/repositories/1296269/issues?state=all&sort=created&direction=desc&per_page=1&page=14>; rel=\"last\""
+        },
+        "json": [
+          {
+            "id": 2000000014,
+            "node_id": "I_kwDOAbc14",
+            "number": 14,
+            "title": "Speed up search",
+            "body": null,
+            "state": "open",
+            "state_reason": null,
+            "locked": false,
+            "user": {
+              "login": "octocat",
+              "id": 583231,
+              "type": "User",
+              "html_url": "https://github.com/octocat"
+            },
+            "labels": [],
+            "assignee": null,
+            "assignees": [],
+            "milestone": null,
+            "comments": 0,
+            "created_at": "2026-11-10T09:00:00Z",
+            "updated_at": "2026-11-10T09:00:00Z",
+            "closed_at": null,
+            "author_association": "OWNER",
+            "url": "https://api.github.com/repos/octo/shop/issues/14",
+            "repository_url": "https://api.github.com/repos/octo/shop",
+            "html_url": "https://github.com/octo/shop/pull/14",
+            "pull_request": {
+              "url": "https://api.github.com/repos/octo/shop/pulls/14",
+              "html_url": "https://github.com/octo/shop/pull/14",
+              "diff_url": "https://github.com/octo/shop/pull/14.diff",
+              "patch_url": "https://github.com/octo/shop/pull/14.patch"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/repos/octo/shop/issues?state=all&sort=created&direction=desc&per_page=100"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": [
+          {
+            "id": 2000000017,
+            "node_id": "I_kwDOAbc17",
+            "number": 17,
+            "title": "Refunds page 500s",
+            "body": null,
+            "state": "open",
+            "state_reason": null,
+            "locked": false,
+            "user": {
+              "login": "octocat",
+              "id": 583231,
+              "type": "User",
+              "html_url": "https://github.com/octocat"
+            },
+            "labels": [],
+            "assignee": null,
+            "assignees": [],
+            "milestone": null,
+            "comments": 0,
+            "created_at": "2026-11-11T08:30:00Z",
+            "updated_at": "2026-11-11T08:30:00Z",
+            "closed_at": null,
+            "author_association": "OWNER",
+            "url": "https://api.github.com/repos/octo/shop/issues/17",
+            "repository_url": "https://api.github.com/repos/octo/shop",
+            "html_url": "https://github.com/octo/shop/issues/17"
+          },
+          {
+            "id": 2000000016,
+            "node_id": "I_kwDOAbc16",
+            "number": 16,
+            "title": "Bump django",
+            "body": null,
+            "state": "open",
+            "state_reason": null,
+            "locked": false,
+            "user": {
+              "login": "octocat",
+              "id": 583231,
+              "type": "User",
+              "html_url": "https://github.com/octocat"
+            },
+            "labels": [],
+            "assignee": null,
+            "assignees": [],
+            "milestone": null,
+            "comments": 0,
+            "created_at": "2026-11-11T08:00:00Z",
+            "updated_at": "2026-11-11T08:00:00Z",
+            "closed_at": null,
+            "author_association": "OWNER",
+            "url": "https://api.github.com/repos/octo/shop/issues/16",
+            "repository_url": "https://api.github.com/repos/octo/shop",
+            "html_url": "https://github.com/octo/shop/pull/16",
+            "pull_request": {
+              "url": "https://api.github.com/repos/octo/shop/pulls/16",
+              "html_url": "https://github.com/octo/shop/pull/16",
+              "diff_url": "https://github.com/octo/shop/pull/16.diff",
+              "patch_url": "https://github.com/octo/shop/pull/16.patch"
+            }
+          },
+          {
+            "id": 2000000015,
+            "node_id": "I_kwDOAbc15",
+            "number": 15,
+            "title": "Typo on the about page",
+            "body": null,
+            "state": "closed",
+            "state_reason": "completed",
+            "locked": false,
+            "user": {
+              "login": "octocat",
+              "id": 583231,
+              "type": "User",
+              "html_url": "https://github.com/octocat"
+            },
+            "labels": [
+              {
+                "id": 208046371,
+                "name": "docs",
+                "color": "d73a4a",
+                "default": false
+              }
+            ],
+            "assignee": null,
+            "assignees": [],
+            "milestone": null,
+            "comments": 0,
+            "created_at": "2026-11-11T07:00:00Z",
+            "updated_at": "2026-11-11T07:00:00Z",
+            "closed_at": "2026-11-11T07:00:00Z",
+            "author_association": "OWNER",
+            "url": "https://api.github.com/repos/octo/shop/issues/15",
+            "repository_url": "https://api.github.com/repos/octo/shop",
+            "html_url": "https://github.com/octo/shop/issues/15"
+          },
+          {
+            "id": 2000000014,
+            "node_id": "I_kwDOAbc14",
+            "number": 14,
+            "title": "Speed up search",
+            "body": null,
+            "state": "open",
+            "state_reason": null,
+            "locked": false,
+            "user": {
+              "login": "octocat",
+              "id": 583231,
+              "type": "User",
+              "html_url": "https://github.com/octocat"
+            },
+            "labels": [],
+            "assignee": null,
+            "assignees": [],
+            "milestone": null,
+            "comments": 0,
+            "created_at": "2026-11-10T09:00:00Z",
+            "updated_at": "2026-11-10T09:00:00Z",
+            "closed_at": null,
+            "author_association": "OWNER",
+            "url": "https://api.github.com/repos/octo/shop/issues/14",
+            "repository_url": "https://api.github.com/repos/octo/shop",
+            "html_url": "https://github.com/octo/shop/pull/14",
+            "pull_request": {
+              "url": "https://api.github.com/repos/octo/shop/pulls/14",
+              "html_url": "https://github.com/octo/shop/pull/14",
+              "diff_url": "https://github.com/octo/shop/pull/14.diff",
+              "patch_url": "https://github.com/octo/shop/pull/14.patch"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/repos/octo/shop/issues?state=all&sort=created&direction=desc&per_page=100"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": [
+          {
+            "id": 2000000019,
+            "node_id": "I_kwDOAbc19",
+            "number": 19,
+            "title": "Dark mode",
+            "body": null,
+            "state": "open",
+            "state_reason": null,
+            "locked": false,
+            "user": {
+              "login": "octocat",
+              "id": 583231,
+              "type": "User",
+              "html_url": "https://github.com/octocat"
+            },
+            "labels": [],
+            "assignee": null,
+            "assignees": [],
+            "milestone": null,
+            "comments": 0,
+            "created_at": "2026-11-11T10:00:00Z",
+            "updated_at": "2026-11-11T10:00:00Z",
+            "closed_at": null,
+            "author_association": "OWNER",
+            "url": "https://api.github.com/repos/octo/shop/issues/19",
+            "repository_url": "https://api.github.com/repos/octo/shop",
+            "html_url": "https://github.com/octo/shop/issues/19"
+          },
+          {
+            "id": 2000000018,
+            "node_id": "I_kwDOAbc18",
+            "number": 18,
+            "title": "Export to CSV",
+            "body": null,
+            "state": "open",
+            "state_reason": null,
+            "locked": false,
+            "user": {
+              "login": "octocat",
+              "id": 583231,
+              "type": "User",
+              "html_url": "https://github.com/octocat"
+            },
+            "labels": [],
+            "assignee": null,
+            "assignees": [],
+            "milestone": null,
+            "comments": 0,
+            "created_at": "2026-11-11T09:30:00Z",
+            "updated_at": "2026-11-11T09:30:00Z",
+            "closed_at": null,
+            "author_association": "OWNER",
+            "url": "https://api.github.com/repos/octo/shop/issues/18",
+            "repository_url": "https://api.github.com/repos/octo/shop",
+            "html_url": "https://github.com/octo/shop/issues/18"
+          },
+          {
+            "id": 2000000017,
+            "node_id": "I_kwDOAbc17",
+            "number": 17,
+            "title": "Refunds page 500s",
+            "body": null,
+            "state": "open",
+            "state_reason": null,
+            "locked": false,
+            "user": {
+              "login": "octocat",
+              "id": 583231,
+              "type": "User",
+              "html_url": "https://github.com/octocat"
+            },
+            "labels": [],
+            "assignee": null,
+            "assignees": [],
+            "milestone": null,
+            "comments": 0,
+            "created_at": "2026-11-11T08:30:00Z",
+            "updated_at": "2026-11-11T08:30:00Z",
+            "closed_at": null,
+            "author_association": "OWNER",
+            "url": "https://api.github.com/repos/octo/shop/issues/17",
+            "repository_url": "https://api.github.com/repos/octo/shop",
+            "html_url": "https://github.com/octo/shop/issues/17"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/repos/octo/shop/issues?state=all&sort=created&direction=desc&per_page=100"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": [
+          {
+            "id": 2000000019,
+            "node_id": "I_kwDOAbc19",
+            "number": 19,
+            "title": "Dark mode",
+            "body": null,
+            "state": "open",
+            "state_reason": null,
+            "locked": false,
+            "user": {
+              "login": "octocat",
+              "id": 583231,
+              "type": "User",
+              "html_url": "https://github.com/octocat"
+            },
+            "labels": [],
+            "assignee": null,
+            "assignees": [],
+            "milestone": null,
+            "comments": 0,
+            "created_at": "2026-11-11T10:00:00Z",
+            "updated_at": "2026-11-11T10:00:00Z",
+            "closed_at": null,
+            "author_association": "OWNER",
+            "url": "https://api.github.com/repos/octo/shop/issues/19",
+            "repository_url": "https://api.github.com/repos/octo/shop",
+            "html_url": "https://github.com/octo/shop/issues/19"
+          },
+          {
+            "id": 2000000018,
+            "node_id": "I_kwDOAbc18",
+            "number": 18,
+            "title": "Export to CSV",
+            "body": null,
+            "state": "open",
+            "state_reason": null,
+            "locked": false,
+            "user": {
+              "login": "octocat",
+              "id": 583231,
+              "type": "User",
+              "html_url": "https://github.com/octocat"
+            },
+            "labels": [],
+            "assignee": null,
+            "assignees": [],
+            "milestone": null,
+            "comments": 0,
+            "created_at": "2026-11-11T09:30:00Z",
+            "updated_at": "2026-11-11T09:30:00Z",
+            "closed_at": null,
+            "author_association": "OWNER",
+            "url": "https://api.github.com/repos/octo/shop/issues/18",
+            "repository_url": "https://api.github.com/repos/octo/shop",
+            "html_url": "https://github.com/octo/shop/issues/18"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,91 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "/repos/octo/missing/issues/1"
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "message": "Not Found",
+          "documentation_url": "https://docs.github.com/rest/issues/issues#get-an-issue",
+          "status": "404"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "url": "/repos/octo/shop/issues",
+        "json": {
+          "title": ""
+        }
+      },
+      "response": {
+        "status": 422,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "message": "Validation Failed",
+          "errors": [
+            {
+              "resource": "Issue",
+              "code": "missing_field",
+              "field": "title"
+            }
+          ],
+          "documentation_url": "https://docs.github.com/rest/issues/issues#create-an-issue",
+          "status": "422"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/repos/octo/shop/issues/12"
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "content-type": "application/json; charset=utf-8",
+          "x-ratelimit-limit": "5000",
+          "x-ratelimit-remaining": "0",
+          "x-ratelimit-reset": "4102444800",
+          "x-ratelimit-resource": "core"
+        },
+        "json": {
+          "message": "API rate limit exceeded for user ID 583231. If you reach out to GitHub Support for help, please include the request ID 0000:0000:0000:0000:0000.",
+          "documentation_url": "https://docs.github.com/rest/overview/rate-limits-for-the-rest-api",
+          "status": "403"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "url": "/repos/octo/shop/actions/workflows/deploy.yml/dispatches",
+        "json": {
+          "ref": "main"
+        }
+      },
+      "response": {
+        "status": 422,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "message": "Workflow does not have 'workflow_dispatch' trigger",
+          "documentation_url": "https://docs.github.com/rest/actions/workflows#create-a-workflow-dispatch-event",
+          "status": "422"
+        }
+      }
+    }
+  ]
+}

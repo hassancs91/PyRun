@@ -1,0 +1,125 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "/chat.postMessage",
+        "json": {
+          "channel": "#alerts",
+          "text": "*Disk almost full* on web-1"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "ok": true,
+          "channel": "C061EG9SL",
+          "ts": "1731340800.000100",
+          "message": {
+            "bot_id": "B061F7JQ5",
+            "app_id": "A061F7JQ2",
+            "user": "U061F7AUR",
+            "type": "message",
+            "text": "*Disk almost full* on web-1",
+            "ts": "1731340800.000100"
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "url": "/chat.postMessage",
+        "json": {
+          "channel": "C061EG9SL",
+          "text": "Cleaned up: 40 GB free.",
+          "thread_ts": "1731340800.000100",
+          "reply_broadcast": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "ok": true,
+          "channel": "C061EG9SL",
+          "ts": "1731340860.000200",
+          "message": {
+            "bot_id": "B061F7JQ5",
+            "app_id": "A061F7JQ2",
+            "user": "U061F7AUR",
+            "type": "message",
+            "text": "Cleaned up: 40 GB free.",
+            "ts": "1731340860.000200",
+            "thread_ts": "1731340800.000100",
+            "subtype": "thread_broadcast"
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "url": "/chat.postMessage",
+        "json": {
+          "channel": "C061EG9SL",
+          "text": "Deploy finished",
+          "blocks": [
+            {
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "*Deploy finished* <https://example.com|log>"
+              }
+            }
+          ],
+          "unfurl_links": false,
+          "unfurl_media": false
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "ok": true,
+          "channel": "C061EG9SL",
+          "ts": "1731340900.000300",
+          "message": {
+            "bot_id": "B061F7JQ5",
+            "app_id": "A061F7JQ2",
+            "user": "U061F7AUR",
+            "type": "message",
+            "text": "Deploy finished",
+            "ts": "1731340900.000300",
+            "blocks": [
+              {
+                "type": "section",
+                "block_id": "b1",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "*Deploy finished* <https://example.com|log>",
+                  "verbatim": false
+                }
+              }
+            ]
+          },
+          "warning": "missing_charset",
+          "response_metadata": {
+            "warnings": [
+              "missing_charset"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

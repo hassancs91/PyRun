@@ -1,0 +1,124 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "/repos/octo/shop/contents/config/flags.json"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "type": "file",
+          "encoding": "base64",
+          "size": 28,
+          "name": "flags.json",
+          "path": "config/flags.json",
+          "content": "ewogICJuZXdfY2hlY2tvdXQiOiBmYWxzZQp9Cg==\n",
+          "sha": "3d21ec53a331a6f037a91c368710b99387d012c1",
+          "url": "https://api.github.com/repos/octo/shop/contents/config/flags.json?ref=main",
+          "git_url": "https://api.github.com/repos/octo/shop/git/blobs/3d21ec53a331a6f037a91c368710b99387d012c1",
+          "html_url": "https://github.com/octo/shop/blob/main/config/flags.json",
+          "download_url": "https://raw.githubusercontent.com/octo/shop/main/config/flags.json"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "PUT",
+        "url": "/repos/octo/shop/contents/config/flags.json",
+        "json": {
+          "message": "Turn on new_checkout",
+          "content": "ewogICJuZXdfY2hlY2tvdXQiOiB0cnVlCn0K",
+          "sha": "3d21ec53a331a6f037a91c368710b99387d012c1"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "content": {
+            "type": "file",
+            "size": 27,
+            "name": "flags.json",
+            "path": "config/flags.json",
+            "sha": "95b966ae1c166bd92f8ae7d1c313e738c731dfc3",
+            "url": "https://api.github.com/repos/octo/shop/contents/config/flags.json?ref=main",
+            "git_url": "https://api.github.com/repos/octo/shop/git/blobs/95b966ae1c166bd92f8ae7d1c313e738c731dfc3",
+            "html_url": "https://github.com/octo/shop/blob/main/config/flags.json",
+            "download_url": "https://raw.githubusercontent.com/octo/shop/main/config/flags.json"
+          },
+          "commit": {
+            "sha": "7638417db6d59f3c431d3e1f261cc637155684cd",
+            "message": "Turn on new_checkout",
+            "html_url": "https://github.com/octo/shop/commit/7638417db6d59f3c431d3e1f261cc637155684cd",
+            "author": {
+              "name": "octocat",
+              "email": "octocat@github.com",
+              "date": "2026-11-11T09:00:00Z"
+            }
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/repos/octo/shop/contents/notes/2026-11-11.md?ref=reports"
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "message": "Not Found",
+          "documentation_url": "https://docs.github.com/rest/repos/contents#get-repository-content",
+          "status": "404"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "PUT",
+        "url": "/repos/octo/shop/contents/notes/2026-11-11.md",
+        "json": {
+          "message": "Daily notes",
+          "content": "IyAxMSBOb3ZlbWJlcgo=",
+          "branch": "reports"
+        }
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "content": {
+            "name": "2026-11-11.md",
+            "path": "notes/2026-11-11.md",
+            "sha": "f1d2d2f924e986ac86fdf7b36c94bcdf32beec15",
+            "size": 14,
+            "type": "file"
+          },
+          "commit": {
+            "sha": "7638417db6d59f3c431d3e1f261cc637155684cd",
+            "message": "Daily notes",
+            "html_url": "https://github.com/octo/shop/commit/7638417db6d59f3c431d3e1f261cc637155684cd",
+            "author": {
+              "name": "octocat",
+              "email": "octocat@github.com",
+              "date": "2026-11-11T09:00:00Z"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

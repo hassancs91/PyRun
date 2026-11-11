@@ -1,0 +1,42 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "/conversations.history?channel=C061EG9SL&oldest=1731340000.000000&limit=2"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "ok": true,
+          "messages": [
+            {
+              "type": "message",
+              "user": "U024BE7LH",
+              "text": "On it",
+              "ts": "1731340950.000400"
+            },
+            {
+              "bot_id": "B061F7JQ5",
+              "app_id": "A061F7JQ2",
+              "user": "U061F7AUR",
+              "type": "message",
+              "text": "Deploy finished",
+              "ts": "1731340900.000300"
+            }
+          ],
+          "has_more": true,
+          "pin_count": 0,
+          "response_metadata": {
+            "next_cursor": "bmV4dF90czoxNzMxMzQwODAw"
+          }
+        }
+      }
+    }
+  ]
+}

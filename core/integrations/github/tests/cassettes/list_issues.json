@@ -1,0 +1,187 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "/repos/octo/shop/issues?state=open&sort=created&direction=desc&labels=bug&per_page=100"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8",
+          "link": "<{base_url:github}/repositories/1296269/issues?state=open&sort=created&direction=desc&labels=bug&per_page=100&page=2>; rel=\"next\", <{base_url:github}/repositories/1296269/issues?state=open&sort=created&direction=desc&labels=bug&per_page=100&page=2>; rel=\"last\""
+        },
+        "json": [
+          {
+            "id": 2000000012,
+            "node_id": "I_kwDOAbc12",
+            "number": 12,
+            "title": "Checkout fails on Safari",
+            "body": null,
+            "state": "open",
+            "state_reason": null,
+            "locked": false,
+            "user": {
+              "login": "octocat",
+              "id": 583231,
+              "type": "User",
+              "html_url": "https://github.com/octocat"
+            },
+            "labels": [
+              {
+                "id": 208046264,
+                "name": "bug",
+                "color": "d73a4a",
+                "default": true
+              }
+            ],
+            "assignee": null,
+            "assignees": [],
+            "milestone": null,
+            "comments": 0,
+            "created_at": "2026-11-10T09:00:00Z",
+            "updated_at": "2026-11-10T09:00:00Z",
+            "closed_at": null,
+            "author_association": "OWNER",
+            "url": "https://api.github.com/repos/octo/shop/issues/12",
+            "repository_url": "https://api.github.com/repos/octo/shop",
+            "html_url": "https://github.com/octo/shop/issues/12"
+          },
+          {
+            "id": 2000000011,
+            "node_id": "I_kwDOAbc11",
+            "number": 11,
+            "title": "Fix checkout",
+            "body": null,
+            "state": "open",
+            "state_reason": null,
+            "locked": false,
+            "user": {
+              "login": "octocat",
+              "id": 583231,
+              "type": "User",
+              "html_url": "https://github.com/octocat"
+            },
+            "labels": [
+              {
+                "id": 208046264,
+                "name": "bug",
+                "color": "d73a4a",
+                "default": true
+              }
+            ],
+            "assignee": null,
+            "assignees": [],
+            "milestone": null,
+            "comments": 0,
+            "created_at": "2026-11-10T09:00:00Z",
+            "updated_at": "2026-11-10T09:00:00Z",
+            "closed_at": null,
+            "author_association": "OWNER",
+            "url": "https://api.github.com/repos/octo/shop/issues/11",
+            "repository_url": "https://api.github.com/repos/octo/shop",
+            "html_url": "https://github.com/octo/shop/pull/11",
+            "pull_request": {
+              "url": "https://api.github.com/repos/octo/shop/pulls/11",
+              "html_url": "https://github.com/octo/shop/pull/11",
+              "diff_url": "https://github.com/octo/shop/pull/11.diff",
+              "patch_url": "https://github.com/octo/shop/pull/11.patch"
+            }
+          },
+          {
+            "id": 2000000009,
+            "node_id": "I_kwDOAbc9",
+            "number": 9,
+            "title": "Coupon field ignores spaces",
+            "body": null,
+            "state": "open",
+            "state_reason": null,
+            "locked": false,
+            "user": {
+              "login": "octocat",
+              "id": 583231,
+              "type": "User",
+              "html_url": "https://github.com/octocat"
+            },
+            "labels": [
+              {
+                "id": 208046264,
+                "name": "bug",
+                "color": "d73a4a",
+                "default": true
+              },
+              {
+                "id": 208047540,
+                "name": "good first issue",
+                "color": "d73a4a",
+                "default": false
+              }
+            ],
+            "assignee": null,
+            "assignees": [],
+            "milestone": null,
+            "comments": 0,
+            "created_at": "2026-11-10T09:00:00Z",
+            "updated_at": "2026-11-10T09:00:00Z",
+            "closed_at": null,
+            "author_association": "OWNER",
+            "url": "https://api.github.com/repos/octo/shop/issues/9",
+            "repository_url": "https://api.github.com/repos/octo/shop",
+            "html_url": "https://github.com/octo/shop/issues/9"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/repositories/1296269/issues?state=open&sort=created&direction=desc&labels=bug&per_page=100&page=2"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": [
+          {
+            "id": 2000000004,
+            "node_id": "I_kwDOAbc4",
+            "number": 4,
+            "title": "Prices round down",
+            "body": null,
+            "state": "open",
+            "state_reason": null,
+            "locked": false,
+            "user": {
+              "login": "ada",
+              "id": 1001,
+              "type": "User",
+              "html_url": "https://github.com/ada"
+            },
+            "labels": [
+              {
+                "id": 208046264,
+                "name": "bug",
+                "color": "d73a4a",
+                "default": true
+              }
+            ],
+            "assignee": null,
+            "assignees": [],
+            "milestone": null,
+            "comments": 0,
+            "created_at": "2026-11-10T09:00:00Z",
+            "updated_at": "2026-11-10T09:00:00Z",
+            "closed_at": null,
+            "author_association": "OWNER",
+            "url": "https://api.github.com/repos/octo/shop/issues/4",
+            "repository_url": "https://api.github.com/repos/octo/shop",
+            "html_url": "https://github.com/octo/shop/issues/4"
+          }
+        ]
+      }
+    }
+  ]
+}

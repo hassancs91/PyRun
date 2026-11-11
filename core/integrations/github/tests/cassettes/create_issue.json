@@ -1,0 +1,99 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "/repos/octo/shop/issues",
+        "json": {
+          "title": "Nightly check failed",
+          "body": "See the run log in PyRun.",
+          "labels": [
+            "bug",
+            "nightly-check"
+          ]
+        }
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "content-type": "application/json; charset=utf-8",
+          "location": "https://api.github.com/repos/octo/shop/issues/21"
+        },
+        "json": {
+          "id": 2000000021,
+          "node_id": "I_kwDOAbc21",
+          "number": 21,
+          "title": "Nightly check failed",
+          "body": "See the run log in PyRun.",
+          "state": "open",
+          "state_reason": null,
+          "locked": false,
+          "user": {
+            "login": "octocat",
+            "id": 583231,
+            "type": "User",
+            "html_url": "https://github.com/octocat"
+          },
+          "labels": [
+            {
+              "id": 208046264,
+              "name": "bug",
+              "color": "d73a4a",
+              "default": true
+            },
+            {
+              "id": 208047268,
+              "name": "nightly-check",
+              "color": "d73a4a",
+              "default": false
+            }
+          ],
+          "assignee": null,
+          "assignees": [],
+          "milestone": null,
+          "comments": 0,
+          "created_at": "2026-11-10T09:00:00Z",
+          "updated_at": "2026-11-10T09:00:00Z",
+          "closed_at": null,
+          "author_association": "OWNER",
+          "url": "https://api.github.com/repos/octo/shop/issues/21",
+          "repository_url": "https://api.github.com/repos/octo/shop",
+          "html_url": "https://github.com/octo/shop/issues/21"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "url": "/repos/octo/shop/issues/21/comments",
+        "json": {
+          "body": "Assigning to the on-call person."
+        }
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "id": 1508000001,
+          "node_id": "IC_kwDOAbc1",
+          "body": "Assigning to the on-call person.",
+          "user": {
+            "login": "octocat",
+            "id": 583231,
+            "type": "User",
+            "html_url": "https://github.com/octocat"
+          },
+          "html_url": "https://github.com/octo/shop/issues/21#issuecomment-1508000001",
+          "issue_url": "https://api.github.com/repos/octo/shop/issues/21",
+          "author_association": "OWNER",
+          "created_at": "2026-11-10T09:01:00Z",
+          "updated_at": "2026-11-10T09:01:00Z"
+        }
+      }
+    }
+  ]
+}

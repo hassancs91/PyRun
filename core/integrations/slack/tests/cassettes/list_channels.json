@@ -1,0 +1,306 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "/conversations.list?types=public_channel&exclude_archived=true&limit=200"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "ok": true,
+          "channels": [
+            {
+              "id": "C024BE91L",
+              "name": "general",
+              "is_channel": true,
+              "is_group": false,
+              "is_im": false,
+              "is_private": false,
+              "is_archived": false,
+              "is_general": true,
+              "is_member": true,
+              "created": 1449252889,
+              "creator": "U024BE7LH",
+              "name_normalized": "general",
+              "num_members": 12,
+              "topic": {
+                "value": "",
+                "creator": "",
+                "last_set": 0
+              },
+              "purpose": {
+                "value": "",
+                "creator": "",
+                "last_set": 0
+              }
+            },
+            {
+              "id": "C061EG9SL",
+              "name": "alerts",
+              "is_channel": true,
+              "is_group": false,
+              "is_im": false,
+              "is_private": false,
+              "is_archived": false,
+              "is_general": false,
+              "is_member": true,
+              "created": 1449252889,
+              "creator": "U024BE7LH",
+              "name_normalized": "alerts",
+              "num_members": 12,
+              "topic": {
+                "value": "Pager alerts",
+                "creator": "",
+                "last_set": 0
+              },
+              "purpose": {
+                "value": "",
+                "creator": "",
+                "last_set": 0
+              }
+            }
+          ],
+          "response_metadata": {
+            "next_cursor": "dGVhbTpDMDYxRkE1UEI="
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/conversations.list?types=public_channel&exclude_archived=true&limit=200&cursor=dGVhbTpDMDYxRkE1UEI%3D"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "ok": true,
+          "channels": [
+            {
+              "id": "C07REPORTS",
+              "name": "reports",
+              "is_channel": true,
+              "is_group": false,
+              "is_im": false,
+              "is_private": false,
+              "is_archived": false,
+              "is_general": false,
+              "is_member": false,
+              "created": 1449252889,
+              "creator": "U024BE7LH",
+              "name_normalized": "reports",
+              "num_members": 12,
+              "topic": {
+                "value": "",
+                "creator": "",
+                "last_set": 0
+              },
+              "purpose": {
+                "value": "",
+                "creator": "",
+                "last_set": 0
+              }
+            }
+          ],
+          "response_metadata": {
+            "next_cursor": ""
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/conversations.list?types=public_channel&exclude_archived=true&limit=200"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "ok": true,
+          "channels": [
+            {
+              "id": "C024BE91L",
+              "name": "general",
+              "is_channel": true,
+              "is_group": false,
+              "is_im": false,
+              "is_private": false,
+              "is_archived": false,
+              "is_general": true,
+              "is_member": true,
+              "created": 1449252889,
+              "creator": "U024BE7LH",
+              "name_normalized": "general",
+              "num_members": 12,
+              "topic": {
+                "value": "",
+                "creator": "",
+                "last_set": 0
+              },
+              "purpose": {
+                "value": "",
+                "creator": "",
+                "last_set": 0
+              }
+            },
+            {
+              "id": "C061EG9SL",
+              "name": "alerts",
+              "is_channel": true,
+              "is_group": false,
+              "is_im": false,
+              "is_private": false,
+              "is_archived": false,
+              "is_general": false,
+              "is_member": true,
+              "created": 1449252889,
+              "creator": "U024BE7LH",
+              "name_normalized": "alerts",
+              "num_members": 12,
+              "topic": {
+                "value": "Pager alerts",
+                "creator": "",
+                "last_set": 0
+              },
+              "purpose": {
+                "value": "",
+                "creator": "",
+                "last_set": 0
+              }
+            }
+          ],
+          "response_metadata": {
+            "next_cursor": "dGVhbTpDMDYxRkE1UEI="
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/conversations.list?types=public_channel&exclude_archived=true&limit=200"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "ok": true,
+          "channels": [
+            {
+              "id": "C024BE91L",
+              "name": "general",
+              "is_channel": true,
+              "is_group": false,
+              "is_im": false,
+              "is_private": false,
+              "is_archived": false,
+              "is_general": true,
+              "is_member": true,
+              "created": 1449252889,
+              "creator": "U024BE7LH",
+              "name_normalized": "general",
+              "num_members": 12,
+              "topic": {
+                "value": "",
+                "creator": "",
+                "last_set": 0
+              },
+              "purpose": {
+                "value": "",
+                "creator": "",
+                "last_set": 0
+              }
+            },
+            {
+              "id": "C061EG9SL",
+              "name": "alerts",
+              "is_channel": true,
+              "is_group": false,
+              "is_im": false,
+              "is_private": false,
+              "is_archived": false,
+              "is_general": false,
+              "is_member": true,
+              "created": 1449252889,
+              "creator": "U024BE7LH",
+              "name_normalized": "alerts",
+              "num_members": 12,
+              "topic": {
+                "value": "Pager alerts",
+                "creator": "",
+                "last_set": 0
+              },
+              "purpose": {
+                "value": "",
+                "creator": "",
+                "last_set": 0
+              }
+            }
+          ],
+          "response_metadata": {
+            "next_cursor": "dGVhbTpDMDYxRkE1UEI="
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/conversations.list?types=public_channel&exclude_archived=true&limit=200&cursor=dGVhbTpDMDYxRkE1UEI%3D"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "ok": true,
+          "channels": [
+            {
+              "id": "C07REPORTS",
+              "name": "reports",
+              "is_channel": true,
+              "is_group": false,
+              "is_im": false,
+              "is_private": false,
+              "is_archived": false,
+              "is_general": false,
+              "is_member": false,
+              "created": 1449252889,
+              "creator": "U024BE7LH",
+              "name_normalized": "reports",
+              "num_members": 12,
+              "topic": {
+                "value": "",
+                "creator": "",
+                "last_set": 0
+              },
+              "purpose": {
+                "value": "",
+                "creator": "",
+                "last_set": 0
+              }
+            }
+          ],
+          "response_metadata": {
+            "next_cursor": ""
+          }
+        }
+      }
+    }
+  ]
+}

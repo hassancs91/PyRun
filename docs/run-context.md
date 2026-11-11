@@ -650,9 +650,10 @@ has its own page there: `docs/integrations/http.md` (any HTTP API),
 `docs/integrations/airtable.md` (records), `docs/integrations/notion.md`
 (databases, pages, blocks, search), `docs/integrations/google_sheets.md` (rows
 and ranges), `docs/integrations/google_drive.md` (files),
-`docs/integrations/gmail.md` (search, read, send, reply, labels, attachments)
-and `docs/integrations/smtp.md` (email with attachments through an SMTP
-connection):
+`docs/integrations/gmail.md` (search, read, send, reply, labels, attachments),
+`docs/integrations/smtp.md` (email with attachments through an SMTP
+connection), `docs/integrations/slack.md` (messages, files, channels) and
+`docs/integrations/github.md` (issues, files, Actions workflows):
 
 ```python
 from pyrunner_integrations import smtp

@@ -1,0 +1,106 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "/chat.postMessage",
+        "json": {
+          "channel": "C07REPORTS",
+          "text": "hi"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "ok": false,
+          "error": "not_in_channel"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "url": "/chat.postMessage",
+        "json": {
+          "channel": "C0MISSING",
+          "text": "hi"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "ok": false,
+          "error": "channel_not_found"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/conversations.history?channel=C061EG9SL&limit=200"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "ok": false,
+          "error": "missing_scope",
+          "needed": "channels:history",
+          "provided": "chat:write,files:write"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "url": "/chat.update",
+        "json": {
+          "channel": "C061EG9SL",
+          "text": "x",
+          "ts": "1731340800.000100"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "ok": false,
+          "error": "cant_update_message"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "url": "/chat.update",
+        "json": {
+          "channel": "C061EG9SL",
+          "text": "x",
+          "ts": "1.0"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "ok": false,
+          "error": "invalid_ts_latest"
+        }
+      }
+    }
+  ]
+}

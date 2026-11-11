@@ -694,7 +694,8 @@ class RegistryAndDocsTests(SimpleTestCase):
 
     def test_help_search_finds_the_generated_page(self):
         index = help_docs.build_index(Path(settings.BASE_DIR))
-        results = help_docs.search("retry after a 429 rate limited integration", index=index)["results"]
+        # Every page shares the Errors section: ask for what only http.md has (its request function).
+        results = help_docs.search("http integration get post paginate retry 429", index=index)["results"]
         self.assertIn("docs/integrations/http.md", [r["doc"] for r in results[:3]], results[:3])
 
 
