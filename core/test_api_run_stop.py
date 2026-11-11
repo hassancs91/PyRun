@@ -517,7 +517,8 @@ class AuditTests(_Fixture, TestCase):
             api_audit.record(self.token, slug=f"scripts.run-{days}", ok=True, status=202)
             ApiCall.objects.filter(slug=f"scripts.run-{days}").update(
                 created_at=timezone.now() - timedelta(days=days))
-        self.assertEqual(daily_housekeeping_task(), {"success": True, "api_calls_deleted": 1})
+        self.assertEqual(daily_housekeeping_task(),
+                         {"success": True, "api_calls_deleted": 1, "channel_messages_deleted": 0})
         self.assertEqual(list(ApiCall.objects.values_list("slug", flat=True)), ["scripts.run-29"])
         Schedule.objects.filter(name=HOUSEKEEPING_SCHEDULE_NAME).delete()
         self.assertTrue(ScheduleService.ensure_housekeeping_schedule())

@@ -3558,6 +3558,16 @@ class ChannelForm(forms.Form):
         label="Default chat ID",
         help_text="Where notifications are sent. Use 'Find chat ID' after saving.",
     )
+    daily_send_cap = forms.IntegerField(
+        required=False,
+        min_value=0,
+        initial=0,
+        widget=forms.NumberInput(attrs={"class": INPUT_CLASS, "min": 0}),
+        label="Daily send cap",
+        help_text="Max messages this channel sends per day: notifications, replies and "
+        "script sends together (0 = unlimited). Sends over it are recorded as failed; "
+        "PyRun's own notices (approval pending, daily limit) don't count.",
+    )
     enabled = forms.BooleanField(
         required=False,
         initial=True,
@@ -3585,6 +3595,7 @@ class ChannelForm(forms.Form):
             self.fields["name"].initial = instance.name
             self.fields["provider"].initial = instance.provider
             self.fields["default_target"].initial = instance.default_target
+            self.fields["daily_send_cap"].initial = instance.daily_send_cap
             self.fields["enabled"].initial = instance.enabled
             # Provider is fixed on edit — changing it would orphan the credentials.
             self.fields["provider"].disabled = True
@@ -3642,6 +3653,7 @@ class ChannelForm(forms.Form):
             instance.provider = self.cleaned_data["provider"]
         instance.name = self.cleaned_data["name"]
         instance.enabled = self.cleaned_data.get("enabled", False)
+        instance.daily_send_cap = self.cleaned_data.get("daily_send_cap") or 0
 
         config = dict(instance.config or {})
         config["default_target"] = (self.cleaned_data.get("default_target") or "").strip()
@@ -3691,7 +3703,7 @@ class ChannelInboundForm(forms.Form):
         min_value=0,
         widget=forms.NumberInput(attrs={"class": INPUT_CLASS, "min": 0}),
         label="Daily reply cap",
-        help_text="Max replies to incoming messages per day (0 = unlimited). Plain notifications sent by scripts don't count.",
+        help_text="Max replies to incoming messages per day (0 = unlimited). Run notifications and plain script sends don't count.",
     )
 
     def __init__(self, *args, channel=None, workspace=None, **kwargs):

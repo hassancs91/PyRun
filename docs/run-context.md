@@ -555,6 +555,8 @@ when the stop was asked for (`stop_requested_at`, also on the plugin SDK's
   shows what started the run (its kind, when it was received and the event's
   JSON, with a download link). Secret values are masked in it; when a secret
   can't be resolved, the event is hidden instead.
+- **Run page, Deliveries:** the chat messages the run sent and how each
+  went (see [Chat messages and deliveries](#chat-messages-and-deliveries)).
 - **Runs list:** a **Result** tag on runs that set one.
 - **Notifications:** the webhook notification's JSON payload has `result` (the
   object, or `null`) and `result_too_large` (`true` when the result is over
@@ -568,6 +570,45 @@ Keys keep the order they were written in everywhere above, on SQLite and on
 PostgreSQL: the result as the script set it, the event as it arrived, the
 inputs in the order the script declares them (and the **Run now** form lists
 them in that order too).
+
+---
+
+## Chat messages and deliveries
+
+Every message PyRun sends through a channel is recorded: a run's
+notifications, a script's `pyrunner_notify.send()` and `reply()`, inbound
+replies (Py AI's and the script handler's) and PyRun's own short notices
+(approval pending, worker asleep, daily limit). Each record has its kind
+(notification, reply, script send, PyRun notice), the run that sent it, how
+many attempts it took, its status and the provider's message id.
+
+- **Retries.** A send that fails for a temporary reason (the network, a
+  timeout, the provider's rate limit or a 5xx) is tried again by the worker
+  heartbeat: up to 5 attempts in all, waiting 1, 5, 15 and 60 minutes (longer
+  when the provider asks for it). A rejected bot token or any other refusal
+  (unknown chat, a bot the user blocked) is not retried.
+- **`pyrunner_notify.send()`** returns `{"ok": true, "status": "sent", "id",
+  "result"}` once the message is sent, or `{"ok": true, "status": "retrying",
+  "id", "error", "next_attempt_at"}` when PyRun will send it again later: don't
+  resend it yourself, or it may arrive twice. It raises `NotifyError` when the
+  send was refused (HTTP 502) or the channel's daily send cap is used up
+  (HTTP 429, code `SEND_CAP_REACHED`). A send with a `reply_ref` (which is
+  what `reply()` does) counts as a reply.
+- **Caps.** A channel's **daily reply cap** counts replies only; notifications
+  and plain script sends don't use it. Its **daily send cap** (on the
+  channel's settings, 0 = none) counts notifications, replies and script sends
+  together, so a schedule failing every minute can't flood a chat: a send over
+  the cap is recorded as failed and not sent. PyRun's own notices count
+  toward neither (they have their own limits, and strangers messaging the bot
+  can't use the cap up). Both caps reset at midnight UTC.
+- **Where to see them.** The run page's **Deliveries** card lists the
+  messages that run sent; a channel's page has a **Message log** of its last
+  50 messages, both directions. The text of a run's message is masked with
+  that run's secrets. Records are kept for 30 days.
+
+The webhook notification (a script's notification URL) counts as sent only
+when the endpoint answers with a 2xx status; any other status is logged as a
+failed notification with that status.
 
 ---
 

@@ -483,7 +483,8 @@ reads them by its tiers below.
   `configured`, `inbound` (`enabled`, `handler`: `script` or `pyai`, the
   `script` it runs, and `access`), `members` (counts by status:
   `pending`, `approved`, `blocked`), `daily_reply_cap`, `daily_cap_reached`,
-  `last_error` (with the channel's own credentials masked), `last_tested_at`
+  `daily_send_cap`, `send_cap_reached` (the cap on every message the channel
+  sends a day, notifications included; null = no cap), `last_error` (with the channel's own credentials masked), `last_tested_at`
   and `last_inbound_at`. Members' ids and names aren't returned.
 - `connections.list` returns `connections`, each with `name`, `provider`,
   `provider_label`, `auth_kind` (`oauth2`, `api_key`, `bearer`, `basic`, `smtp`),

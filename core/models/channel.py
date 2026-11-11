@@ -96,8 +96,13 @@ class Channel(models.Model):
     )
     daily_reply_cap = models.PositiveIntegerField(
         default=0,
-        help_text="Max outbound messages per day — handler replies plus "
-        "script-initiated sends (0 = unlimited). Cost fuse.",
+        help_text="Max replies to inbound messages per day: handler replies and "
+        "pyrunner_notify.reply() (0 = unlimited). Cost fuse.",
+    )
+    daily_send_cap = models.PositiveIntegerField(
+        default=0,
+        help_text="Max messages sent per day: notifications, replies and script "
+        "sends together (0 = unlimited). Stops a runaway schedule.",
     )
 
     # ---- status ----
@@ -200,29 +205,49 @@ class Channel(models.Model):
             self.set_inbound_secret(current)
         return current
 
-    def replies_today(self) -> int:
-        """Replies to inbound messages delivered today (for the per-channel daily cap).
-
-        Only delivered (``status="ok"``) OUT rows that answer an inbound message
-        (they carry its ``reply_ref``) count: a script's plain notification, a
-        failed send and the cap's own "limit reached" notice do not (F50), so a
-        channel used for scheduled notifications can't hit its reply cap.
-        """
+    @staticmethod
+    def day_start():
+        """The start of the caps' day: midnight UTC (both daily caps reset then)."""
         from django.utils import timezone
 
-        start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        return (
-            self.messages.filter(
-                direction=ChannelMessage.Direction.OUT,
-                status="ok",
-                created_at__gte=start,
-            )
-            .exclude(reply_ref_json={})
-            .count()
-        )
+        return timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+    def replies_today(self) -> int:
+        """Replies to inbound messages sent today (for the per-channel daily reply cap).
+
+        Only sent ``kind="reply"`` rows count: notifications, a script's plain
+        ``pyrunner_notify.send()``, PyRun's own "limit reached" notice and a
+        failed send do not (F50), so a channel used for scheduled notifications
+        can't hit its reply cap.
+        """
+        return self.messages.filter(
+            direction=ChannelMessage.Direction.OUT,
+            kind=ChannelMessage.Kind.REPLY,
+            status=ChannelMessage.Status.SENT,
+            created_at__gte=self.day_start(),
+        ).count()
 
     def daily_cap_reached(self) -> bool:
         return bool(self.daily_reply_cap) and self.replies_today() >= self.daily_reply_cap
+
+    def sends_today(self) -> int:
+        """Messages this channel sent today, for the daily send cap.
+
+        Notifications, replies and script sends count; PyRun's own notices
+        (kind ``system``) don't, so strangers can't use the cap up.
+        """
+        return (
+            self.messages.filter(
+                direction=ChannelMessage.Direction.OUT,
+                status=ChannelMessage.Status.SENT,
+                created_at__gte=self.day_start(),
+            )
+            .exclude(kind=ChannelMessage.Kind.SYSTEM)
+            .count()
+        )
+
+    def send_cap_reached(self) -> bool:
+        return bool(self.daily_send_cap) and self.sends_today() >= self.daily_send_cap
 
     # --- helpers -------------------------------------------------------------
 
@@ -286,27 +311,73 @@ class ChannelMember(models.Model):
 
 
 class ChannelMessage(models.Model):
-    """An audit log row for one inbound or outbound message.
+    """One inbound message, or one outbound delivery (the delivery ledger).
 
-    Doubles as conversation history (keyed by reply_ref) for future handlers.
+    Every outbound message goes through ``core.services.channels.ledger.deliver``,
+    which records it here and retries a temporary failure from the worker
+    heartbeat. Doubles as conversation history (keyed by reply_ref) for Py AI.
+    Rows older than 30 days are deleted by the daily housekeeping task.
     """
 
     class Direction(models.TextChoices):
         IN = "in", "Inbound"
         OUT = "out", "Outbound"
 
+    class Kind(models.TextChoices):
+        # Outbound only; inbound rows keep "".
+        NOTIFICATION = "notification", "Notification"
+        REPLY = "reply", "Reply"
+        SCRIPT = "script", "Script send"
+        SYSTEM = "system", "PyRun notice"
+
+    class Status(models.TextChoices):
+        RECEIVED = "received", "Received"  # inbound rows
+        PENDING = "pending", "Sending"
+        SENT = "sent", "Sent"
+        RETRYING = "retrying", "Retrying"
+        FAILED = "failed", "Failed"
+
+    class DeliveryState(models.TextChoices):
+        # What the provider reports after the send (sent until a callback says
+        # more; Telegram has no delivery callbacks).
+        NONE = "", "—"
+        SENT = "sent", "Sent"
+        DELIVERED = "delivered", "Delivered"
+        READ = "read", "Read"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     channel = models.ForeignKey(
         "core.Channel", on_delete=models.CASCADE, related_name="messages"
     )
     direction = models.CharField(max_length=4, choices=Direction.choices, db_index=True)
+    kind = models.CharField(max_length=20, choices=Kind.choices, blank=True, default="")
     text = models.TextField(blank=True)
     sender_json = models.JSONField(default=dict, blank=True)
     reply_ref_json = models.JSONField(default=dict, blank=True)
     handler = models.CharField(max_length=20, blank=True)
-    status = models.CharField(max_length=20, default="ok")  # ok | error | rejected
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.RECEIVED, db_index=True
+    )
+    attempts = models.PositiveSmallIntegerField(default=0)
+    next_attempt_at = models.DateTimeField(
+        null=True, blank=True, db_index=True,
+        help_text="When the heartbeat tries a pending or retrying send next.",
+    )
+    run = models.ForeignKey(
+        "core.Run",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="channel_messages",
+        help_text="The run that sent it (notifications and script sends).",
+    )
+    provider_message_id = models.CharField(max_length=128, blank=True)
+    delivery_state = models.CharField(
+        max_length=20, choices=DeliveryState.choices, blank=True, default=""
+    )
     error = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = "channel_messages"

@@ -55,6 +55,13 @@
                 {% include "cpanel/_field_errors.html" with field=form.default_target %}
             </div>
 
+            <div>
+                <label for="id_daily_send_cap" class="block text-[13px] font-medium text-text mb-1.5">{{ form.daily_send_cap.label }}</label>
+                {{ form.daily_send_cap }}
+                <p class="mt-1.5 text-xs text-faint">{{ form.daily_send_cap.help_text }}</p>
+                {% include "cpanel/_field_errors.html" with field=form.daily_send_cap %}
+            </div>
+
             <label class="flex items-center gap-2.5 cursor-pointer">
                 {{ form.enabled }}
                 <span class="text-sm text-text">Enabled</span>
@@ -65,6 +72,36 @@
                 <button type="submit" class="text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">Save changes</button>
             </div>
         </form>
+
+        {# Message log: the delivery ledger, both directions #}
+        <section class="rounded-2xl border border-line bg-panel p-6 space-y-4" aria-labelledby="message-log-heading">
+            <div>
+                <h2 id="message-log-heading" class="text-base font-semibold">Message log</h2>
+                <p class="text-sm text-muted mt-1">The last {{ message_log_rows }} messages, newest first. A send that fails for a temporary reason is tried up to 4 more times; a rejected one (bad token, unknown chat) is not. Messages are kept for 30 days.</p>
+            </div>
+            {% if message_log %}
+            <ul class="divide-y divide-line-soft">
+                {% for d in message_log %}
+                <li class="py-2.5 min-w-0">
+                    <div class="flex items-center justify-between gap-3">
+                        <div class="min-w-0 text-xs text-faint truncate">
+                            <span class="font-mono" title="{{ d.msg.created_at|date:'M d, Y H:i:s' }}">{{ d.msg.created_at|date:"M d H:i" }}</span>
+                            · {% if d.msg.direction == 'in' %}in{% if d.msg.sender_json.display_name %} from {{ d.msg.sender_json.display_name }}{% endif %}{% else %}{{ d.msg.get_kind_display|lower }}{% endif %}
+                            {% if d.msg.attempts > 1 %}· {{ d.msg.attempts }} attempts{% endif %}
+                            {% if d.msg.run_id %}· <a href="{% url 'cpanel:run_detail' pk=d.msg.run_id %}" class="text-info hover:underline">run</a>{% endif %}
+                        </div>
+                        {% include "cpanel/channels/_delivery_status.html" with msg=d.msg %}
+                    </div>
+                    {% if d.hidden %}<p class="mt-1 text-xs text-faint">Text hidden: a secret it may contain couldn't be resolved.</p>{% elif d.text %}<p class="mt-1 text-sm text-text break-words">{{ d.text|truncatechars:300 }}</p>{% endif %}
+                    {% if d.msg.error %}<p class="mt-1 text-xs {% if d.msg.status == 'sent' %}text-faint{% else %}text-fail{% endif %} break-words">{{ d.msg.error|truncatechars:300 }}</p>{% endif %}
+                    {% if d.msg.status == 'retrying' and d.msg.next_attempt_at %}<p class="mt-1 text-xs text-warn">Next attempt at <span class="font-mono">{{ d.msg.next_attempt_at|date:"M d, H:i" }}</span></p>{% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="text-sm text-faint">No messages yet.</p>
+            {% endif %}
+        </section>
     </div>
 
     {# Inbound + approval inbox #}

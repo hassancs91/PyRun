@@ -23,7 +23,7 @@ from django_q.tasks import async_task
 
 from core.models import Channel, ChannelMember, GlobalSettings
 from core.ratelimit import client_ip, rate_limit_exceeded
-from core.services.channels import ChannelError, OutboundMessage, get_provider
+from core.services.channels import get_provider
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +150,18 @@ def _reply_once(channel, provider, msg, sender_id, text):
 
 
 def _safe_send(channel, provider, msg, text):
+    """Send one of PyRun's own notices through the delivery ledger (never raises).
+
+    A ``system`` send: logged like any message, outside the daily caps (its
+    own throttles bound it), so strangers can't use up the channel's send cap.
+    """
+    from core.models import ChannelMessage
+    from core.services.channels import ledger
+
     try:
-        provider.send(channel, OutboundMessage(text=text, reply_ref=msg.reply_ref))
-    except ChannelError as e:
-        logger.warning("Inbound auto-reply failed on channel %s: %s", channel.id, e)
+        row = ledger.deliver(channel, text, kind=ChannelMessage.Kind.SYSTEM, reply_ref=msg.reply_ref)
+    except Exception:
+        logger.exception("Inbound auto-reply failed on channel %s", channel.id)
+        return
+    if row.status != ChannelMessage.Status.SENT:
+        logger.warning("Inbound auto-reply on channel %s not sent (%s): %s", channel.id, row.status, row.error)

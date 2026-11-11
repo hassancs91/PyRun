@@ -59,18 +59,31 @@ class TelegramProvider(ChannelProvider):
         except requests.RequestException as e:
             # requests puts the URL — bot token included — into its message.
             text = describe_request_error(e, "Telegram", _TIMEOUT).replace(token, "<bot token>")
-            raise ChannelError(text)
+            raise ChannelError(text, retryable=True)
         try:
             data = resp.json()
         except ValueError:
+            data = None
+        if not isinstance(data, dict):
             raise ChannelError(
-                f"Unexpected Telegram response (HTTP {resp.status_code})."
+                f"Unexpected Telegram response (HTTP {resp.status_code}).",
+                retryable=resp.status_code >= 500,
             )
         if not data.get("ok"):
+            code = data.get("error_code") if isinstance(data.get("error_code"), int) else resp.status_code
             # 401 means a bad/revoked bot token; Telegram only says "Unauthorized" (U50).
-            if resp.status_code == 401 or data.get("error_code") == 401:
-                raise ChannelError(BAD_TOKEN_MESSAGE)
-            raise ChannelError(data.get("description") or "Telegram API error.")
+            if resp.status_code == 401 or code == 401:
+                raise ChannelError(BAD_TOKEN_MESSAGE, auth=True)
+            description = data.get("description") or "Telegram API error."
+            if code == 429 or resp.status_code == 429:
+                # Flood control: Telegram says how long to wait.
+                params = data.get("parameters") if isinstance(data.get("parameters"), dict) else {}
+                wait = params.get("retry_after")
+                raise ChannelError(
+                    description, retryable=True,
+                    retry_after=wait if isinstance(wait, int) and not isinstance(wait, bool) else None,
+                )
+            raise ChannelError(description, retryable=code >= 500 or resp.status_code >= 500)
         return data.get("result")
 
     # --- outbound ------------------------------------------------------------

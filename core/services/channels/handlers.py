@@ -96,11 +96,17 @@ def _script_handler(channel, msg):
 
 
 def _channel_history(channel, msg, limit: int = 6):
-    """Recent same-conversation turns as [{role, text}] (excludes the current msg)."""
+    """Recent same-conversation turns as [{role, text}] (excludes the current msg).
+
+    Run notifications aren't conversation turns: they are left out.
+    """
     from core.models import ChannelMessage
 
     chat_id = (msg.reply_ref or {}).get("chat_id")
-    rows = list(channel.messages.order_by("-created_at")[: limit * 2 + 2])
+    rows = list(
+        channel.messages.exclude(kind=ChannelMessage.Kind.NOTIFICATION)
+        .order_by("-created_at")[: limit * 2 + 2]
+    )
     # The current inbound was already logged by dispatch_inbound — drop it once.
     for i, r in enumerate(rows):
         if r.direction == ChannelMessage.Direction.IN and r.text == msg.text:

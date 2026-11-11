@@ -43,6 +43,13 @@
             {% include "cpanel/_field_errors.html" with field=form.default_target %}
         </div>
 
+        <div>
+            <label for="id_daily_send_cap" class="block text-[13px] font-medium text-text mb-1.5">{{ form.daily_send_cap.label }}</label>
+            {{ form.daily_send_cap }}
+            <p class="mt-1.5 text-xs text-faint">{{ form.daily_send_cap.help_text }}</p>
+            {% include "cpanel/_field_errors.html" with field=form.daily_send_cap %}
+        </div>
+
         <label class="flex items-center gap-2.5 cursor-pointer">
             {{ form.enabled }}
             <span class="text-sm text-text">Enabled</span>

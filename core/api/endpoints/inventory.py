@@ -314,6 +314,8 @@ def list_channels(ctx, params):
             },
             "daily_reply_cap": c.daily_reply_cap or None,
             "daily_cap_reached": c.daily_cap_reached(),
+            "daily_send_cap": c.daily_send_cap or None,
+            "send_cap_reached": c.send_cap_reached(),
             "last_error": channel_error(c),
             "last_tested_at": iso(c.last_tested_at),
             "last_inbound_at": iso(c.last_inbound_at),

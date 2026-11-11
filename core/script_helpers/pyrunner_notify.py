@@ -59,7 +59,13 @@ def _post(payload: dict) -> dict:
 
 
 def send(channel: str, text: str, reply_ref: dict | None = None) -> dict:
-    """Send ``text`` to the named Channel (resolved in this run's workspace)."""
+    """Send ``text`` to the named Channel (resolved in this run's workspace).
+
+    Returns ``{"ok": True, "status": "sent", ...}``, or ``"status": "retrying"``
+    when the provider failed for a temporary reason and PyRun will send it
+    again later (don't resend, or it may arrive twice). Raises NotifyError when
+    the send was refused or the channel's daily send cap is used up.
+    """
     payload = {"target": channel, "text": text}
     if reply_ref:
         payload["reply_ref"] = reply_ref

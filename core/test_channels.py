@@ -297,7 +297,9 @@ class InternalSendEndpointTests(_EncBase):
         self.assertEqual(out.count(), 1)
         row = out.first()
         self.assertEqual(row.text, "hello")
-        self.assertEqual(row.status, "ok")
+        self.assertEqual(row.status, "sent")
+        self.assertEqual(row.kind, "reply")
+        self.assertEqual(row.run_id, self.run.id)
         self.assertEqual(row.reply_ref_json, {"chat_id": "5"})
 
     def test_script_reply_counts_toward_daily_cap(self):
@@ -333,7 +335,7 @@ class InternalSendEndpointTests(_EncBase):
             resp = self._post({"target": "Ops", "text": "hi"})
         self.assertEqual(resp.status_code, 502)
         err = ChannelMessage.objects.filter(
-            channel=ch, direction=ChannelMessage.Direction.OUT, status="error"
+            channel=ch, direction=ChannelMessage.Direction.OUT, status="failed"
         )
         self.assertEqual(err.count(), 1)
         self.assertIn("boom", err.first().error)
@@ -505,7 +507,8 @@ class InboundDispatchTests(_EncBase):
         self.ch.daily_reply_cap = 1
         self.ch.save()
         ChannelMessage.objects.create(
-            channel=self.ch, direction="out", text="prev", reply_ref_json={"chat_id": "1"}
+            channel=self.ch, direction="out", text="prev", reply_ref_json={"chat_id": "1"},
+            kind="reply", status="sent",
         )
         with mock.patch.object(TelegramProvider, "send", return_value={}) as send, \
                 mock.patch("core.tasks.queue_script_run") as q:
@@ -519,9 +522,10 @@ class InboundDispatchTests(_EncBase):
             gh.return_value = mock.Mock(side_effect=RuntimeError("boom"))
             dispatch_inbound(str(self.ch.id), _TG_UPDATE)
         self.assertIn("something went wrong", send.call_args.args[1].text)
-        self.assertTrue(
-            ChannelMessage.objects.filter(channel=self.ch, direction="out", status="error").exists()
-        )
+        # The apology was sent; the row keeps why PyRun apologized.
+        row = ChannelMessage.objects.get(channel=self.ch, direction="out")
+        self.assertEqual((row.status, row.kind), ("sent", "reply"))
+        self.assertIn("The handler failed: boom", row.error)
 
     def test_notify_only_handler_does_nothing(self):
         self.ch.inbound_handler = ""

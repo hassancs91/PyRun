@@ -1,0 +1,6 @@
+{# A ledger row's status chip (ChannelMessage.status). Needs: msg. #}
+{% if msg.status == 'sent' %}<span class="text-[11px] font-medium px-1.5 py-0.5 rounded bg-ok/10 text-ok flex-shrink-0">{% if msg.delivery_state and msg.delivery_state != 'sent' %}{{ msg.get_delivery_state_display|lower }}{% else %}sent{% endif %}</span>
+{% elif msg.status == 'retrying' %}<span class="text-[11px] font-medium px-1.5 py-0.5 rounded bg-warn/10 text-warn flex-shrink-0">retrying</span>
+{% elif msg.status == 'pending' %}<span class="text-[11px] font-medium px-1.5 py-0.5 rounded bg-info/10 text-info flex-shrink-0">sending</span>
+{% elif msg.status == 'failed' %}<span class="text-[11px] font-medium px-1.5 py-0.5 rounded bg-fail/10 text-fail flex-shrink-0">failed</span>
+{% else %}<span class="text-[11px] font-medium px-1.5 py-0.5 rounded border border-line text-muted flex-shrink-0">received</span>{% endif %}

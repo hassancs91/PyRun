@@ -494,6 +494,19 @@ begins tracking at the current release; earlier history is in the git log.
   the console they can be turned off and on and checked now, not edited, and
   they are deleted with the plugin. The SDK Showcase example plugin (1.3.0)
   has a Watcher card with its own counter adapter.
+- **Delivery ledger for chat messages.** Every message PyRun sends through a
+  channel (run notifications, `pyrunner_notify` sends and replies, Py AI and
+  script-handler replies, PyRun's own notices) is recorded with its kind, run,
+  attempts, status and the provider's message id. A send that fails for a
+  temporary reason (network, timeout, rate limit, a 5xx) is retried by the
+  worker heartbeat, up to 5 attempts over about 80 minutes; a rejected bot
+  token or another refusal is not retried. `pyrunner_notify.send()` returns
+  `"status": "retrying"` (HTTP 202) for a send PyRun will retry. Channels get
+  a **daily send cap** (notifications, replies and script sends together;
+  0 = none, the default), so a failing schedule can't flood a chat, and the
+  daily reply cap now counts replies only. The run page has a **Deliveries**
+  card and each channel's page a **Message log**; records are kept for 30
+  days. The webhook notification now counts as sent only on a 2xx answer.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

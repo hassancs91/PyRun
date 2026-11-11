@@ -19,9 +19,12 @@ from django.views.decorators.http import require_POST
 from core.forms import ChannelForm, ChannelInboundForm
 from core.models import Channel, ChannelMember
 from core.services import ChannelService, ChannelServiceError, EncryptionService
-from core.services.channels import ChannelError
+from core.services.channels import ChannelError, ledger
 
 logger = logging.getLogger(__name__)
+
+# Rows of the channel page's message log (newest first; 30 days are kept).
+MESSAGE_LOG_ROWS = 50
 
 
 @login_required
@@ -94,6 +97,10 @@ def channel_edit_view(request: HttpRequest, pk) -> HttpResponse:
             "supports_inbound": getattr(provider, "supports_inbound", False),
             "webhook_url": webhook_url,
             "members": channel.members.all(),
+            "message_log": ledger.display_rows(
+                channel.messages.select_related("run", "run__script").order_by("-created_at", "-id")[:MESSAGE_LOG_ROWS]
+            ),
+            "message_log_rows": MESSAGE_LOG_ROWS,
         },
     )
 

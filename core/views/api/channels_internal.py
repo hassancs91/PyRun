@@ -16,6 +16,16 @@ POST /internal/channels/send
     "to": "...",            # email only (optional; defaults to core default)
     "reply_ref": {...}      # chat target override (e.g. {"chat_id": ...})
   }
+
+A chat send goes through the delivery ledger (``core.services.channels.ledger``)
+and is recorded on the run:
+  200 {"ok": true, "status": "sent", "id": ..., "result": {...}}
+  202 {"ok": true, "status": "retrying", "id": ..., "error": ..., "next_attempt_at": ...}
+      a temporary failure: PyRun sends it again later (resending would deliver twice)
+  429 SEND_CAP_REACHED   the channel's daily send cap is used up (not sent)
+  502 SEND_FAILED        rejected (bad token, unknown chat, ...): not retried
+A send with a ``reply_ref`` is a reply (kind "reply": it counts toward the
+channel's daily reply cap); one without is a script send (kind "script").
 """
 
 import json
@@ -31,7 +41,8 @@ from core.views.api.decorators import internal_datastore_token_required
 logger = logging.getLogger(__name__)
 
 # Per-run send brake: a runaway script can't spam a provider. Generous enough
-# for normal use; the cap is per run, not per channel.
+# for normal use; the cap is per run, not per channel (the channel's own
+# daily_send_cap covers every run and kind).
 _RUN_SEND_LIMIT = 30
 _RUN_SEND_WINDOW = 60  # seconds
 
@@ -40,36 +51,6 @@ def _bad_request(message: str) -> JsonResponse:
     return JsonResponse(
         {"error": {"code": "BAD_REQUEST", "message": message}}, status=400
     )
-
-
-def _log_outbound_message(channel, text, reply_ref, *, status="ok", error=""):
-    """Record a chat-channel send as an OUT ``ChannelMessage``.
-
-    A ``script`` handler replies asynchronously from its own run via
-    ``pyrunner_notify.reply()`` → this endpoint. Without this row the reply never
-    appears in the channel's conversation history AND never counts toward its
-    ``daily_reply_cap`` (the cost fuse that ``dispatch_inbound`` checks) — so the
-    cap stays stuck at 0 for script channels. Mirrors the synchronous
-    ``channels.inbound._reply`` row. Only rows that carry a ``reply_ref`` and
-    were delivered count toward the cap (``Channel.replies_today``): a plain
-    ``pyrunner_notify.send()`` or a failed send is history, not a reply (F50).
-    Best-effort: the message is already delivered, so a logging failure must
-    never fail the request.
-    """
-    from core.models import ChannelMessage
-
-    try:
-        ChannelMessage.objects.create(
-            channel=channel,
-            direction=ChannelMessage.Direction.OUT,
-            text=text,
-            reply_ref_json=reply_ref or {},
-            handler=channel.inbound_handler,
-            status=status,
-            error=error,
-        )
-    except Exception:
-        logger.warning("Failed to log outbound ChannelMessage for channel %s", channel.id)
 
 
 @csrf_exempt
@@ -123,9 +104,8 @@ def send(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"ok": True})
 
     # --- chat channel target: resolve within the run's workspace ---
-    from core.models import Channel, Workspace
-    from core.services import ChannelService
-    from core.services.channels import ChannelError
+    from core.models import Channel, ChannelMessage, Run
+    from core.services.channels import ledger
 
     # An unscoped run reaches no channel (fail closed, F129).
     ws_id = getattr(request, "datastore_workspace", None)
@@ -143,12 +123,30 @@ def send(request: HttpRequest) -> JsonResponse:
     if reply_ref is not None and not isinstance(reply_ref, dict):
         return _bad_request("'reply_ref' must be an object")
 
-    try:
-        result = ChannelService.send(channel, text, reply_ref=reply_ref)
-    except ChannelError as e:
-        _log_outbound_message(channel, text, reply_ref, status="error", error=str(e))
+    # A reply answers an inbound message (pyrunner_notify.reply() passes its
+    # reply_ref) and counts toward the channel's daily reply cap.
+    kind = ChannelMessage.Kind.REPLY if reply_ref else ChannelMessage.Kind.SCRIPT
+    run = Run.objects.filter(pk=run_id).first() if run_id else None
+    row = ledger.deliver(channel, text, kind=kind, reply_ref=reply_ref, run=run)
+
+    if row.status == ChannelMessage.Status.SENT:
         return JsonResponse(
-            {"error": {"code": "SEND_FAILED", "message": str(e)}}, status=502
+            {"ok": True, "status": "sent", "id": str(row.id), "result": getattr(row, "send_result", None)}
         )
-    _log_outbound_message(channel, text, reply_ref, status="ok")
-    return JsonResponse({"ok": True, "result": result})
+    if row.status == ChannelMessage.Status.RETRYING:
+        return JsonResponse(
+            {
+                "ok": True,
+                "status": "retrying",
+                "id": str(row.id),
+                "error": row.error,
+                "next_attempt_at": row.next_attempt_at.isoformat() if row.next_attempt_at else None,
+            },
+            status=202,
+        )
+    code, status = "SEND_FAILED", 502
+    if row.attempts == 0:  # refused before any attempt: the daily send cap
+        code, status = "SEND_CAP_REACHED", 429
+    return JsonResponse(
+        {"error": {"code": code, "message": row.error, "id": str(row.id)}}, status=status
+    )

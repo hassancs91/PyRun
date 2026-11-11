@@ -486,21 +486,33 @@ def daily_housekeeping_task() -> dict:
     Delete what PyRun keeps for a fixed time only. Called daily by django-q2.
 
     Today: ``ApiCall`` audit rows older than 30 days
-    (``core.services.api_audit.RETENTION_DAYS``).
+    (``core.services.api_audit.RETENTION_DAYS``) and channel messages (the
+    delivery ledger) older than 30 days
+    (``core.services.channels.ledger.RETENTION_DAYS``). One purge failing
+    doesn't stop the other.
 
     Returns:
-        dict: Result with how many audit rows were deleted.
+        dict: Result with how many rows of each were deleted.
     """
     from core.services import api_audit
+    from core.services.channels import ledger
 
-    try:
-        deleted = api_audit.purge()
+    result = {"success": True}
+    for key, label, purge in (
+        ("api_calls_deleted", "API audit row(s)", api_audit.purge),
+        ("channel_messages_deleted", "channel message(s)", ledger.purge),
+    ):
+        try:
+            deleted = purge()
+        except Exception as e:
+            logger.exception(f"Housekeeping: deleting old {label} failed")
+            result["success"] = False
+            result.setdefault("error", str(e))
+            continue
+        result[key] = deleted
         if deleted:
-            logger.info(f"Housekeeping: deleted {deleted} API audit row(s) past retention")
-        return {"success": True, "api_calls_deleted": deleted}
-    except Exception as e:
-        logger.exception("Housekeeping task failed")
-        return {"success": False, "error": str(e)}
+            logger.info(f"Housekeeping: deleted {deleted} {label} past retention")
+    return result
 
 
 def watchers_tick_task() -> dict:
@@ -659,6 +671,17 @@ def worker_heartbeat_task() -> dict:
                 logger.info(f"Started {retried} retry run(s) that were due")
         except Exception:
             logger.exception("Starting due retries failed")
+
+        # Delivery ledger: retry every channel message whose backoff has run
+        # out (core.services.channels.ledger). Never fails the heartbeat.
+        try:
+            from core.services.channels import ledger
+
+            drained = ledger.drain_due()
+            if any(drained.values()):
+                logger.info(f"Channel message retries: {drained}")
+        except Exception:
+            logger.exception("Retrying channel messages failed")
 
         # Same for package operations: the packages page used to be the only
         # reconciler, so an install whose worker died stayed "running" (and the

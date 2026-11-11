@@ -31,6 +31,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class WebhookNotificationError(Exception):
+    """The notification webhook answered with a non-2xx status (kept in ``status``)."""
+
+    def __init__(self, message: str, status: int | None = None):
+        super().__init__(message)
+        self.status = status
+
+
 class NotificationService:
     """
     Handles sending notifications via email and webhooks.
@@ -148,9 +156,13 @@ class NotificationService:
         # Send webhook notification
         if run.script.notify_webhook_enabled and run.script.notify_webhook_url:
             try:
-                cls._send_webhook_notification(run)
+                results["webhook_status"] = cls._send_webhook_notification(run)
                 results["webhook_sent"] = True
                 logger.info(f"Webhook notification sent for run {run.id}")
+            except WebhookNotificationError as e:
+                results["webhook_status"] = e.status
+                logger.error(f"Failed to send webhook notification for run {run.id}: {e}")
+                results["webhook_error"] = str(e)
             except Exception as e:
                 logger.error(f"Failed to send webhook notification for run {run.id}: {e}")
                 results["webhook_error"] = str(e)
@@ -158,34 +170,55 @@ class NotificationService:
         # Send chat-channel notifications (Channels subsystem)
         channel_outcome = cls._send_channel_notifications(run)
         results["channels_sent"] = channel_outcome["sent"]
+        results["channels_retrying"] = channel_outcome["retrying"]
         results["channel_errors"] = channel_outcome["errors"]
 
         return results
 
     @classmethod
     def _send_channel_notifications(cls, run: "Run") -> dict:
-        """Deliver a run summary to each enabled chat channel on the script."""
-        sent = 0
+        """Deliver a run summary to each enabled chat channel on the script.
+
+        Each send goes through the delivery ledger (``channels.ledger``): it is
+        recorded on the run, and a temporary failure is retried by the worker
+        heartbeat (counted in ``retrying``, not in ``errors``).
+        """
+        sent = retrying = 0
         errors = []
         channels = list(run.script.notify_channels.filter(enabled=True))
         if not channels:
-            return {"sent": 0, "errors": errors}
+            return {"sent": 0, "retrying": 0, "errors": errors}
 
-        from core.services import ChannelService
+        from core.models import ChannelMessage
+        from core.services.channels import ledger
 
         text = cls._build_channel_text(run)
         for channel in channels:
             try:
-                ChannelService.send(channel, text)
-                sent += 1
-                logger.info(f"Channel notification sent for run {run.id} via {channel.name}")
+                row = ledger.deliver(channel, text, kind=ChannelMessage.Kind.NOTIFICATION, run=run)
             except Exception as e:
                 logger.error(
                     f"Failed to send channel notification for run {run.id} "
                     f"via {channel.name}: {e}"
                 )
                 errors.append({"channel": channel.name, "error": str(e)})
-        return {"sent": sent, "errors": errors}
+                continue
+            if row.status == ChannelMessage.Status.SENT:
+                sent += 1
+                logger.info(f"Channel notification sent for run {run.id} via {channel.name}")
+            elif row.status == ChannelMessage.Status.RETRYING:
+                retrying += 1
+                logger.warning(
+                    f"Channel notification for run {run.id} via {channel.name} "
+                    f"will be retried: {row.error}"
+                )
+            else:
+                logger.error(
+                    f"Failed to send channel notification for run {run.id} "
+                    f"via {channel.name}: {row.error}"
+                )
+                errors.append({"channel": channel.name, "error": row.error})
+        return {"sent": sent, "retrying": retrying, "errors": errors}
 
     @classmethod
     def _build_channel_text(cls, run: "Run") -> str:
@@ -318,8 +351,12 @@ class NotificationService:
         logger.info(f"Email notification sent for run {run.id} to {recipient}")
 
     @classmethod
-    def _send_webhook_notification(cls, run: "Run") -> None:
-        """Send webhook notification for a run."""
+    def _send_webhook_notification(cls, run: "Run") -> int:
+        """Send webhook notification for a run; returns the HTTP status.
+
+        Raises WebhookNotificationError when the endpoint answers with a
+        non-2xx status (the notification failed), with that status attached.
+        """
         url = run.script.notify_webhook_url
 
         # Validate URL to prevent SSRF attacks
@@ -336,10 +373,14 @@ class NotificationService:
             headers={"Content-Type": "application/json", "User-Agent": "PyRun/1.0"},
         )
 
+        status = response.status_code
+        if not 200 <= status < 300:
+            raise WebhookNotificationError(f"Webhook endpoint answered HTTP {status}.", status)
         logger.info(
             f"Webhook notification sent for run {run.id} to {url} "
-            f"(status: {response.status_code})"
+            f"(status: {status})"
         )
+        return status
 
     @classmethod
     def _build_email_context(cls, run: "Run") -> dict:

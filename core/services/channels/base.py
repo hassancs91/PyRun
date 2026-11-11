@@ -40,7 +40,20 @@ class InboundMessage:
 
 
 class ChannelError(Exception):
-    """Raised when a provider operation fails (network, auth, API error)."""
+    """Raised when a provider operation fails (network, auth, API error).
+
+    ``retryable`` marks a temporary failure (network, timeout, rate limit, a
+    provider-side 5xx) that the delivery ledger tries again later;
+    ``retry_after`` is the provider's own wait in seconds, when it gives one.
+    ``auth`` marks rejected credentials: never retried. The defaults (not
+    retryable) suit any error a provider doesn't classify.
+    """
+
+    def __init__(self, message="", *, retryable=False, auth=False, retry_after=None):
+        super().__init__(message)
+        self.retryable = bool(retryable) and not auth
+        self.auth = bool(auth)
+        self.retry_after = retry_after
 
 
 class ChannelProvider:

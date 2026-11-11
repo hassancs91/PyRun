@@ -3,8 +3,8 @@ ChannelService — high-level operations over Channel rows.
 
 Thin orchestration on top of the provider seam (``core.services.channels``):
 resolve the provider, perform the action, and record status (last_tested_at /
-last_error) on the row. Used by the Channels UI, the internal send endpoint, and
-run-notification routing.
+last_error) on the row. Used by the Channels UI and by the delivery ledger
+(``core.services.channels.ledger``), through which every outbound message goes.
 """
 
 import logging

@@ -136,7 +136,18 @@ def run_detail_view(request: HttpRequest, pk) -> HttpResponse:
         "progress": progress_for_display(run.progress),
         "event": run_event_card(run, mask_sets),
         "attempt_info": attempt_info(run),
+        "deliveries": run_deliveries(run, mask_sets),
     })
+
+
+def run_deliveries(run, mask_sets):
+    """The run's channel messages (notifications and script sends), oldest first, text masked."""
+    from core.services.channels import ledger
+
+    rows = list(run.channel_messages.select_related("channel").order_by("created_at", "id")[:50])
+    for row in rows:
+        row.run = run  # display_rows masks with the run's secrets: no query per row
+    return ledger.display_rows(rows, mask_sets)
 
 
 @login_required

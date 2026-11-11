@@ -304,6 +304,28 @@
         </section>
         {% endif %}
 
+        {# Deliveries: the channel messages this run sent (delivery ledger) #}
+        {% if deliveries %}
+        <section class="rounded-2xl border border-line bg-panel p-5" aria-labelledby="run-deliveries-heading">
+            <h3 id="run-deliveries-heading" class="eyebrow text-faint mb-4">Deliveries</h3>
+            <ul class="space-y-3 text-sm">
+                {% for d in deliveries %}
+                <li class="min-w-0">
+                    <div class="flex items-center justify-between gap-3">
+                        <a href="{% url 'cpanel:channel_edit' pk=d.msg.channel_id %}" class="text-text truncate hover:underline">{{ d.msg.channel.name }}</a>
+                        {% include "cpanel/channels/_delivery_status.html" with msg=d.msg %}
+                    </div>
+                    <div class="mt-0.5 text-xs text-faint">{{ d.msg.get_kind_display }} · <span class="font-mono" title="{{ d.msg.created_at|date:'M d, Y H:i:s' }}">{{ d.msg.created_at|date:"H:i:s" }}</span>{% if d.msg.attempts > 1 %} · {{ d.msg.attempts }} attempts{% endif %}</div>
+                    {% if d.hidden %}<p class="mt-1 text-xs text-faint">Text hidden: a secret it may contain couldn't be resolved.</p>{% elif d.text %}<p class="mt-1 text-xs text-muted break-words">{{ d.text|truncatechars:200 }}</p>{% endif %}
+                    {% if d.msg.error %}<p class="mt-1 text-xs {% if d.msg.status == 'sent' %}text-faint{% else %}text-fail{% endif %} break-words">{{ d.msg.error|truncatechars:300 }}</p>{% endif %}
+                    {% if d.msg.status == 'retrying' and d.msg.next_attempt_at %}<p class="mt-1 text-xs text-warn">Next attempt at <span class="font-mono">{{ d.msg.next_attempt_at|date:"M d, H:i" }}</span></p>{% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+            <p class="mt-4 text-xs text-faint">Chat messages this run sent: its notifications and <span class="font-mono">pyrunner_notify</span> sends. A temporary failure is tried up to 4 more times, over about 80 minutes. Secret values are masked.</p>
+        </section>
+        {% endif %}
+
         {# Libraries pinned at queue time (absent for runs with none) #}
         {% if run.library_versions %}
         <section class="rounded-2xl border border-line bg-panel p-5">
