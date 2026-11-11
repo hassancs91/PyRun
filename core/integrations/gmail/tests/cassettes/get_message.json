@@ -1,0 +1,281 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages/18f2a6b0c1d2e3f4?format=full"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "id": "18f2a6b0c1d2e3f4",
+          "threadId": "18f2a6b0c1d2e3f4",
+          "labelIds": [
+            "INBOX",
+            "UNREAD",
+            "Label_12"
+          ],
+          "snippet": "Hello, please find attached invoice #1042 for November.",
+          "historyId": "1004",
+          "internalDate": "1794330720000",
+          "sizeEstimate": 48213,
+          "payload": {
+            "partId": "",
+            "mimeType": "multipart/mixed",
+            "filename": "",
+            "headers": [
+              {
+                "name": "Delivered-To",
+                "value": "me@example.com"
+              },
+              {
+                "name": "Received",
+                "value": "from mail.example.org by mx.google.com; Mon, 09 Nov 2026 09:12:00 -0800"
+              },
+              {
+                "name": "From",
+                "value": "Billing <billing@example.org>"
+              },
+              {
+                "name": "To",
+                "value": "me@example.com"
+              },
+              {
+                "name": "Cc",
+                "value": "Accounts <accounts@example.com>"
+              },
+              {
+                "name": "Subject",
+                "value": "=?UTF-8?B?SW52b2ljZSAjMTA0MiDigJMgTm92ZW1iZXI=?="
+              },
+              {
+                "name": "Date",
+                "value": "Mon, 9 Nov 2026 18:12:00 +0100"
+              },
+              {
+                "name": "Message-ID",
+                "value": "<CAinv1042@mail.example.org>"
+              },
+              {
+                "name": "Content-Type",
+                "value": "multipart/mixed; boundary=\"000000000000a1b2c3\""
+              }
+            ],
+            "body": {
+              "size": 0
+            },
+            "parts": [
+              {
+                "partId": "0",
+                "mimeType": "multipart/alternative",
+                "filename": "",
+                "headers": [
+                  {
+                    "name": "Content-Type",
+                    "value": "multipart/alternative; boundary=\"000000000000d4e5f6\""
+                  }
+                ],
+                "body": {
+                  "size": 0
+                },
+                "parts": [
+                  {
+                    "partId": "0.0",
+                    "mimeType": "text/plain",
+                    "filename": "",
+                    "headers": [
+                      {
+                        "name": "Content-Type",
+                        "value": "text/plain; charset=\"UTF-8\""
+                      },
+                      {
+                        "name": "Content-Transfer-Encoding",
+                        "value": "quoted-printable"
+                      }
+                    ],
+                    "body": {
+                      "size": 64,
+                      "data": "SGVsbG8sDQoNCnBsZWFzZSBmaW5kIGF0dGFjaGVkIGludm9pY2UgIzEwNDIg4oCTIDEyMCDigqwuDQo="
+                    }
+                  },
+                  {
+                    "partId": "0.1",
+                    "mimeType": "text/html",
+                    "filename": "",
+                    "headers": [
+                      {
+                        "name": "Content-Type",
+                        "value": "text/html; charset=\"UTF-8\""
+                      }
+                    ],
+                    "body": {
+                      "size": 78,
+                      "data": "PHA-SGVsbG8sPC9wPjxwPnBsZWFzZSBmaW5kIGF0dGFjaGVkIGludm9pY2UgIzEwNDIg4oCTIDEyMCDigqwuPC9wPg=="
+                    }
+                  }
+                ]
+              },
+              {
+                "partId": "1",
+                "mimeType": "application/pdf",
+                "filename": "invoice-1042.pdf",
+                "headers": [
+                  {
+                    "name": "Content-Type",
+                    "value": "application/pdf; name=\"invoice-1042.pdf\""
+                  },
+                  {
+                    "name": "Content-Disposition",
+                    "value": "attachment; filename=\"invoice-1042.pdf\""
+                  },
+                  {
+                    "name": "Content-Transfer-Encoding",
+                    "value": "base64"
+                  }
+                ],
+                "body": {
+                  "attachmentId": "ANGjdJ8wInvoicePdf0001",
+                  "size": 47120
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages/18f2a6b0c1d2e3f4?format=metadata"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "id": "18f2a6b0c1d2e3f4",
+          "threadId": "18f2a6b0c1d2e3f4",
+          "labelIds": [
+            "INBOX",
+            "UNREAD",
+            "Label_12"
+          ],
+          "snippet": "Hello, please find attached invoice #1042 for November.",
+          "historyId": "1004",
+          "internalDate": "1794330720000",
+          "sizeEstimate": 48213,
+          "payload": {
+            "partId": "",
+            "mimeType": "multipart/mixed",
+            "filename": "",
+            "headers": [
+              {
+                "name": "Delivered-To",
+                "value": "me@example.com"
+              },
+              {
+                "name": "Received",
+                "value": "from mail.example.org by mx.google.com; Mon, 09 Nov 2026 09:12:00 -0800"
+              },
+              {
+                "name": "From",
+                "value": "Billing <billing@example.org>"
+              },
+              {
+                "name": "To",
+                "value": "me@example.com"
+              },
+              {
+                "name": "Cc",
+                "value": "Accounts <accounts@example.com>"
+              },
+              {
+                "name": "Subject",
+                "value": "=?UTF-8?B?SW52b2ljZSAjMTA0MiDigJMgTm92ZW1iZXI=?="
+              },
+              {
+                "name": "Date",
+                "value": "Mon, 9 Nov 2026 18:12:00 +0100"
+              },
+              {
+                "name": "Message-ID",
+                "value": "<CAinv1042@mail.example.org>"
+              },
+              {
+                "name": "Content-Type",
+                "value": "multipart/mixed; boundary=\"000000000000a1b2c3\""
+              }
+            ],
+            "body": {
+              "size": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages/18f2a6b0c1d2e400?format=full"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "id": "18f2a6b0c1d2e400",
+          "threadId": "18f2a6b0c1d2e400",
+          "labelIds": [
+            "INBOX"
+          ],
+          "snippet": "Café ouvert à 8 h.",
+          "historyId": "1005",
+          "internalDate": "1794334320000",
+          "sizeEstimate": 1201,
+          "payload": {
+            "partId": "",
+            "mimeType": "text/plain",
+            "filename": "",
+            "headers": [
+              {
+                "name": "From",
+                "value": "cafe@example.fr"
+              },
+              {
+                "name": "To",
+                "value": "me@example.com"
+              },
+              {
+                "name": "Subject",
+                "value": "Horaires"
+              },
+              {
+                "name": "Date",
+                "value": "Mon, 9 Nov 2026 19:12:00 +0100"
+              },
+              {
+                "name": "Message-ID",
+                "value": "<horaires@example.fr>"
+              },
+              {
+                "name": "Content-Type",
+                "value": "text/plain; charset=ISO-8859-1"
+              }
+            ],
+            "body": {
+              "size": 19,
+              "data": "Q2Fm6SBvdXZlcnQg4CA4IGguCg=="
+            }
+          }
+        }
+      }
+    }
+  ]
+}

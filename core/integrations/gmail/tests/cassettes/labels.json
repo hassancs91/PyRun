@@ -1,0 +1,155 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/labels"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "labels": [
+            {
+              "id": "INBOX",
+              "name": "INBOX",
+              "messageListVisibility": "hide",
+              "labelListVisibility": "labelShow",
+              "type": "system"
+            },
+            {
+              "id": "UNREAD",
+              "name": "UNREAD",
+              "type": "system"
+            },
+            {
+              "id": "SENT",
+              "name": "SENT",
+              "type": "system"
+            },
+            {
+              "id": "Label_12",
+              "name": "Invoices",
+              "messageListVisibility": "show",
+              "labelListVisibility": "labelShow",
+              "type": "user"
+            },
+            {
+              "id": "Label_13",
+              "name": "Clients/Acme",
+              "messageListVisibility": "show",
+              "labelListVisibility": "labelShow",
+              "type": "user"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/labels",
+        "json": {
+          "name": "Processed",
+          "labelListVisibility": "labelShow",
+          "messageListVisibility": "show"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "id": "Label_14",
+          "name": "Processed",
+          "messageListVisibility": "show",
+          "labelListVisibility": "labelShow",
+          "type": "user"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/labels"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "labels": [
+            {
+              "id": "INBOX",
+              "name": "INBOX",
+              "messageListVisibility": "hide",
+              "labelListVisibility": "labelShow",
+              "type": "system"
+            },
+            {
+              "id": "UNREAD",
+              "name": "UNREAD",
+              "type": "system"
+            },
+            {
+              "id": "SENT",
+              "name": "SENT",
+              "type": "system"
+            },
+            {
+              "id": "Label_12",
+              "name": "Invoices",
+              "messageListVisibility": "show",
+              "labelListVisibility": "labelShow",
+              "type": "user"
+            },
+            {
+              "id": "Label_13",
+              "name": "Clients/Acme",
+              "messageListVisibility": "show",
+              "labelListVisibility": "labelShow",
+              "type": "user"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages/18f2a6b0c1d2e3f4/modify",
+        "json": {
+          "addLabelIds": [
+            "Label_13",
+            "STARRED"
+          ],
+          "removeLabelIds": [
+            "UNREAD",
+            "INBOX"
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "id": "18f2a6b0c1d2e3f4",
+          "threadId": "18f2a6b0c1d2e3f4",
+          "labelIds": [
+            "Label_12",
+            "Label_13",
+            "STARRED"
+          ]
+        }
+      }
+    }
+  ]
+}

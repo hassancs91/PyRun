@@ -649,7 +649,16 @@ The modules and how they behave are in `docs/integrations/framework.md`; each
 has its own page there: `docs/integrations/http.md` (any HTTP API),
 `docs/integrations/airtable.md` (records), `docs/integrations/notion.md`
 (databases, pages, blocks, search), `docs/integrations/google_sheets.md` (rows
-and ranges) and `docs/integrations/google_drive.md` (files).
+and ranges), `docs/integrations/google_drive.md` (files),
+`docs/integrations/gmail.md` (search, read, send, reply, labels, attachments)
+and `docs/integrations/smtp.md` (email with attachments through an SMTP
+connection):
+
+```python
+from pyrunner_integrations import smtp
+
+smtp.send("you@example.com", "Report", "Attached.", attachments=["/tmp/report.pdf"])
+```
 
 ### OAuth connections
 

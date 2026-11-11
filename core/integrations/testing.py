@@ -42,10 +42,14 @@ What it gives:
 """
 
 import base64
+import email
+import email.policy
 import inspect
 import json
 import logging
 import os
+import smtplib
+import types
 import unittest
 import urllib.parse
 from pathlib import Path
@@ -141,6 +145,10 @@ class FakeConnection:
             default = field.default
             if field.name == "base_url":
                 default = f"https://{self.provider.replace('_', '-')}.example.test"
+            elif self.auth_kind == SMTP and field.name == "host":
+                default = f"{self.provider.replace('_', '-')}.example.test"
+            elif self.auth_kind == SMTP and field.name in ("username", "from_address"):
+                default = "pyrun@example.test"
             config[field.name] = list(default) if isinstance(default, tuple) else default
         config.update(given or {})
         return config
@@ -417,6 +425,131 @@ def _kit_session(build, client):
 
 
 # --------------------------------------------------------------------------- #
+# A fake SMTP server
+# --------------------------------------------------------------------------- #
+
+
+class SentMail:
+    """One message sent to ``fake_smtp()``: the envelope's ``sender`` and ``recipients``, ``data`` (the bytes
+    as sent) and ``message`` (them parsed back, an ``email.message.EmailMessage``)."""
+
+    def __init__(self, sender, recipients, data):
+        self.sender = sender
+        self.recipients = list(recipients)
+        self.data = data
+        # Line ends as Python writes them ("\n"), not as SMTP carries them.
+        self.message = email.message_from_bytes(data.replace(b"\r\n", b"\n"), policy=email.policy.default)
+
+    def __repr__(self):
+        return f"<SentMail from {self.sender} to {', '.join(self.recipients)}>"
+
+
+class FakeSMTP:
+    """A stand-in SMTP server behind ``pyrunner_connections.smtp()`` (and so ``pyrunner_integrations.smtp``).
+
+    It speaks through smtplib's own classes (``send_message`` builds the
+    envelope and leaves Bcc out as it would), with no socket. Every connection
+    is kept in ``sessions`` (dicts: ``host``, ``port``, ``ssl``, ``starttls``,
+    ``login`` = (username, password) or None, ``closed``), every message in
+    ``messages`` (``SentMail``). ``fail(stage, error)`` makes ``"connect"``,
+    ``"starttls"``, ``"login"``, ``"send"`` or ``"quit"`` raise ``error`` (an smtplib
+    exception, an OSError, a TimeoutError) from then on. ``refuse(address)``
+    refuses that recipient (``"*"``: every one), with an SMTP code and reply.
+    """
+
+    def __init__(self):
+        self.sessions = []
+        self.messages = []
+        self.failures = {}
+        self.refused = {}
+
+    def fail(self, stage, error):
+        if stage not in ("connect", "starttls", "login", "send", "quit"):
+            raise ValueError(f"stage is connect, starttls, login, send or quit, not {stage!r}")
+        self.failures[stage] = error
+        return self
+
+    def refuse(self, address="*", code=550, reply="5.1.1 No such user here"):
+        self.refused[address] = (code, reply.encode("utf-8"))
+        return self
+
+    def _raise(self, stage):
+        if stage in self.failures:
+            raise self.failures[stage]
+
+    def smtplib(self):
+        """What ``pyrunner_connections`` gets as ``smtplib``: ``SMTP`` and ``SMTP_SSL`` talking to this server."""
+        fake = self
+
+        class FakeSMTPClient(smtplib.SMTP):
+            secure = False
+
+            def __init__(self, host="", port=0, local_hostname=None, timeout=30, source_address=None,
+                         context=None):
+                self._session = {"host": host, "port": port, "ssl": self.secure, "starttls": False,
+                                 "login": None, "closed": False}
+                fake.sessions.append(self._session)
+                # A local_hostname, so smtplib doesn't look up this machine's name.
+                super().__init__(host, port, local_hostname="pyrun.test", timeout=timeout)
+
+            def connect(self, host="localhost", port=0, source_address=None):
+                fake._raise("connect")
+                return 220, b"fake-smtp.test ESMTP"
+
+            def ehlo(self, name=""):
+                self.ehlo_resp, self.does_esmtp = b"fake-smtp.test", True
+                self.esmtp_features = {"starttls": "", "auth": "PLAIN LOGIN", "8bitmime": "", "size": "36700160"}
+                return 250, self.ehlo_resp
+
+            def starttls(self, *args, **kwargs):
+                fake._raise("starttls")
+                self._session["starttls"] = True
+                return 220, b"2.0.0 Ready to start TLS"
+
+            def login(self, user, password, *, initial_response_ok=True):
+                fake._raise("login")
+                self._session["login"] = (user, password)
+                return 235, b"2.7.0 Accepted"
+
+            def sendmail(self, from_addr, to_addrs, msg, mail_options=(), rcpt_options=()):
+                fake._raise("send")
+                to_addrs = [to_addrs] if isinstance(to_addrs, str) else list(to_addrs)
+                refused = {addr: fake.refused.get(addr) or fake.refused["*"] for addr in to_addrs
+                           if addr in fake.refused or "*" in fake.refused}
+                if len(refused) == len(to_addrs):
+                    raise smtplib.SMTPRecipientsRefused(refused)
+                data = msg.encode("ascii") if isinstance(msg, str) else bytes(msg)
+                fake.messages.append(SentMail(from_addr, [a for a in to_addrs if a not in refused], data))
+                return refused
+
+            def noop(self):
+                return 250, b"2.0.0 OK"
+
+            def docmd(self, cmd, args=""):
+                if cmd.lower() == "quit":
+                    fake._raise("quit")
+                    return 221, b"2.0.0 Bye"
+                return 250, b"2.0.0 OK"
+
+            def close(self):
+                self._session["closed"] = True
+
+        class FakeSMTPSSLClient(FakeSMTPClient):
+            secure = True
+
+        return types.SimpleNamespace(SMTP=FakeSMTPClient, SMTP_SSL=FakeSMTPSSLClient)
+
+
+def _no_smtp(host="", port=0, *args, **kwargs):
+    raise AssertionError(
+        f"The code under test opened a real SMTP connection ({host}:{port}): answer it with self.fake_smtp()."
+    )
+
+
+_SMTP_GUARD = types.SimpleNamespace(SMTP=_no_smtp, SMTP_SSL=_no_smtp)
+
+
+# --------------------------------------------------------------------------- #
 # Cassettes
 # --------------------------------------------------------------------------- #
 
@@ -627,6 +760,8 @@ class IntegrationTestMixin:
             # PyRun dependency, so client() always makes this session).
             mock.patch.object(pc, "_requests_session", _kit_session(pc._requests_session,
                                                                     self.integration_client)),
+            # pyrunner_connections.smtp(): no real server either (fake_smtp() answers).
+            mock.patch.object(pc, "smtplib", _SMTP_GUARD),
         ]
         for patcher in patches:
             patcher.start()
@@ -663,6 +798,12 @@ class IntegrationTestMixin:
             base_url = bases[-1] if bases else None
         fake = FakeTransport(base_url)
         self.integration_client.TRANSPORT = fake
+        return fake
+
+    def fake_smtp(self) -> FakeSMTP:
+        """A fake SMTP server for the rest of the test: ``pyrunner_connections.smtp()`` connects to it."""
+        fake = FakeSMTP()
+        self.pyrunner_connections.smtplib = fake.smtplib()  # the setUp patch puts the real module back
         return fake
 
     def cassette(self, name, *, scrub=(), allow_unused=False) -> Cassette:
@@ -762,7 +903,41 @@ def api_problems(integration, module) -> list:
     return problems
 
 
-class ConformanceSuite(IntegrationTestCase):
+class _Conformance(IntegrationTestCase):
+    """What both conformance suites share: the module and its preset, and their own checks."""
+
+    integration = None  # a key or an Integration
+
+    @classmethod
+    def setUpClass(cls):
+        if cls.integration is None:
+            raise unittest.SkipTest("A conformance suite runs in a subclass that names its integration.")
+        super().setUpClass()
+
+    def setUp(self):
+        super().setUp()
+        spec = self.integration
+        self.spec = framework.load(spec) if isinstance(spec, str) else spec
+        self.preset = load_preset(self.spec.provider)
+        self.module = framework.script_module(self.spec)
+
+    def call(self, module):
+        raise NotImplementedError("A conformance suite subclass defines call(module): one call through it.")
+
+    def _raises(self, code):
+        with self.assertRaises(self.integration_client.IntegrationError) as ctx:
+            self.call(self.module)
+        self.assertEqual(ctx.exception.code, code, str(ctx.exception))
+        return ctx.exception
+
+    def test_conformance_preset_is_valid(self):
+        self.assertEqual(preset_problems(self.preset, self.spec.provider), [])
+
+    def test_conformance_public_api(self):
+        self.assertEqual(api_problems(self.spec, self.module), [])
+
+
+class ConformanceSuite(_Conformance):
     """The checks every integration module passes: subclass it in the integration's tests/test_api.py.
 
         class HttpConformance(testing.ConformanceSuite):
@@ -777,23 +952,9 @@ class ConformanceSuite(IntegrationTestCase):
     ``page_items`` (everything they hold) and ``paginate_call(module, limit)``.
     """
 
-    integration = None  # a key or an Integration
     ok_reply = {"json": {}}
     pages = None
     page_items = None
-
-    @classmethod
-    def setUpClass(cls):
-        if cls.integration is None:
-            raise unittest.SkipTest("ConformanceSuite runs in a subclass that names its integration.")
-        super().setUpClass()
-
-    def setUp(self):
-        super().setUp()
-        spec = self.integration
-        self.spec = framework.load(spec) if isinstance(spec, str) else spec
-        self.preset = load_preset(self.spec.provider)
-        self.module = framework.script_module(self.spec)
 
     # -- what a subclass provides --------------------------------------------
 
@@ -825,12 +986,6 @@ class ConformanceSuite(IntegrationTestCase):
     def _ok(self):
         return dict(self.ok_reply)
 
-    def _raises(self, code):
-        with self.assertRaises(self.integration_client.IntegrationError) as ctx:
-            self.call(self.module)
-        self.assertEqual(ctx.exception.code, code, str(ctx.exception))
-        return ctx.exception
-
     def _assert_auth(self, request, material):
         for name, value in material["headers"].items():
             self.assertEqual(request.headers.get(name), value, f"header {name} not sent to the base URL")
@@ -838,12 +993,6 @@ class ConformanceSuite(IntegrationTestCase):
             self.assertEqual(request.params.get(name), value, f"query parameter {name} not sent")
 
     # -- the checks -----------------------------------------------------------
-
-    def test_conformance_preset_is_valid(self):
-        self.assertEqual(preset_problems(self.preset, self.spec.provider), [])
-
-    def test_conformance_public_api(self):
-        self.assertEqual(api_problems(self.spec, self.module), [])
 
     def test_conformance_credentials_go_to_the_base_url_only(self):
         for kind in self._http_kinds():
@@ -961,3 +1110,90 @@ class ConformanceSuite(IntegrationTestCase):
         fake = self._fake(*self.pages)
         self.assertEqual(list(self.paginate_call(self.module, limit=1)), list(self.page_items)[:1])
         self.assertEqual(len(fake.requests), 1, "limit=1 stops before the next page")
+
+
+class SmtpConformanceSuite(_Conformance):
+    """The checks every SMTP integration module passes (``ConformanceSuite``'s are for HTTP ones).
+
+        class SmtpConformance(testing.SmtpConformanceSuite):
+            integration = "smtp"
+
+            def call(self, module):
+                return module.send("ada@example.com", "Conformance", "One message.")
+
+    ``call(module)`` sends one message through the module, to a ``fake_smtp()``
+    server. It checks: the preset and the module's public API, as
+    ``ConformanceSuite`` does; the connection's server, port, security
+    (STARTTLS, SSL/TLS, none) and login are used, one message goes, and the
+    connection is closed; failures at each stage map to error codes, are not
+    retried and never hold the password (also when the server quotes it back).
+    """
+
+    def _smtp_connect(self, **config):
+        if SMTP not in self.preset.auth_kinds:
+            self.skipTest("not an SMTP integration: use ConformanceSuite")
+        self.connections.by_name.clear()
+        return self.use_connection(self.spec.provider, provider=self.spec.provider, auth_kind=SMTP,
+                                   config=config or None)
+
+    def test_conformance_smtp_logs_in_and_sends_once(self):
+        for security in ("starttls", "ssl", "none"):
+            with self.subTest(security=security):
+                settings = self._smtp_connect(security=security).material()["smtp"]
+                server = self.fake_smtp()
+                self.call(self.module)
+                self.assertEqual(len(server.sessions), 1)
+                session = server.sessions[0]
+                self.assertEqual((session["host"], session["port"]), (settings["host"], settings["port"]))
+                self.assertEqual((session["ssl"], session["starttls"]), (security == "ssl", security == "starttls"))
+                self.assertEqual(session["login"], (settings["username"], settings["password"]))
+                self.assertTrue(session["closed"], "the connection to the server is left open")
+                self.assertEqual(len(server.messages), 1)
+
+    def test_conformance_smtp_errors_map_to_codes(self):
+        cases = (
+            ("connect", ConnectionRefusedError(111, "Connection refused"), "UNREACHABLE"),
+            ("connect", TimeoutError("timed out"), "TIMEOUT"),
+            ("starttls", smtplib.SMTPNotSupportedError("STARTTLS extension not supported by server."), "SMTP_ERROR"),
+            ("login", smtplib.SMTPAuthenticationError(535, b"5.7.8 Username and Password not accepted"),
+             "UNAUTHORIZED"),
+            ("send", smtplib.SMTPSenderRefused(553, b"5.7.1 Sender address rejected", "x@example.test"),
+             "SENDER_REFUSED"),
+            ("send", smtplib.SMTPDataError(552, b"5.3.4 Message size exceeds fixed limit"), "REJECTED"),
+            ("send", smtplib.SMTPServerDisconnected("Connection unexpectedly closed"), "UNREACHABLE"),
+        )
+        for stage, failure, code in cases:
+            with self.subTest(stage=stage, code=code):
+                self._smtp_connect()
+                server = self.fake_smtp().fail(stage, failure)
+                error = self._raises(code)
+                self.assertNoSecrets(str(error))
+                self.assertEqual((len(server.sessions), server.messages), (1, []), "nothing is retried")
+        with self.subTest("a server quoting the password back"):
+            password = self._smtp_connect().material()["smtp"]["password"]
+            self.fake_smtp().fail("login", smtplib.SMTPAuthenticationError(535, f"bad: {password}".encode()))
+            self.assertNoSecrets(str(self._raises("UNAUTHORIZED")))
+        with self.subTest("every recipient refused"):
+            self._smtp_connect()
+            server = self.fake_smtp().refuse("*")
+            self.assertEqual(self._raises("RECIPIENTS_REFUSED").status, 550)
+            self.assertEqual(server.messages, [])
+        with self.subTest(connection="missing"):
+            self.connections.by_name.clear()
+            self.assertIsInstance(self._raises("CONNECTION_NOT_FOUND"), self.pyrunner_connections.ConnectionsError)
+        with self.subTest(connection="an HTTP one"):
+            self._smtp_connect()
+            self.connections.by_name.clear()
+            self.use_connection(self.spec.provider, provider="http", auth_kind=BEARER,
+                                config={"base_url": "https://api.example.test"})
+            self._raises("NOT_SMTP")
+
+    def test_conformance_smtp_no_credentials_in_reprs(self):
+        self._smtp_connect()
+        self.fake_smtp().fail("send", smtplib.SMTPDataError(554, b"5.6.0 rejected"))
+        error = self._raises("REJECTED")
+        for text in (str(error), repr(error)):
+            self.assertNoSecrets(text)
+        if "client" in self.spec.functions:
+            self.fake_smtp()
+            self.assertNoSecrets(repr(self.module.client()))

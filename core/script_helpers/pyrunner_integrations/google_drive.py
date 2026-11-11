@@ -13,8 +13,6 @@ uploaded or created; **Drive: all files** (``drive``) sees everything the
 account can. Its token goes only to ``https://www.googleapis.com``.
 """
 
-import hashlib
-import json
 import mimetypes
 import os
 
@@ -52,17 +50,6 @@ def _file_path(file_id, suffix="") -> str:
 def _literal(value) -> str:
     """``value`` as a quoted string in a Drive search query."""
     return "'" + str(value).replace("\\", "\\\\").replace("'", "\\'") + "'"
-
-
-def _multipart(metadata, data, mime_type):
-    """``(body, content type)`` of a multipart/related upload: the metadata as JSON, then the file."""
-    boundary = "pyrunner-" + hashlib.sha256(data).hexdigest()[:32]
-    while boundary.encode("ascii") in data:
-        boundary += "x"
-    head = (f"--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n"
-            f"{json.dumps(metadata)}\r\n--{boundary}\r\nContent-Type: {mime_type}\r\n\r\n")
-    body = head.encode("utf-8") + data + f"\r\n--{boundary}--".encode("ascii")
-    return body, f"multipart/related; boundary={boundary}"
 
 
 def client(connection=None, *, timeout=30):
@@ -171,7 +158,7 @@ def upload(source, *, name=None, folder=None, mime_type=None, file_id=None, conn
     api = _api(connection)
     method, path = ("PATCH", f"/upload{_file_path(file_id)}") if file_id else ("POST", "/upload/drive/v3/files")
     if len(data) <= MULTIPART_MAX:
-        body, content_type = _multipart(metadata, data, mime_type)
+        body, content_type = _client.multipart_related(metadata, data, mime_type)
         return api.call(method, path, params={"uploadType": "multipart", "fields": FIELDS, **_ALL_DRIVES},
                         data=body, headers={"Content-Type": content_type})
     # Resumable: the metadata opens an upload session, then the content goes to it in one request.

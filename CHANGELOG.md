@@ -421,6 +421,24 @@ begins tracking at the current release; earlier history is in the git log.
   the shared client takes `base_url` for another API host of the same service
   (the token goes there, never to an unrelated host), and an integration can
   declare watcher adapters in its `triggers.py`.
+- **Gmail and SMTP integrations.** `pyrunner_integrations.gmail` searches
+  mail with Gmail's own search (`gmail.search("is:unread has:attachment")`,
+  page by page), reads a message decoded (subject, sender, recipients, the
+  text and HTML bodies, its attachments), sends mail with HTML, Cc/Bcc and
+  attachments, replies in the thread (to the sender, or everyone with
+  `reply_all`), lists, creates, adds and removes labels by name, downloads
+  attachments, and `new_messages(state)` returns the mail that came in since
+  the last call (with a label, or matching a search), for a scheduled script
+  and for the coming "new email" watcher. It uses a Google connection with a
+  Gmail scope set; its token goes only to Gmail's API host.
+  `pyrunner_integrations.smtp` sends the same kind of message through an SMTP
+  connection (`smtp.send(to, subject, text, html=..., attachments=[...])`),
+  returns the Message-ID and any refused recipients, and never sends twice.
+  Both have a generated page with an example script in `docs/integrations/`
+  and `manage.py integration_smoke` checks (SMTP's logs in and sends
+  nothing). For module authors, the testing kit gains `fake_smtp()` (a mail
+  server with no socket, recording every message) and `SmtpConformanceSuite`,
+  and no test reaches a real mail server.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

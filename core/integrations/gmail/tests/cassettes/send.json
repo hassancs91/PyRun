@@ -1,0 +1,28 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+        "json": {
+          "raw": "VG86IEFkYSBMb3ZlbGFjZSA8YWRhQGV4YW1wbGUuY29tPiwgZ3JhY2VAZXhhbXBsZS5jb20NCkJjYzogYXVkaXRAZXhhbXBsZS5jb20NClN1YmplY3Q6IFdlZWtseSByZXBvcnQNCk1JTUUtVmVyc2lvbjogMS4wDQpDb250ZW50LVR5cGU6IG11bHRpcGFydC9taXhlZDsgYm91bmRhcnk9InB5cnVubmVyLTRiZmExNmRhNzdiODEzMjU1NjA1NWU3Ny0wIg0KDQotLXB5cnVubmVyLTRiZmExNmRhNzdiODEzMjU1NjA1NWU3Ny0wDQpDb250ZW50LVR5cGU6IG11bHRpcGFydC9hbHRlcm5hdGl2ZTsNCiBib3VuZGFyeT0icHlydW5uZXItNGJmYTE2ZGE3N2I4MTMyNTU2MDU1ZTc3LTEiDQoNCi0tcHlydW5uZXItNGJmYTE2ZGE3N2I4MTMyNTU2MDU1ZTc3LTENCkNvbnRlbnQtVHlwZTogdGV4dC9wbGFpbjsgY2hhcnNldD0idXRmLTgiDQpDb250ZW50LVRyYW5zZmVyLUVuY29kaW5nOiA3Yml0DQoNClRoZSBudW1iZXJzIGFyZSBhdHRhY2hlZC4NCg0KLS1weXJ1bm5lci00YmZhMTZkYTc3YjgxMzI1NTYwNTVlNzctMQ0KQ29udGVudC1UeXBlOiB0ZXh0L2h0bWw7IGNoYXJzZXQ9InV0Zi04Ig0KQ29udGVudC1UcmFuc2Zlci1FbmNvZGluZzogN2JpdA0KTUlNRS1WZXJzaW9uOiAxLjANCg0KPHA-VGhlIG51bWJlcnMgYXJlIDxiPmF0dGFjaGVkPC9iPi48L3A-DQoNCi0tcHlydW5uZXItNGJmYTE2ZGE3N2I4MTMyNTU2MDU1ZTc3LTEtLQ0KDQotLXB5cnVubmVyLTRiZmExNmRhNzdiODEzMjU1NjA1NWU3Ny0wDQpDb250ZW50LVRyYW5zZmVyLUVuY29kaW5nOiBiYXNlNjQNCkNvbnRlbnQtRGlzcG9zaXRpb246IGF0dGFjaG1lbnQ7IGZpbGVuYW1lPSJ0b3RhbHMuY3N2Ig0KQ29udGVudC1UeXBlOiB0ZXh0L2NzdjsgY2hhcnNldD0idXRmLTgiDQpNSU1FLVZlcnNpb246IDEuMA0KDQpkMlZsYXl4MGIzUmhiQW8wTlN3eE1qQXdDZz09DQoNCi0tcHlydW5uZXItNGJmYTE2ZGE3N2I4MTMyNTU2MDU1ZTc3LTAtLQ0K"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "id": "18f2b0000000aaaa",
+          "threadId": "18f2b0000000aaaa",
+          "labelIds": [
+            "SENT"
+          ]
+        }
+      }
+    }
+  ]
+}

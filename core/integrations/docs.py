@@ -97,9 +97,9 @@ def render(integration) -> str:
     for name, fn in framework.public_functions(integration):
         lines += [f"### {name}", "", "```python", f"{integration.key}.{framework.signature(fn)}", "```", "",
                   _doc(fn), ""]
-    lines += [
-        "## Errors",
-        "",
+    # A module that isn't HTTP (smtp) declares its own codes and the paragraph about them.
+    codes = getattr(module, "ERROR_CODES", None) or client.ERROR_CODES
+    intro = getattr(module, "ERRORS", None) or (
         "Every function raises `pyrunner_integrations.IntegrationError` (a "
         "`pyrunner_connections.ConnectionsError`, so one `except` catches both) with `code`, `status` (the HTTP "
         "status, or None) and `retry_after` (seconds, or None). Its message never holds the connection's "
@@ -107,12 +107,10 @@ def render(integration) -> str:
         f"{client.MAX_RETRIES} times, waiting what the service asks (up to {client.MAX_WAIT:g} s; longer, and "
         f"the error says it in `retry_after`) or else {otherwise}; other 5xx "
         "replies and lost connections only for GET, PUT, DELETE and other calls that are safe to repeat. After "
-        "a 401 it asks PyRun once for new credentials (an OAuth token is refreshed then) and tries again.",
-        "",
-        "| Code | When |",
-        "|---|---|",
-    ]
-    for code, meaning in client.ERROR_CODES.items():
+        "a 401 it asks PyRun once for new credentials (an OAuth token is refreshed then) and tries again."
+    )
+    lines += ["## Errors", "", intro, "", "| Code | When |", "|---|---|"]
+    for code, meaning in codes.items():
         lines.append(f"| `{code}` | {meaning} |")
     lines += [
         "| `CONNECTION_...` | The connection can't be used: `CONNECTION_NOT_FOUND`, `CONNECTION_EXPIRED`... "

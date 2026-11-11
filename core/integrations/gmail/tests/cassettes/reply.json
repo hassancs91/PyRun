@@ -1,0 +1,112 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages/18f2a7000000bbbb?format=metadata"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "id": "18f2a7000000bbbb",
+          "threadId": "18f2a6ff0000cccc",
+          "labelIds": [
+            "INBOX",
+            "UNREAD"
+          ],
+          "snippet": "Could you send a quote for 40 units?",
+          "historyId": "1006",
+          "internalDate": "1794340000000",
+          "payload": {
+            "partId": "",
+            "mimeType": "text/plain",
+            "filename": "",
+            "body": {
+              "size": 0
+            },
+            "headers": [
+              {
+                "name": "From",
+                "value": "Grace Hopper <grace@example.org>"
+              },
+              {
+                "name": "Reply-To",
+                "value": "sales@example.org"
+              },
+              {
+                "name": "To",
+                "value": "Me <me@example.com>, Linus <linus@example.org>"
+              },
+              {
+                "name": "Cc",
+                "value": "ME@example.com, ops@example.org"
+              },
+              {
+                "name": "Subject",
+                "value": "RE: Quote request"
+              },
+              {
+                "name": "Date",
+                "value": "Mon, 9 Nov 2026 20:46:40 +0100"
+              },
+              {
+                "name": "Message-ID",
+                "value": "<CAquote2@mail.example.org>"
+              },
+              {
+                "name": "References",
+                "value": "<CAquote1@mail.example.org>"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/profile"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "emailAddress": "me@example.com",
+          "messagesTotal": 5120,
+          "threadsTotal": 3301,
+          "historyId": "1010"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+        "json": {
+          "raw": "VG86IHNhbGVzQGV4YW1wbGUub3JnDQpDYzogTGludXMgPGxpbnVzQGV4YW1wbGUub3JnPiwgb3BzQGV4YW1wbGUub3JnDQpTdWJqZWN0OiBSRTogUXVvdGUgcmVxdWVzdA0KSW4tUmVwbHktVG86IDxDQXF1b3RlMkBtYWlsLmV4YW1wbGUub3JnPg0KUmVmZXJlbmNlczogPENBcXVvdGUxQG1haWwuZXhhbXBsZS5vcmc-IDxDQXF1b3RlMkBtYWlsLmV4YW1wbGUub3JnPg0KQ29udGVudC1UeXBlOiB0ZXh0L3BsYWluOyBjaGFyc2V0PSJ1dGYtOCINCkNvbnRlbnQtVHJhbnNmZXItRW5jb2Rpbmc6IDdiaXQNCk1JTUUtVmVyc2lvbjogMS4wDQoNClRoYW5rcywgdGhlIHF1b3RlIGZvbGxvd3MgdG9kYXkuDQo=",
+          "threadId": "18f2a6ff0000cccc"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "id": "18f2a7100000dddd",
+          "threadId": "18f2a6ff0000cccc",
+          "labelIds": [
+            "SENT"
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -16,8 +16,11 @@ script: `http.md` (any HTTP API with an API key, bearer token or basic auth),
 `airtable.md` (list, find, create, update and delete records), `notion.md`
 (query databases, create and update pages, append blocks, search),
 `google_sheets.md` (read, append, update and find rows, list sheets, create
-spreadsheets, new rows since last time) and `google_drive.md` (list, upload,
-download, folders, share links). More services build on the same framework.
+spreadsheets, new rows since last time), `google_drive.md` (list, upload,
+download, folders, share links), `gmail.md` (search, read, send and reply,
+labels, attachments, new mail since last time) and `smtp.md` (send email with
+attachments through any SMTP server). More services build on the same
+framework.
 
 ## What every integration does
 
@@ -29,15 +32,18 @@ download, folders, share links). More services build on the same framework.
   `<module>.client()` gives the shared client for anything a module has no
   function for; its `request()` returns the reply itself.
 - **Credentials only to the service.** They go on requests to the
-  connection's base URL (for Google Sheets, Google's Sheets host
-  `sheets.googleapis.com` instead); a redirect elsewhere goes on without them. They are
+  connection's base URL (for Google Sheets and Gmail, Google's
+  `sheets.googleapis.com` and `gmail.googleapis.com` instead); a redirect
+  elsewhere goes on without them. An SMTP login goes only to its server. They are
   read before every request, so a token PyRun refreshed is used at once, and
   every value is masked in the run's output as usual.
 - **One exception.** Failures raise `pyrunner_integrations.IntegrationError`
   (a `pyrunner_connections.ConnectionsError`) with `code` (`NOT_FOUND`,
   `RATE_LIMITED`, `UNAUTHORIZED`, `CONNECTION_EXPIRED`...), `status` (the HTTP
-  status) and `retry_after`. Its message never holds a credential.
-- **Retries built in.** A 429, or a 503 with Retry-After, is retried up to 3
+  status; for `smtp`, the server's SMTP reply code) and `retry_after`. Its
+  message never holds a credential.
+- **Retries built in** (HTTP services; an email sent over SMTP is never
+  repeated). A 429, or a 503 with Retry-After, is retried up to 3
   times, waiting what the service asks (up to 60 seconds) or 1, 2 and 4
   seconds (Airtable: 30 seconds, the pause it documents after a 429). Other 5xx replies and lost connections are retried only for calls
   that are safe to repeat (GET, PUT, DELETE). Each retry logs a warning, which
@@ -60,7 +66,7 @@ changelog. `pyrunner_integrations.__version__` says which version a script has.
 core/integrations/<key>/
     preset.py            the connection preset (shared with Connections)
     api.py               INTEGRATION = Integration(...): module, functions, example, smoke checks
-    triggers.py          optional: TRIGGERS, watcher adapters for Triggers (google_sheets has one)
+    triggers.py          optional: TRIGGERS, watcher adapters for Triggers (google_sheets and gmail have one)
     tests/test_api.py    the conformance suite and cassette tests
     tests/cassettes/     recorded exchanges, replayed offline
 core/script_helpers/pyrunner_integrations/<key>.py   what scripts import
@@ -68,7 +74,10 @@ docs/integrations/<key>.md                           generated from the two abov
 ```
 
 Several integrations may share one preset (Google's covers Sheets, Gmail and
-Drive): `api.py` names it as `provider`. `INTEGRATION_MODULES` in
+Drive): `api.py` names it as `provider`. `_client.multipart_related()` builds a
+Google upload body (metadata, then the content) the same way every time, so a
+cassette replays it; `_mail.build()` builds an email for `gmail` and `smtp`
+alike. `INTEGRATION_MODULES` in
 `core/integrations/framework.py` lists the integrations PyRun ships, as
 `PRESET_MODULES` in `core/integrations/presets.py` lists the presets.
 
@@ -100,7 +109,13 @@ config_schema, check),)`: `check(module, connection, config, state,
 limit=None)` returns `(events, new_state)`, each event `{"id", "item"}`, and
 reports nothing on its first call (`state` None). `framework.load_triggers(key)`
 reads them (the Triggers feature runs them). `google_sheets`' `sheets_new_row` is built on
-`google_sheets.new_rows`.
+`google_sheets.new_rows`, `gmail`'s `gmail_new_message` (a label, a search) on
+`gmail.new_messages`.
+
+An SMTP integration (`smtp`) has no base URL, retries or 401s: its module sets
+`ERROR_CODES` (its own codes) and `ERRORS` (the paragraph about them), which
+its generated page prints instead of the HTTP ones, and its tests subclass
+`SmtpConformanceSuite`.
 
 ## Starting one
 
@@ -117,8 +132,8 @@ pass the conformance suite as generated, so you start from green:
 manage.py test core.integrations.acme
 ```
 
-It refuses a key that is already an integration (`http`, `airtable`, `notion`,
-or one with an `api.py` or a module), and a key that names an existing preset
+It refuses a key that is already an integration (`http`, `airtable`, `gmail`,
+`smtp`..., or one with an `api.py` or a module), and a key that names an existing preset
 unless `--provider` is that preset (`new_integration slack --provider slack`):
 it exits with an error and writes nothing. Files left from an earlier try are
 kept, never overwritten.
@@ -162,10 +177,12 @@ class ItemsTests(testing.IntegrationTestCase):
   `IntegrationTestMixin` adds the same to a `TestCase`. While a test runs, no
   request made through `pyrunner_integrations` or a
   `pyrunner_connections.client()` session reaches the network (one nothing
-  answers fails the test: "The code under test made a real request"), and
-  waits don't sleep: they are listed in `self.sleeps`. A `client()` session
-  is served by `fake_http()` and cassettes like the modules: it sends the
-  connection's credentials and follows redirects as in a run.
+  answers fails the test: "The code under test made a real request"), no
+  `pyrunner_connections.smtp()` reaches a mail server ("opened a real SMTP
+  connection"), and waits don't sleep: they are listed in `self.sleeps`. A
+  `client()` session is served by `fake_http()` and cassettes like the
+  modules: it sends the connection's credentials and follows redirects as in
+  a run.
 - **`use_connection(name, provider, auth_kind=None, config=None,
   credentials=None)`** gives the code a connection, as
   `pyrunner_connections.credentials()`, `token()`, `info()` and `list()` see
@@ -181,6 +198,14 @@ class ItemsTests(testing.IntegrationTestCase):
 - **`cassette(name)`** replays `cassettes/<name>.json` beside the test file:
   each request must be the next one recorded (method, URL, query and body;
   credentials compared masked) and every recorded one must be made.
+- **`fake_smtp()`** is a mail server for `pyrunner_connections.smtp()` (and
+  so `pyrunner_integrations.smtp`), with smtplib's own client classes and no
+  socket: `sessions` holds each connection (`host`, `port`, `ssl`,
+  `starttls`, `login`, `closed`) and `messages` each message sent (`sender`,
+  `recipients`, `data`, and `message` parsed back). `fail(stage, error)` makes
+  `"connect"`, `"starttls"`, `"login"`, `"send"` or `"quit"` raise an smtplib (or
+  socket) error; `refuse(address, code, reply)` refuses a recipient (`"*"`:
+  all of them).
 
 ### Recording cassettes
 
@@ -204,7 +229,7 @@ personal data in the replies are kept as they came (pass `scrub=("value",
 
 A cassette is plain JSON, so it can also be written by hand from the
 service's API reference when there is no account to record with: Airtable's,
-Notion's, Google Sheets' and Google Drive's were, and their `note` says so. Re-record them with real
+Notion's, Google Sheets', Google Drive's and Gmail's were, and their `note` says so. Re-record them with real
 credentials when you have them; replay checks the same things either way.
 
 ### The conformance suite
@@ -236,6 +261,15 @@ kept and the credentials out of it; no credential in any repr, error or log
 line; and, with `pages`, that pagination reads every page once, stops after
 the last and stops early at `limit`. `ok_reply` (default `{"json": {}}`) is
 what the fake service answers `call()` with when all goes well.
+
+An SMTP module's tests subclass `SmtpConformanceSuite` instead, whose
+`call(module)` sends one message (to a `fake_smtp()` server). It checks the
+preset and the public API as above; that the connection's server, port,
+security (STARTTLS, SSL/TLS, none) and login are used, one message goes and
+the connection is closed; and that a failure at each stage (connect, TLS,
+login, a refused sender, every recipient refused, a refused message, a
+dropped connection, a timeout) maps to its code, isn't retried and never
+holds the password, also when the server quotes it back.
 
 ### Smoke checks
 

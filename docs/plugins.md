@@ -902,7 +902,9 @@ class FetchTests(testing.IntegrationTestCase):
 you pass some), `fake_http()` for the service, and `cassette()` replays a
 recorded exchange; nothing sent through `pyrunner_integrations` or a
 `pyrunner_connections.client()` session reaches the network unless a test
-records (one nothing answers fails the test). Import
+records (one nothing answers fails the test). For email, `fake_smtp()` is the
+mail server `pyrunner_connections.smtp()` and `pyrunner_integrations.smtp`
+talk to (it keeps every message sent); no real one is reached. Import
 `testing` before the code under test: it makes `pyrunner_integrations` and
 `pyrunner_connections` importable by the names a script uses. Use
 `testing.IntegrationTestMixin` with a `TestCase` when the test needs the

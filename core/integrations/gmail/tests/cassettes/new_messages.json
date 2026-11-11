@@ -1,0 +1,406 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/profile"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "emailAddress": "me@example.com",
+          "messagesTotal": 5120,
+          "threadsTotal": 3301,
+          "historyId": "1010"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/history?startHistoryId=1010&historyTypes=messageAdded&historyTypes=labelAdded&maxResults=500&labelId=INBOX"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "history": [
+            {
+              "id": "1012",
+              "messages": [
+                {
+                  "id": "18f2c0000000eeee",
+                  "threadId": "18f2c0000000eeee"
+                }
+              ],
+              "messagesAdded": [
+                {
+                  "message": {
+                    "id": "18f2c0000000eeee",
+                    "threadId": "18f2c0000000eeee",
+                    "labelIds": [
+                      "INBOX",
+                      "UNREAD"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "id": "1013",
+              "messages": [
+                {
+                  "id": "18f2c0100000ffff",
+                  "threadId": "18f2a6ff0000cccc"
+                }
+              ],
+              "messagesAdded": [
+                {
+                  "message": {
+                    "id": "18f2c0100000ffff",
+                    "threadId": "18f2a6ff0000cccc",
+                    "labelIds": [
+                      "SENT"
+                    ]
+                  }
+                }
+              ]
+            }
+          ],
+          "historyId": "1015"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages/18f2c0000000eeee?format=metadata"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "id": "18f2c0000000eeee",
+          "threadId": "18f2c0000000eeee",
+          "labelIds": [
+            "INBOX",
+            "UNREAD"
+          ],
+          "snippet": "Your order has shipped.",
+          "historyId": "1012",
+          "internalDate": "1794350000000",
+          "payload": {
+            "partId": "",
+            "mimeType": "text/plain",
+            "filename": "",
+            "body": {
+              "size": 0
+            },
+            "headers": [
+              {
+                "name": "From",
+                "value": "Shop <orders@shop.example>"
+              },
+              {
+                "name": "To",
+                "value": "me@example.com"
+              },
+              {
+                "name": "Subject",
+                "value": "Your order has shipped"
+              },
+              {
+                "name": "Date",
+                "value": "Mon, 9 Nov 2026 23:33:20 +0100"
+              },
+              {
+                "name": "Message-ID",
+                "value": "<ship-881@shop.example>"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages/18f2c0100000ffff?format=metadata"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "id": "18f2c0100000ffff",
+          "threadId": "18f2a6ff0000cccc",
+          "labelIds": [
+            "SENT"
+          ],
+          "snippet": "Thanks, the quote follows today.",
+          "historyId": "1013",
+          "internalDate": "1794350100000",
+          "payload": {
+            "partId": "",
+            "mimeType": "text/plain",
+            "filename": "",
+            "body": {
+              "size": 0
+            },
+            "headers": [
+              {
+                "name": "From",
+                "value": "me@example.com"
+              },
+              {
+                "name": "To",
+                "value": "sales@example.org"
+              },
+              {
+                "name": "Subject",
+                "value": "RE: Quote request"
+              },
+              {
+                "name": "Message-ID",
+                "value": "<own-1@mail.gmail.com>"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/history?startHistoryId=1015&historyTypes=messageAdded&maxResults=500"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "history": [
+            {
+              "id": "1022",
+              "messagesAdded": [
+                {
+                  "message": {
+                    "id": "18f2c0200000abab",
+                    "threadId": "18f2c0200000abab",
+                    "labelIds": [
+                      "INBOX",
+                      "UNREAD"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "id": "1023",
+              "messagesAdded": [
+                {
+                  "message": {
+                    "id": "18f2c0300000cdcd",
+                    "threadId": "18f2c0300000cdcd",
+                    "labelIds": [
+                      "INBOX"
+                    ]
+                  }
+                }
+              ]
+            }
+          ],
+          "historyId": "1024"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages/18f2c0200000abab?format=metadata"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "id": "18f2c0200000abab",
+          "threadId": "18f2c0200000abab",
+          "labelIds": [
+            "INBOX",
+            "UNREAD"
+          ],
+          "snippet": "December invoice",
+          "historyId": "1022",
+          "internalDate": "1794360000000",
+          "payload": {
+            "partId": "",
+            "mimeType": "text/plain",
+            "filename": "",
+            "body": {
+              "size": 0
+            },
+            "headers": [
+              {
+                "name": "From",
+                "value": "Billing <billing@example.org>"
+              },
+              {
+                "name": "To",
+                "value": "me@example.com"
+              },
+              {
+                "name": "Subject",
+                "value": "Invoice #1043"
+              },
+              {
+                "name": "Message-ID",
+                "value": "<CAinv1043@mail.example.org>"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages?q=rfc822msgid%3ACAinv1043%40mail.example.org+%28from%3Abilling%40example.org%29&maxResults=10"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "messages": [
+            {
+              "id": "18f2c0200000abab",
+              "threadId": "18f2c0200000abab"
+            }
+          ],
+          "resultSizeEstimate": 1
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages/18f2c0300000cdcd?format=metadata"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "id": "18f2c0300000cdcd",
+          "threadId": "18f2c0300000cdcd",
+          "labelIds": [
+            "INBOX"
+          ],
+          "snippet": "Lunch?",
+          "historyId": "1023",
+          "internalDate": "1794360100000",
+          "payload": {
+            "partId": "",
+            "mimeType": "text/plain",
+            "filename": "",
+            "body": {
+              "size": 0
+            },
+            "headers": [
+              {
+                "name": "From",
+                "value": "linus@example.org"
+              },
+              {
+                "name": "To",
+                "value": "me@example.com"
+              },
+              {
+                "name": "Subject",
+                "value": "Lunch?"
+              },
+              {
+                "name": "Message-ID",
+                "value": "<lunch@example.org>"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages?q=rfc822msgid%3Alunch%40example.org+%28from%3Abilling%40example.org%29&maxResults=10"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "resultSizeEstimate": 0
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/history?startHistoryId=1024&historyTypes=messageAdded&maxResults=500"
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "error": {
+            "code": 404,
+            "message": "Requested entity was not found.",
+            "status": "NOT_FOUND",
+            "errors": [
+              {
+                "message": "Requested entity was not found.",
+                "domain": "global",
+                "reason": "notFound"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/profile"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "emailAddress": "me@example.com",
+          "messagesTotal": 5480,
+          "threadsTotal": 3530,
+          "historyId": "2090"
+        }
+      }
+    }
+  ]
+}

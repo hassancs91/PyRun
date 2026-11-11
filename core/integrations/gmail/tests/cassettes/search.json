@@ -1,0 +1,136 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=100&q=is%3Aunread+has%3Aattachment"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "messages": [
+            {
+              "id": "18f2a6b0c1d2e3f4",
+              "threadId": "18f2a6b0c1d2e3f4"
+            },
+            {
+              "id": "18f29f00aa11bb22",
+              "threadId": "18f29e0099aa1100"
+            }
+          ],
+          "nextPageToken": "09912345678901234567",
+          "resultSizeEstimate": 3
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=100&q=is%3Aunread+has%3Aattachment&pageToken=09912345678901234567"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "messages": [
+            {
+              "id": "18f28800cc33dd44",
+              "threadId": "18f28800cc33dd44"
+            }
+          ],
+          "resultSizeEstimate": 3
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/labels"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "labels": [
+            {
+              "id": "INBOX",
+              "name": "INBOX",
+              "messageListVisibility": "hide",
+              "labelListVisibility": "labelShow",
+              "type": "system"
+            },
+            {
+              "id": "UNREAD",
+              "name": "UNREAD",
+              "type": "system"
+            },
+            {
+              "id": "SENT",
+              "name": "SENT",
+              "type": "system"
+            },
+            {
+              "id": "Label_12",
+              "name": "Invoices",
+              "messageListVisibility": "show",
+              "labelListVisibility": "labelShow",
+              "type": "user"
+            },
+            {
+              "id": "Label_13",
+              "name": "Clients/Acme",
+              "messageListVisibility": "show",
+              "labelListVisibility": "labelShow",
+              "type": "user"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=5&labelIds=INBOX&labelIds=Label_12"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "messages": [
+            {
+              "id": "18f2a6b0c1d2e3f4",
+              "threadId": "18f2a6b0c1d2e3f4"
+            }
+          ],
+          "resultSizeEstimate": 1
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=100&q=from%3Anobody%40example.com"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "resultSizeEstimate": 0
+        }
+      }
+    }
+  ]
+}

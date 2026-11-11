@@ -15,6 +15,7 @@ handling), with the same behaviour.
 """
 
 import email.utils
+import hashlib
 import http.client
 import json as _json
 import logging
@@ -269,6 +270,21 @@ def dig(data, dotted):
             return None
         data = data.get(part)
     return data
+
+
+def multipart_related(metadata, data, mime_type):
+    """``(body, content type)`` of a multipart/related upload (Google's): ``metadata`` as JSON, then ``data``.
+
+    The boundary is made from the content, so the same upload gives the same
+    body (a cassette replays it).
+    """
+    boundary = "pyrunner-" + hashlib.sha256(data).hexdigest()[:32]
+    while boundary.encode("ascii") in data:
+        boundary += "x"
+    head = (f"--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n"
+            f"{_json.dumps(metadata)}\r\n--{boundary}\r\nContent-Type: {mime_type}\r\n\r\n")
+    body = head.encode("utf-8") + data + f"\r\n--{boundary}--".encode("ascii")
+    return body, f"multipart/related; boundary={boundary}"
 
 
 def next_link(header):

@@ -1,0 +1,22 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages/18f2a6b0c1d2e3f4/attachments/ANGjdJ8wInvoicePdf0001"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "size": 35,
+          "data": "JVBERi0xLjQKJSBmYWtlIGludm9pY2UgMTA0MgolJUVPRgo="
+        }
+      }
+    }
+  ]
+}

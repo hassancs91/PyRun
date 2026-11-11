@@ -757,10 +757,11 @@ class ScaffoldTests(SimpleTestCase):
             ("acme", (), "'acme' is already an integration: nothing was written."),
             ("http", (), "'http' is already an integration"),
             ("http", ("--provider", "http"), "'http' is already an integration"),
-            ("smtp", (), "'smtp' is already a connection preset: nothing was written. To build its "
-                         "integration on it, run new_integration smtp --provider smtp."),
+            ("smtp", ("--provider", "smtp"), "'smtp' is already an integration"),
             ("airtable", ("--provider", "airtable"), "'airtable' is already an integration"),
             # microsoft: a preset with no integration of its own (not in 2.5's batch 1).
+            ("microsoft", (), "'microsoft' is already a connection preset: nothing was written. To build its "
+                              "integration on it, run new_integration microsoft --provider microsoft."),
             ("microsoft", ("--provider", "http"), "'microsoft' is already a connection preset"),
         ):
             with self.subTest(key=key, extra=extra), self.assertRaises(CommandError) as caught:
@@ -778,8 +779,8 @@ class ScaffoldTests(SimpleTestCase):
         self.assertIn("Kept (exists): core/integrations/acme/tests/test_api.py", out.getvalue())
         self.assertIn("Created: core/integrations/acme/api.py", out.getvalue())
         # An integration on its own existing preset is what --provider is for.
-        _root, out = self._scaffold("smtp", "--provider", "smtp")
-        self.assertIn("Created: core/script_helpers/pyrunner_integrations/smtp.py", out)
+        _root, out = self._scaffold("microsoft", "--provider", "microsoft")
+        self.assertIn("Created: core/script_helpers/pyrunner_integrations/microsoft.py", out)
 
     def test_a_refusal_exits_non_zero(self):
         result = subprocess.run(

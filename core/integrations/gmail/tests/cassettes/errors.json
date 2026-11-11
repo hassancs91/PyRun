@@ -1,0 +1,92 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages/0000000000000000?format=full"
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "error": {
+            "code": 404,
+            "message": "Requested entity was not found.",
+            "status": "NOT_FOUND",
+            "errors": [
+              {
+                "message": "Requested entity was not found.",
+                "domain": "global",
+                "reason": "notFound"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+        "json": {
+          "raw": "VG86IGFkYUBleGFtcGxlLmNvbQ0KU3ViamVjdDogSGkNCkNvbnRlbnQtVHlwZTogdGV4dC9wbGFpbjsgY2hhcnNldD0idXRmLTgiDQpDb250ZW50LVRyYW5zZmVyLUVuY29kaW5nOiA3Yml0DQpNSU1FLVZlcnNpb246IDEuMA0KDQp4DQo="
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "error": {
+            "code": 403,
+            "message": "Request had insufficient authentication scopes.",
+            "status": "PERMISSION_DENIED",
+            "errors": [
+              {
+                "message": "Request had insufficient authentication scopes.",
+                "domain": "global",
+                "reason": "insufficientPermissions"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/labels",
+        "json": {
+          "name": "Invoices",
+          "labelListVisibility": "labelShow",
+          "messageListVisibility": "show"
+        }
+      },
+      "response": {
+        "status": 409,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "error": {
+            "code": 409,
+            "message": "Label name exists or conflicts",
+            "status": "ABORTED",
+            "errors": [
+              {
+                "message": "Label name exists or conflicts",
+                "domain": "global",
+                "reason": "failedPrecondition"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
