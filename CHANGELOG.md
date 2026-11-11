@@ -485,6 +485,15 @@ begins tracking at the current release; earlier history is in the git log.
   connection and call the same `pyrunner_integrations` functions a script
   would. Each has a Test on the watcher form and starts exactly one run per new
   item, across restarts.
+- **Watchers for plugins.** A plugin makes watchers for its scripts with
+  `WatcherAPI(owner).sync(script, adapter, config, connection, interval)`
+  (idempotent by key; also `get`, `list`, `pause`, `resume`, `delete`) and ships
+  its own sources in `triggers.py`: each `TriggerAdapter` subclass there is
+  offered as `<slug>:<key>` in every workspace's watcher picker, after the
+  doctor's new `triggers` rule passes. A plugin's watchers carry its pill; in
+  the console they can be turned off and on and checked now, not edited, and
+  they are deleted with the plugin. The SDK Showcase example plugin (1.3.0)
+  has a Watcher card with its own counter adapter.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

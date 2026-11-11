@@ -95,6 +95,13 @@ class Watcher(models.Model):
     class Meta:
         ordering = ["name", "created_at"]
         indexes = [models.Index(fields=["enabled", "next_check_at"], name="core_watche_due_idx")]
+        constraints = [
+            # WatcherAPI.sync is idempotent by owner key (2.5 T33). NULLs are
+            # distinct on both engines, so a console-made watcher never clashes.
+            models.UniqueConstraint(
+                fields=["workspace", "owner_plugin", "owner_key"], name="uniq_watcher_ws_owner"
+            ),
+        ]
 
     def __str__(self):
         return self.name

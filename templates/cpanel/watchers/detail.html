@@ -20,7 +20,7 @@
     {% csrf_token %}
     <button type="submit" class="text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition {% if not watcher.enabled %}opacity-50 cursor-not-allowed{% endif %}" {% if not watcher.enabled %}disabled title="Turn the watcher on first"{% endif %}>Check now</button>
 </form>
-<a href="{% url 'cpanel:watcher_edit' watcher_id=watcher.pk %}" class="text-[13px] px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Edit</a>
+{% if not watcher.owner_plugin %}<a href="{% url 'cpanel:watcher_edit' watcher_id=watcher.pk %}" class="text-[13px] px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Edit</a>{% endif %}
 <form method="post" action="{% url 'cpanel:watcher_toggle' watcher_id=watcher.pk %}">
     {% csrf_token %}
     <button type="submit" class="text-[13px] px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">{% if watcher.enabled %}Turn off{% else %}Turn on{% endif %}</button>

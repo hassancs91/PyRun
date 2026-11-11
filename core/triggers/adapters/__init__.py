@@ -1,4 +1,5 @@
-"""Watcher adapters: the base (``base``), the built-ins, and ``integration`` (integration triggers as adapters)."""
+"""Watcher adapters: the base (``base``), the built-ins, ``integration`` (integration triggers as
+adapters) and ``plugin`` (a plugin's triggers.py adapters)."""
 
 from .base import (  # noqa: F401
     ADAPTER_TIMEOUT_SECONDS, TEST_ITEMS, Adapter, AdapterError, CheckContext, dig, validate_config, with_defaults,

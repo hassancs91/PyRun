@@ -134,6 +134,7 @@ def run_doctor(path) -> DoctorReport:
     _check_api_resources(folder, report)
     _check_public_pages(folder, report)
     _check_connections(folder, report)
+    _check_triggers(folder, report)
     return report
 
 
@@ -638,6 +639,110 @@ def _check_connections(folder: Path, report: DoctorReport):
         report.add("connections", WARN, warning)
     if not failures and not warnings:
         report.add("connections", PASS, "requires_connections entries are valid.")
+
+
+# Watcher adapters (2.5 T33): a plugin's adapter is "<slug>:<key>", stored in
+# Watcher.adapter (80 characters).
+TRIGGER_KEY_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+TRIGGER_KEY_MAX = 80
+
+
+def _class_attrs(classdef) -> dict:
+    """``name = <value>`` (and annotated) assignments in a class body: {name: value node}."""
+    attrs = {}
+    for node in classdef.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    attrs[target.id] = node.value
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.value is not None:
+            attrs[node.target.id] = node.value
+    return attrs
+
+
+def triggers_problems(folder) -> tuple:
+    """``triggers.py`` checked without importing it: ``(failures, warnings, keys)``.
+
+    Every class there that subclasses ``TriggerAdapter`` is an adapter: it
+    needs a literal ``key`` (a lowercase letter, then letters, digits and
+    underscores; unique; ``<slug>:<key>`` at most 80 characters), a literal
+    non-empty ``title``, and its own ``check`` and ``test``. A literal
+    ``config_schema`` must be the flat schema the watcher form understands; a
+    literal ``providers`` must name known connection presets. ``keys`` are the
+    adapters' full keys. No triggers.py: nothing to report.
+    """
+    from core.integrations.presets import get_preset
+    from core.triggers.adapters.base import schema_problem
+
+    folder = Path(folder)
+    path = folder / "triggers.py"
+    if not path.exists():
+        return [], [], []
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    except (SyntaxError, OSError, ValueError) as exc:
+        return [f"triggers.py cannot be parsed: {exc}"], [], []
+
+    failures, keys = [], []
+    adapters = [
+        node for node in tree.body
+        if isinstance(node, ast.ClassDef) and any(_base_name(b) == "TriggerAdapter" for b in node.bases)
+    ]
+    for cls in adapters:
+        attrs = _class_attrs(cls)
+        key = attrs.get("key")
+        key = key.value if isinstance(key, ast.Constant) and isinstance(key.value, str) else None
+        if key is None:
+            failures.append(f"{cls.name}: 'key' must be a literal string.")
+        elif not TRIGGER_KEY_RE.match(key):
+            failures.append(f"{cls.name}: key {key!r} must be a lowercase letter, then letters, digits or underscores.")
+        elif len(folder.name) + 1 + len(key) > TRIGGER_KEY_MAX:
+            failures.append(f"{cls.name}: '{folder.name}:{key}' is over {TRIGGER_KEY_MAX} characters.")
+        elif f"{folder.name}:{key}" in keys:
+            failures.append(f"{cls.name}: key {key!r} is used by another adapter.")
+        else:
+            keys.append(f"{folder.name}:{key}")
+        title = attrs.get("title")
+        if not (isinstance(title, ast.Constant) and isinstance(title.value, str) and title.value.strip()):
+            failures.append(f"{cls.name}: 'title' must be a literal, non-empty string.")
+        methods = {n.name for n in cls.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        for method in ("check", "test"):
+            if method not in methods:
+                failures.append(f"{cls.name}: it must define {method}().")
+        for name in ("config_schema", "providers"):
+            if name not in attrs:
+                continue
+            try:
+                value = ast.literal_eval(attrs[name])
+            except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
+                continue  # built at import time: checked when the plugin loads
+            if name == "config_schema":
+                problem = schema_problem(value)
+                if problem:
+                    failures.append(f"{cls.name}: {problem}")
+            elif not isinstance(value, (list, tuple)) or not all(isinstance(p, str) for p in value):
+                failures.append(f"{cls.name}: 'providers' must be a tuple of connection preset keys.")
+            else:
+                unknown = [p for p in value if get_preset(p) is None]
+                if unknown:
+                    failures.append(f"{cls.name}: unknown connection provider(s): {', '.join(unknown)}.")
+    warnings = [] if adapters else ["triggers.py defines no TriggerAdapter subclass (no adapters are offered)."]
+    return failures, warnings, keys
+
+
+def _check_triggers(folder: Path, report: DoctorReport):
+    """Watcher adapters in ``triggers.py`` (2.5 T33): see ``triggers_problems``.
+
+    The same check runs before a loaded plugin's adapters are offered, so a
+    dev-mode plugin (never activated) is held to it too.
+    """
+    failures, warnings, keys = triggers_problems(folder)
+    if failures:
+        report.add("triggers", FAIL, " ".join(failures))
+    for warning in warnings:
+        report.add("triggers", WARN, warning)
+    if keys and not failures:
+        report.add("triggers", PASS, f"{len(keys)} watcher adapter(s): {', '.join(keys)}.")
 
 
 def _base_name(node):

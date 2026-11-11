@@ -48,6 +48,7 @@ def _render(request, form, **extra):
         "config": prov.get_config(),
         "secret_redacted": prov.secret_redacted(),
         "schedule": prov.schedule_summary(),
+        "watcher": prov.watcher_summary(),
         "inventory": prov.owned_inventory() if is_setup else None,
         "worker_runs": list(reversed(prov.get_runs()))[:10],
         "sdk_runs": prov.recent_runs(10),
@@ -158,6 +159,24 @@ def set_schedule(request):
         else:
             messages.error(request, "Set up the demo first.")
     return redirect(reverse("sdk_showcase:index") + "#schedule")
+
+
+@superuser_required
+@require_POST
+def set_watcher(request):
+    on = request.POST.get("on") == "1"
+    try:
+        done = prov.set_watcher(on, created_by=request.user)
+    except ValueError as exc:  # e.g. the plugin's adapter isn't loaded
+        messages.error(request, str(exc))
+    else:
+        if not done:
+            messages.error(request, "Set up the demo first.")
+        elif on:
+            messages.success(request, "Watcher on: press Increment and its next check starts a run.")
+        else:
+            messages.info(request, "Watcher off.")
+    return redirect(reverse("sdk_showcase:index") + "#watcher")
 
 
 @superuser_required

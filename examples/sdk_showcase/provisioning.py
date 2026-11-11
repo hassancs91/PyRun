@@ -12,6 +12,9 @@ One "Set up demo" save provisions, owned by the ``sdk_showcase`` slug:
   * a vector collection  ``sdk_showcase:demo``  (vectors-only, toy word-hash
     vectors, so it works with no embedding provider configured).
 
+The Watcher card adds a watcher (``WatcherAPI``, key ``counter``) that uses the
+plugin's own adapter (``triggers.py``): a run each time the counter goes up.
+
 Re-saving updates the same rows (idempotent on ``(owner_plugin, owner_key)``).
 """
 
@@ -28,6 +31,7 @@ from core.plugins.api import (
     ScriptAPI,
     SecretAPI,
     VectorAPI,
+    WatcherAPI,
 )
 
 from .forms import MESSAGE_MAX_LENGTH, SECRET_FIELDS, STEPS_MAX, STEPS_MIN
@@ -36,6 +40,7 @@ OWNER = "sdk_showcase"
 SCRIPT_KEY = "demo"
 SCRIPT_NAME = "SDK Showcase Demo"
 STORE_KEY = "state"
+WATCHER_KEY = "counter"
 DEFAULT_TIMEOUT = 120
 
 # Keys of the non-secret config persisted to the DataStore (the worker reads them).
@@ -222,6 +227,7 @@ def owned_inventory():
         "scripts": len(ScriptAPI(OWNER).list()),
         "schedules": len(ScheduleAPI(OWNER).list()),
         "vector_collections": len(VectorAPI(OWNER).list()),
+        "watchers": len(WatcherAPI(OWNER).list()),
     }
 
 
@@ -416,6 +422,8 @@ def reset_demo_data():
     store.set("counter", 0)
     store.set("runs", [])
     store.set("progress", None)
+    # A new generation, so the counter watcher's event ids stay unique.
+    store.set("generation", int(store.get("generation", 0) or 0) + 1)
 
 
 def queue_demo_run(triggered_by=None, inputs=None):
@@ -455,4 +463,65 @@ def sync_schedule(mode):
         api.sync(script, mode="daily", time_str="09:00")
     else:
         api.sync(script, mode="manual")
+    return True
+
+
+# --------------------------------------------------------------------------- #
+# Watcher (WatcherAPI + the plugin's own adapter in triggers.py)
+# --------------------------------------------------------------------------- #
+
+def get_watcher():
+    return WatcherAPI(OWNER).get(WATCHER_KEY)
+
+
+def watcher_summary():
+    """A small {on, status, ...} for the watcher card (or None before it exists)."""
+    watcher = get_watcher()
+    if watcher is None:
+        return None
+    if watcher.enabled and watcher.error_count:
+        status = f"failing ({watcher.error_count})"
+    elif watcher.enabled:
+        status = "on" if watcher.state is not None else "on, not checked yet"
+    else:
+        status = "turned off after errors" if watcher.auto_disabled_at else "off"
+    return {
+        "id": watcher.pk,
+        "on": watcher.enabled,
+        "status": status,
+        "last_checked_at": watcher.last_checked_at,
+        "last_event_at": watcher.last_event_at,
+        "last_error": watcher.last_error,
+    }
+
+
+def set_watcher(on, *, created_by=None):
+    """Turn the counter watcher on (creating or updating it first) or off.
+
+    ``sync`` is idempotent on the key: pressing "On" again changes nothing
+    but the settings it passes. The adapter is this plugin's own
+    (``triggers.CounterAdapter``, offered as ``sdk_showcase:counter_up``); the
+    item's message fills the demo script's ``message`` input.
+    """
+    from .triggers import CounterAdapter
+
+    script = get_script()
+    if script is None:
+        return False
+    api = WatcherAPI(OWNER)
+    if not on:
+        if api.get(WATCHER_KEY) is not None:
+            api.pause(WATCHER_KEY)
+        return True
+    api.sync(
+        script,
+        CounterAdapter,
+        config={"every": 1},
+        interval=60,
+        key=WATCHER_KEY,
+        name="Showcase counter went up",
+        input_map={"message": "item.message"},
+        created_by=created_by,
+    )
+    api.resume(WATCHER_KEY)
     return True

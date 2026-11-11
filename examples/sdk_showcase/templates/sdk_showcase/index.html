@@ -350,19 +350,51 @@ get_collection("sdk_showcase:demo").count()</pre>
                 {% endif %}
             </section>
 
-            <!-- ================= 8 · Ownership & cleanup ================= -->
+            <!-- ================= 8 · Watcher ================= -->
+            <section id="watcher" class="rounded-2xl border border-line bg-panel overflow-hidden">
+                <div class="px-5 py-4 border-b border-line-soft">
+                    <h2 class="text-sm font-semibold">8 · Watcher <span class="text-faint font-normal">— a run per new item</span></h2>
+                    <p class="eyebrow text-faint mt-1">WatcherAPI · sync / pause / resume · TriggerAdapter in triggers.py</p>
+                </div>
+                <div class="p-5 flex items-center justify-between gap-4 flex-wrap">
+                    <div class="text-sm text-muted">
+                        {% if watcher %}
+                        Watcher: <span class="font-medium text-text">{{ watcher.status }}</span>
+                        <span class="text-faint">· last check {% if watcher.last_checked_at %}{{ watcher.last_checked_at|date:"M j, H:i" }} UTC{% else %}not yet{% endif %}</span>
+                        · <a href="{% url 'cpanel:watcher_detail' watcher_id=watcher.id %}" class="text-info hover:underline">event log</a>
+                        {% if watcher.last_error %}<p class="text-xs text-fail mt-1 break-words">{{ watcher.last_error }}</p>{% endif %}
+                        {% else %}
+                        No watcher yet. Turn it on: it checks the counter every minute, and each increment starts one run of the demo script.
+                        {% endif %}
+                    </div>
+                    <form method="post" action="{% url 'sdk_showcase:watcher' %}" class="flex items-center gap-2">
+                        {% csrf_token %}
+                        {% if watcher.on %}
+                        <input type="hidden" name="on" value="0">
+                        <button type="submit" class="text-[13px] font-medium px-3.5 py-2 rounded-lg border border-line text-text hover:bg-panel-hi transition">Turn off</button>
+                        {% else %}
+                        <input type="hidden" name="on" value="1">
+                        <button type="submit" class="text-[13px] font-medium px-3.5 py-2 rounded-lg border border-line text-text hover:bg-panel-hi transition">Turn on</button>
+                        {% endif %}
+                    </form>
+                </div>
+                <p class="px-5 pb-5 text-xs text-faint">The adapter is this plugin's own (<span class="font-mono">sdk_showcase:counter_up</span>, in triggers.py), so it also shows up in the watcher form's picker for any script. On the script's Triggers page this watcher carries the plugin's pill: it can be turned off and on there, not edited.</p>
+            </section>
+
+            <!-- ================= 9 · Ownership & cleanup ================= -->
             <section id="ownership" class="rounded-2xl border border-line bg-panel overflow-hidden">
                 <div class="px-5 py-4 border-b border-line-soft">
-                    <h2 class="text-sm font-semibold">8 · Ownership &amp; cleanup</h2>
+                    <h2 class="text-sm font-semibold">9 · Ownership &amp; cleanup</h2>
                     <p class="eyebrow text-faint mt-1">every resource is owner-stamped → grouped, filtered, delete-guarded</p>
                 </div>
                 <div class="p-5 flex items-center justify-between gap-4 flex-wrap">
-                    <div class="flex items-center gap-5 text-sm">
+                    <div class="flex flex-wrap items-center gap-5 text-sm">
                         <span><span class="font-semibold tabular-nums">{{ inventory.datastores }}</span> <span class="text-faint">data store</span></span>
                         <span><span class="font-semibold tabular-nums">{{ inventory.secrets }}</span> <span class="text-faint">secret</span></span>
                         <span><span class="font-semibold tabular-nums">{{ inventory.scripts }}</span> <span class="text-faint">script</span></span>
                         <span><span class="font-semibold tabular-nums">{{ inventory.schedules }}</span> <span class="text-faint">schedule</span></span>
                         <span><span class="font-semibold tabular-nums">{{ inventory.vector_collections }}</span> <span class="text-faint">vector collection</span></span>
+                        <span><span class="font-semibold tabular-nums">{{ inventory.watchers }}</span> <span class="text-faint">watcher</span></span>
                     </div>
                     <form method="post" action="{% url 'sdk_showcase:reset' %}">
                         {% csrf_token %}

@@ -3,6 +3,22 @@
 All notable changes to the SDK Showcase plugin are documented here. This
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - Unreleased
+
+### Added
+- A **Watcher** card. `triggers.py` ships the plugin's own watcher adapter,
+  `CounterAdapter` (`sdk_showcase:counter_up`): it watches the demo counter
+  and reports each increment (or each multiple of its `every` setting). The
+  card turns a watcher on and off with `WatcherAPI.sync` / `pause` / `resume`;
+  each increment then starts one run of the demo script, its message filled
+  from the item through `input_map`. The adapter also appears in the watcher
+  form's picker for any script.
+- "Reset demo data" starts a new counter generation, so the watcher's event
+  ids stay unique after a reset.
+
+### Notes
+- Needs the plugin SDK from PyRun 2.5 (`WatcherAPI`, `TriggerAdapter`).
+
 ## [1.2.0] - Unreleased
 
 ### Added

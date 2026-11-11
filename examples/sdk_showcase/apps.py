@@ -7,7 +7,7 @@ class SdkShowcaseConfig(PluginAppConfig):
     plugin = PyRunnerPlugin(
         slug="sdk_showcase",
         name="SDK Showcase",
-        version="1.2.0",
+        version="1.3.0",
         nav_items=[
             NavItem(
                 label="SDK Showcase",

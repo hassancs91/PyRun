@@ -120,7 +120,8 @@ class ProvisionTests(TestCase):
         self.assertEqual(prov.get_counter(), 0)
         self.assertEqual(
             prov.owned_inventory(),
-            {"datastores": 1, "secrets": 1, "scripts": 1, "schedules": 1, "vector_collections": 1},
+            {"datastores": 1, "secrets": 1, "scripts": 1, "schedules": 1, "vector_collections": 1,
+             "watchers": 0},
         )
 
     def test_provision_is_idempotent(self):
@@ -449,6 +450,28 @@ class InputsPageTests(TestCase):
         self.assertEqual(run.inputs, {"message": "yo", "steps": 4})
         self.assertEqual(run.triggered_by_id, self.user.pk)
 
+    def test_the_watcher_card_turns_the_watcher_on_and_off(self):
+        from core.triggers.adapters import plugin as plugin_adapters
+
+        plugin_adapters.reset()
+        self.addCleanup(plugin_adapters.reset)
+        with override_settings(INSTALLED_PLUGINS=["plugins.sdk_showcase"]):
+            html = self.client.get("/plugins/sdk_showcase/").content.decode()
+            self.assertIn('id="watcher"', html)
+            self.assertIn("No watcher yet.", html)
+            response = self.client.post("/plugins/sdk_showcase/watcher/", {"on": "1"})
+            self.assertTrue(response["Location"].endswith("#watcher"))
+            watcher = prov.get_watcher()
+            self.assertTrue(watcher.enabled)
+            self.assertEqual(watcher.created_by_id, self.user.pk)
+            html = self.client.get("/plugins/sdk_showcase/").content.decode()
+            self.assertIn(f"/triggers/{watcher.pk}/", html)
+            self.client.post("/plugins/sdk_showcase/watcher/", {"on": "0"})
+        self.assertFalse(prov.get_watcher().enabled)
+        # Without the plugin loaded, its adapter isn't there: the SDK says so.
+        response = self.client.post("/plugins/sdk_showcase/watcher/", {"on": "1"}, follow=True)
+        self.assertContains(response, "No adapter")
+
     def test_non_superuser_is_refused(self):
         from core.models import User
 
@@ -457,3 +480,132 @@ class InputsPageTests(TestCase):
         response = self.client.post("/plugins/sdk_showcase/run/inputs/", {"steps": "4"})
         self.assertNotEqual(response.status_code, 200)
         self.assertFalse(self._runs().exists())
+
+
+# --------------------------------------------------------------------------- #
+# Watcher card — the plugin's own adapter (triggers.py) + WatcherAPI (PyRun 2.5).
+# --------------------------------------------------------------------------- #
+
+class CounterAdapterTests(TestCase):
+    """``CounterAdapter.check``/``test`` against the real data store."""
+
+    def setUp(self):
+        from core.models import Workspace
+
+        from .triggers import CounterAdapter
+
+        self.ws = Workspace.get_default()
+        self.adapter = CounterAdapter()
+        self.store = prov.DataStoreAPI(prov.OWNER).upsert(prov.STORE_KEY)
+        self.store.set("counter", 3)
+
+    def _ctx(self, limit=None):
+        from core.plugins.api import TriggerContext
+
+        return TriggerContext(workspace=self.ws, watcher_id=None, connection=None, limit=limit, timeout=20)
+
+    def test_first_check_marks_then_each_increment_is_an_event(self):
+        events, state = self.adapter.check(self._ctx(), {"every": 1}, None)
+        self.assertEqual((events, state), ([], {"counter": 3, "generation": 0}))
+        self.store.set("counter", 5)
+        events, state = self.adapter.check(self._ctx(), {"every": 1}, state)
+        self.assertEqual([e["id"] for e in events], ["0:4", "0:5"])
+        self.assertEqual(events[1]["item"], {"counter": 5, "message": "The showcase counter reached 5."})
+        self.assertEqual(state, {"counter": 5, "generation": 0})
+        self.assertEqual(self.adapter.check(self._ctx(), {"every": 1}, state), ([], state))
+
+    def test_every_and_the_limit(self):
+        self.store.set("counter", 9)
+        events, state = self.adapter.check(self._ctx(), {"every": 2}, {"counter": 3, "generation": 0})
+        self.assertEqual([e["id"] for e in events], ["0:4", "0:6", "0:8"])
+        self.assertEqual(state["counter"], 9)
+        events, state = self.adapter.check(self._ctx(limit=2), {"every": 2}, {"counter": 3, "generation": 0})
+        self.assertEqual([e["id"] for e in events], ["0:4", "0:6"])
+        # Only past what was returned: 8 comes next time.
+        self.assertEqual(state, {"counter": 6, "generation": 0})
+        events, _ = self.adapter.check(self._ctx(limit=2), {"every": 2}, state)
+        self.assertEqual([e["id"] for e in events], ["0:8"])
+
+    def test_a_reset_starts_a_new_generation_and_only_marks(self):
+        state = {"counter": 3, "generation": 0}
+        prov.reset_demo_data()
+        self.store.set("counter", 1)
+        events, state = self.adapter.check(self._ctx(), {"every": 1}, state)
+        self.assertEqual((events, state), ([], {"counter": 1, "generation": 1}))
+        self.store.set("counter", 2)
+        events, _ = self.adapter.check(self._ctx(), {"every": 1}, state)
+        self.assertEqual([e["id"] for e in events], ["1:2"])
+
+    def test_test_and_a_missing_store(self):
+        message, items = self.adapter.test(self._ctx(), {"every": 3})
+        self.assertEqual((message, items), ("The counter is at 3; a run starts at every multiple of 3.",
+                                            [{"counter": 3}]))
+        from core.models import DataStore
+        from core.plugins.api import TriggerError
+
+        DataStore.objects.filter(name=f"{prov.OWNER}:{prov.STORE_KEY}").delete()
+        with self.assertRaisesMessage(TriggerError, "isn't set up"):
+            self.adapter.check(self._ctx(), {"every": 1}, None)
+
+    def test_the_doctor_passes_triggers_py(self):
+        from core.services.plugin_doctor import triggers_problems
+
+        self.assertEqual(triggers_problems(Path(prov.__file__).parent),
+                         ([], [], ["sdk_showcase:counter_up"]))
+
+
+class WatcherCardTests(TestCase):
+    """``set_watcher`` (WatcherAPI) and a real watcher check starting a run, the plugin loaded."""
+
+    def setUp(self):
+        from core.models import Environment
+        from core.triggers.adapters import plugin as plugin_adapters
+
+        Environment.objects.create(name="prod", path="scwatch", requirements="")
+        for target in ("core.services.schedule_service.ScheduleService.sync_schedule",):
+            patch = mock.patch(target)
+            patch.start()
+            self.addCleanup(patch.stop)
+        override = override_settings(
+            INSTALLED_PLUGINS=["plugins.sdk_showcase"],
+            VECTORS_DIR=Path(tempfile.mkdtemp(prefix="pyrun-showcase-vectors-")),
+        )
+        override.enable()
+        self.addCleanup(override.disable)
+        plugin_adapters.reset()
+        self.addCleanup(plugin_adapters.reset)
+
+    def test_set_watcher_before_setup_does_nothing(self):
+        self.assertFalse(prov.set_watcher(True))
+        self.assertIsNone(prov.get_watcher())
+
+    def test_on_off_on_is_one_watcher_and_a_check_starts_a_run(self):
+        from core.models import Run, Watcher
+        from core.triggers import runner
+
+        prov.provision({"environment": "prod", "demo_token": "tok", "message": "hi", "steps": 5})
+        self.assertTrue(prov.set_watcher(True))
+        watcher = prov.get_watcher()
+        self.assertEqual((watcher.adapter, watcher.owner_plugin, watcher.owner_key, watcher.interval_seconds,
+                          watcher.input_map, watcher.enabled),
+                         ("sdk_showcase:counter_up", "sdk_showcase", "counter", 60,
+                          {"message": "item.message"}, True))
+        self.assertTrue(prov.set_watcher(False))
+        self.assertFalse(prov.get_watcher().enabled)
+        self.assertEqual(prov.watcher_summary()["status"], "off")
+        prov.set_watcher(True)
+        self.assertEqual(Watcher.objects.filter(owner_plugin=prov.OWNER).count(), 1)
+        self.assertEqual(prov.owned_inventory()["watchers"], 1)
+
+        inline = mock.patch.object(runner, "_call_adapter",
+                                   side_effect=lambda adapter, ctx, config, cursor: adapter.check(ctx, config, cursor))
+        with inline, mock.patch("core.tasks.async_task", return_value="task-1"):
+            runner.check_watcher(watcher.pk)  # marks
+            prov.increment_counter()
+            Watcher.objects.filter(pk=watcher.pk).update(next_check_at=None)
+            result = runner.check_watcher(watcher.pk)
+        self.assertEqual(result.runs, 1, result.message)
+        run = Run.objects.get(script=prov.get_script())
+        self.assertEqual(run.inputs["message"], "The showcase counter reached 1.")
+        self.assertEqual(run.event["item"]["counter"], 1)
+        self.assertEqual(prov.watcher_summary()["status"], "on")

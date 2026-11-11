@@ -9,7 +9,9 @@ Triggers in the console (2.5 Stage 7, ticket T31).
   (``triggers/new/?script=<pk>&adapter=<key>``, ``triggers/<id>/edit/``)
   whose adapter settings come from the adapter's ``config_schema``. The form's
   Test button asks the source without saving or starting anything.
-- Check now, on/off and delete (POST).
+- Check now, on/off and delete (POST). A plugin's watcher (``owner_plugin``,
+  made with ``WatcherAPI``, T33) can't be edited here, only turned off and on,
+  checked, or deleted by a superuser (``force=1``); its form redirects back.
 
 Every lookup is scoped to ``request.workspace`` like the script pages.
 """
@@ -139,6 +141,11 @@ def watcher_detail_view(request: HttpRequest, watcher_id) -> HttpResponse:
 def watcher_edit_view(request: HttpRequest, watcher_id=None) -> HttpResponse:
     """Create (``?script=&adapter=``) or edit a watcher; the Test button asks the source."""
     watcher = _watcher(request, watcher_id) if watcher_id else None
+    if watcher is not None and watcher.owner_plugin:
+        # A plugin's watcher is changed by the plugin (WatcherAPI.sync, T33);
+        # here it can only be turned off and on.
+        messages.error(request, owned_edit_message(watcher))
+        return redirect("cpanel:watcher_detail", watcher_id=watcher.pk)
     script = watcher.script if watcher else None
     if watcher is None:
         script_id = request.GET.get("script", "")
@@ -188,6 +195,13 @@ def watcher_edit_view(request: HttpRequest, watcher_id=None) -> HttpResponse:
         "test_result": test_result,
         "adapter_changed": watcher is not None and watcher.adapter != adapter.key,
     })
+
+
+def owned_edit_message(watcher) -> str:
+    return (
+        f'The "{watcher.owner_plugin}" plugin manages this watcher: change it from the plugin. '
+        "Here you can turn it off and on, or check it now."
+    )
 
 
 def _is_uuid(value) -> bool:

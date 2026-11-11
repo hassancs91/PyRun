@@ -2,14 +2,16 @@
 
 The built-ins (``core.triggers.adapters.BUILTIN_ADAPTERS``), then the
 integrations' triggers (``core/integrations/<key>/triggers.py``, wrapped by
-``IntegrationAdapter``, T32). Plugin ``triggers.py`` adapters (T33) join this
-same table; the runner and the console only ever look adapters up here.
+``IntegrationAdapter``, T32), then the loaded plugins' ``triggers.py`` adapters
+(``"<slug>:<key>"``, wrapped by ``PluginAdapter``, T33). The runner and the
+console only ever look adapters up here.
 """
 
 import functools
 
 from core.triggers.adapters import BUILTIN_ADAPTERS
 from core.triggers.adapters.integration import integration_adapters
+from core.triggers.adapters.plugin import plugin_adapters
 
 
 @functools.lru_cache(maxsize=1)
@@ -19,8 +21,13 @@ def _integration_adapters() -> tuple:
 
 
 def adapters() -> dict:
-    """``{key: adapter}`` in the picker's order."""
-    return {adapter.key: adapter for adapter in (*BUILTIN_ADAPTERS, *_integration_adapters())}
+    """``{key: adapter}`` in the picker's order.
+
+    Plugin adapters aren't cached here like the integrations': which plugins
+    are loaded is read on every call (each plugin's triggers.py is imported
+    once, in ``core.triggers.adapters.plugin``).
+    """
+    return {adapter.key: adapter for adapter in (*BUILTIN_ADAPTERS, *_integration_adapters(), *plugin_adapters())}
 
 
 def get(key):

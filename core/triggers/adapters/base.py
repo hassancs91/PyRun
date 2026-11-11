@@ -6,7 +6,7 @@ An adapter knows how to ask one kind of source what is new. It declares:
 - ``key`` (stable, stored on the watcher), ``title`` and ``description``;
 - ``config_schema``: an object JSON Schema of flat settings (string, integer,
   number, boolean; ``enum``, ``pattern``, ``minimum``/``maximum``,
-  ``maxLength``, ``default``). It generates the watcher form and validates
+  ``minLength``/``maxLength``, ``default``). It generates the watcher form and validates
   what is saved (``validate_config``);
 - ``requires_connection`` and ``providers``: whether a watcher needs a
   Connection, and of which providers;
@@ -43,7 +43,7 @@ ADAPTER_TIMEOUT_SECONDS = 20
 MAX_RESPONSE_BYTES = 5 * 1024 * 1024
 
 # Keywords validate_config understands, past core.api.schema's subset.
-_EXTRA_KEYWORDS = ("pattern", "format")
+_EXTRA_KEYWORDS = ("pattern", "format", "minLength")
 
 
 class AdapterError(Exception):
@@ -95,6 +95,53 @@ def _sentence(exc: ApiError) -> str:
     return text if text.endswith(".") else text + "."
 
 
+# The setting types a config_schema may use (the form has a field for each).
+FLAT_TYPES = ("string", "integer", "number", "boolean")
+_SETTING_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+
+
+def schema_problem(schema) -> str:
+    """Why ``schema`` can't be an adapter's ``config_schema``, or "" when it can.
+
+    The flat subset ``validate_config`` and the watcher form understand: an
+    object of string/integer/number/boolean settings, each with the keywords
+    of ``core.api.schema`` plus ``pattern`` (a valid regular expression).
+    Built-ins are written to it; a plugin's adapters are checked with it
+    before they are offered (T33).
+    """
+    if not isinstance(schema, dict) or schema.get("type") != "object":
+        return 'config_schema must be an object schema: {"type": "object", "properties": {...}}.'
+    properties = schema.get("properties", {})
+    if not isinstance(properties, dict):
+        return "config_schema properties must be an object."
+    stripped = {}
+    for name, prop in properties.items():
+        if not isinstance(name, str) or not _SETTING_NAME_RE.match(name):
+            return f"setting {name!r}: a name is letters, digits and underscores (64 at most)."
+        if not isinstance(prop, dict) or prop.get("type") not in FLAT_TYPES:
+            return f'setting "{name}": "type" must be one of {", ".join(FLAT_TYPES)}.'
+        if "minLength" in prop and (type(prop["minLength"]) is not int or prop["minLength"] < 0):
+            return f'setting "{name}": "minLength" must be a non-negative integer.'
+        if "pattern" in prop:
+            try:
+                re.compile(prop["pattern"])
+            except (re.error, TypeError):
+                return f'setting "{name}": "pattern" isn\'t a valid regular expression.'
+        stripped[name] = _strip(prop)
+    from core.api.schema import check_schema
+
+    try:
+        check_schema({**{k: v for k, v in schema.items() if k not in _EXTRA_KEYWORDS}, "properties": stripped})
+    except ValueError as e:
+        return f"config_schema: {e}."
+    for name, prop in properties.items():
+        if "default" in prop:
+            _, errors = validate_config({"properties": {name: prop}}, {name: prop["default"]})
+            if errors:
+                return f'setting "{name}": the default doesn\'t fit it ({errors[name]})'
+    return ""
+
+
 def validate_config(schema: dict, config) -> tuple[dict, dict]:
     """``config`` checked against an adapter's flat ``config_schema``.
 
@@ -118,6 +165,9 @@ def validate_config(schema: dict, config) -> tuple[dict, dict]:
             validate(value, _strip(prop), f"$.{name}")
         except ApiError as e:
             errors[name] = _sentence(e)
+            continue
+        if isinstance(value, str) and len(value) < prop.get("minLength", 0):
+            errors[name] = "Too short."
             continue
         if isinstance(value, str) and "pattern" in prop and not re.search(prop["pattern"], value):
             errors[name] = "Doesn't have the expected form."

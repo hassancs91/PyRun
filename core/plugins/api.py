@@ -31,7 +31,7 @@ CONTRACT NOTES
 """
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
@@ -62,7 +62,8 @@ from core.api.exceptions import ApiError as BrainError  # noqa: F401 — SDK sur
 # 2.7 (additive): BrainAPI — owned brains and grant-checked shared read handlers.
 # PyRun 2.5 adds, before the one version bump at the end of its train:
 # ConnectionAPI (+ ConnectionView, ConnectionRequirement, ConnectionUnavailable)
-# and plugin.json ``requires_connections``.
+# and plugin.json ``requires_connections``; WatcherAPI, TriggerAdapter,
+# TriggerContext, TriggerError and the plugin's ``triggers.py`` adapters.
 API_VERSION = "2.7"
 
 
@@ -2255,3 +2256,330 @@ class PublicPageAPI:
         """Deactivate the share (the URL 404s permanently). True if it existed."""
         updated = self._qs().filter(page=page_name).update(is_active=False)
         return bool(updated)
+
+
+# --------------------------------------------------------------------------- #
+# Watchers (PyRun 2.5 Stage 7, T33) — polling triggers owned by a plugin, and
+# the adapters a plugin ships in <plugin>/triggers.py.
+# --------------------------------------------------------------------------- #
+
+class TriggerError(Exception):
+    """Raise from a ``TriggerAdapter``'s ``check``/``test``: the console shows ``message`` as is.
+
+    Keep secrets out of it (a connection's own values are masked anyway).
+    """
+
+    def __init__(self, message):
+        super().__init__(message)
+        self.message = message
+
+
+@dataclass(frozen=True)
+class TriggerContext:
+    """What a plugin adapter's ``check``/``test`` gets besides its settings.
+
+    ``workspace`` is the watcher's (pass it on to the other SDK classes:
+    ``DataStoreAPI(OWNER, workspace=ctx.workspace)``); ``watcher_id`` is None
+    for the console's Test of a form not saved yet; ``connection`` is the
+    watcher's connection (a ConnectionView) when the adapter
+    ``requires_connection``; ``limit`` is the most events to return (None = no
+    limit); ``timeout`` the seconds network calls may take.
+    """
+
+    workspace: object
+    watcher_id: Optional[str]
+    connection: Optional[ConnectionView]
+    limit: Optional[int]
+    timeout: float
+    _connection_row: object = field(default=None, repr=False, compare=False)
+
+    def credentials(self):
+        """The connection's auth material (the dict ``ConnectionAPI.credentials`` returns).
+
+        Raises ConnectionUnavailable when the watcher has no connection or it
+        can't be used (expired, revoked, unreadable).
+        """
+        from core.services.connections import ConnectionLookupError, credentials_for
+
+        if self._connection_row is None:
+            raise ConnectionUnavailable("This watcher has no connection.", "CONNECTION_NOT_FOUND")
+        try:
+            return credentials_for(self._connection_row)
+        except ConnectionLookupError as e:
+            raise ConnectionUnavailable(e.message, e.code) from None
+
+
+class TriggerAdapter:
+    """Base class for a plugin's watcher adapters: subclass it in ``<plugin>/triggers.py``.
+
+    Each subclass defined there (with a literal ``key``) becomes the adapter
+    ``"<slug>:<key>"`` in the watcher form's picker, in every workspace, once
+    the plugin is loaded and the doctor's ``triggers`` rule passes. Declare:
+
+    - ``key``: a lowercase letter, then letters, digits and underscores;
+      stable (watchers store it). ``title`` and ``description``;
+    - ``config_schema``: a flat object JSON Schema (string, integer, number
+      and boolean settings; ``enum``, ``pattern``, ``minimum``/``maximum``,
+      ``minLength``/``maxLength``, ``default``, ``title``, ``description``). It generates
+      the form and validates what is saved;
+    - ``requires_connection`` and ``providers`` (connection preset keys, e.g.
+      ``("google",)``; empty = any) when it checks as one of the user's
+      connections (``ctx.credentials()``).
+
+    And implement:
+
+    - ``check(ctx, config, state) -> (events, new_state)``: what is new since
+      ``state`` (None on the first check: report nothing, only mark where the
+      source is). Events are ``{"id": <stable id>, "item": <JSON>}``, oldest
+      first, at most ``ctx.limit``; ``new_state`` is JSON and moves only past
+      the events returned. Raise TriggerError on failure: the watcher backs
+      off and keeps its old state;
+    - ``test(ctx, config) -> (message, items)``: a read-only look for the
+      console's Test button (a short line and a few sample items).
+
+    ``config`` arrives with the schema's defaults filled in. Both run in a
+    worker thread that is waited for ``ctx.timeout`` + 5 seconds: keep them
+    short, and never write anything in ``test``.
+    """
+
+    key = ""
+    title = ""
+    description = ""
+    config_schema = {"type": "object", "properties": {}}
+    requires_connection = False
+    providers = ()
+
+    def check(self, ctx, config, state):
+        raise NotImplementedError
+
+    def test(self, ctx, config):
+        raise NotImplementedError
+
+
+class WatcherAPI:
+    """Watchers a plugin creates for scripts (owner-scoped, idempotent by ``key``).
+
+    A watcher polls a source every ``interval`` seconds and starts one run of
+    its script per new item, like one made on the script's Triggers page.
+    The console shows a plugin's watchers with the plugin's pill; people can
+    turn them off and on there (and Check now), not edit them. They are
+    deleted with the plugin.
+    """
+
+    def __init__(self, owner, workspace=None):
+        if not owner:
+            raise ValueError("WatcherAPI needs the plugin's slug: watchers are owned by a plugin.")
+        self.owner = owner
+        self._workspace = workspace
+
+    def _ws(self):
+        return _resolve_workspace(self._workspace)
+
+    def _qs(self):
+        from core.models import Watcher
+
+        return Watcher.objects.filter(workspace=self._ws(), owner_plugin=self.owner)
+
+    def _adapter(self, adapter):
+        from core.triggers import registry
+
+        if isinstance(adapter, TriggerAdapter) or (isinstance(adapter, type) and issubclass(adapter, TriggerAdapter)):
+            adapter = f"{self.owner}:{adapter.key}"
+        if not isinstance(adapter, str) or not adapter:
+            raise ValueError("adapter must be an adapter key, e.g. 'rss_new_item' or one of this plugin's.")
+        found = registry.get(adapter)
+        if found is None and ":" not in adapter:
+            found = registry.get(f"{self.owner}:{adapter}")
+        if found is None:
+            raise ValueError(f"No adapter {adapter!r} is available (is the plugin that ships it loaded?).")
+        return found
+
+    def _script(self, script):
+        from core.models import Script
+
+        if isinstance(script, str):
+            row = Script.objects.filter(workspace=self._ws(), owner_plugin=self.owner, owner_key=script).first()
+            if row is None:
+                raise ValueError(f"This plugin has no script {script!r} in the workspace.")
+            return row
+        if not isinstance(script, Script) or script.workspace_id != self._ws().pk:
+            raise ValueError("script must be a Script of the workspace (or the key of one of this plugin's).")
+        return script
+
+    def _connection(self, connection, adapter):
+        from core.models import Connection
+
+        if connection is None:
+            if adapter.requires_connection:
+                raise ValueError(f'The adapter "{adapter.key}" needs a connection.')
+            return None
+        if not adapter.requires_connection:
+            raise ValueError(f'The adapter "{adapter.key}" doesn\'t use a connection.')
+        if isinstance(connection, str):
+            from core.services.plugin_connections import connection_for
+
+            row = connection_for(self._ws(), self.owner, connection)
+            if row is None:
+                raise ConnectionUnavailable(f"Nothing is connected for '{connection}' yet.", "CONNECTION_NOT_FOUND")
+        elif isinstance(connection, ConnectionView):
+            row = Connection.objects.filter(pk=connection.id).first()
+            if row is None:
+                raise ConnectionUnavailable(f"Connection '{connection.name}' was deleted.", "CONNECTION_NOT_FOUND")
+        elif isinstance(connection, Connection):
+            row = connection
+        else:
+            raise ValueError("connection must be a requirement key, a ConnectionView or a Connection.")
+        if row.workspace_id != self._ws().pk:
+            raise ValueError("The connection must belong to the watcher's workspace.")
+        if adapter.providers and row.provider not in adapter.providers:
+            wanted = " or ".join(adapter.providers)
+            raise ValueError(f'The adapter "{adapter.key}" needs a {wanted} connection, not {row.provider}.')
+        return row
+
+    @staticmethod
+    def _input_map(input_map, script):
+        from core.watcher_forms import INPUT_MAP_MAX
+
+        if input_map is None:
+            return {}
+        if not isinstance(input_map, dict):
+            raise ValueError('input_map must be a dict: {"input": "item.path"}.')
+        if len(input_map) > INPUT_MAP_MAX:
+            raise ValueError(f"input_map: at most {INPUT_MAP_MAX} inputs.")
+        declared = set((script.inputs_schema or {}).get("properties", {}))
+        for name, path in input_map.items():
+            if not isinstance(path, str) or not path.strip():
+                raise ValueError(f'input_map "{name}": the path must be text, like "item.title".')
+            if name not in declared:
+                raise ValueError(f'input_map "{name}": not an input of the script "{script.name}".')
+        return {name: path.strip() for name, path in input_map.items()}
+
+    @staticmethod
+    def _bounded(label, value, lo, hi):
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(f"{label} must be a whole number.")
+        if not lo <= value <= hi:
+            raise ValueError(f"{label} must be between {lo} and {hi}.")
+        return value
+
+    def sync(self, script, adapter, config=None, connection=None, interval=None, *, key=None, name=None,
+             input_map=None, fire_cap_per_hour=None, created_by=None):
+        """Create or update this plugin's watcher ``key``; returns it (a ``Watcher`` row).
+
+        - ``script``: a Script of the workspace, or the key of one of this
+          plugin's scripts. The watcher starts one run of it per new item.
+        - ``adapter``: an adapter key (``"rss_new_item"``, ``"http_poll"``,
+          ``"gmail_new_message"``...), or one of this plugin's own adapters:
+          its key bare (``"new_order"``) or full (``"<slug>:new_order"``), or
+          its TriggerAdapter class.
+        - ``config``: the adapter's settings, checked against its
+          ``config_schema``. ``connection``: for an adapter that needs one (of
+          its providers), a requirement key of this plugin's
+          (``requires_connections``), a ConnectionView or a Connection.
+        - ``interval``: seconds between checks (60 to 7 days; a new watcher
+          without it checks every 300). ``fire_cap_per_hour``: the most runs
+          it starts an hour (60 when left out).
+        - ``key``: the watcher's owner key, 100 characters at most (default
+          ``"<script key or id>:<adapter key>"``). ``name``: shown in the
+          console (default ``"<adapter title>: <script name>"``).
+          ``input_map``: ``{"input": "item.path"}`` fills the script's
+          declared inputs from the event.
+        - ``created_by``: a user, who gets the email if it turns itself off.
+
+        Everything is checked before anything is saved (ValueError, or
+        ConnectionUnavailable when nothing serves a requirement key). A new
+        watcher starts on; an update leaves it on or off. Changing the
+        adapter, its settings or the connection starts its state over (the
+        next check only marks where the source is), as the console's form
+        does.
+        """
+        from django.db import IntegrityError, transaction
+
+        from core.models import Watcher
+        from core.triggers.adapters import validate_config
+
+        script = self._script(script)
+        adapter = self._adapter(adapter)
+        cleaned, errors = validate_config(adapter.config_schema, {} if config is None else config)
+        if errors:
+            raise ValueError(
+                "Bad adapter settings: "
+                + "; ".join(f"{setting or 'config'}: {reason}" for setting, reason in sorted(errors.items()))
+            )
+        connection = self._connection(connection, adapter)
+        input_map = self._input_map(input_map, script)
+        if key is None:
+            own = script.owner_plugin == self.owner and script.owner_key
+            key = f"{script.owner_key if own else script.pk}:{adapter.key}"
+        if not isinstance(key, str) or not key.strip() or len(key) > 100:
+            raise ValueError("key must be text of 1 to 100 characters (pass key= when the default is longer).")
+        name = (f"{adapter.title}: {script.name}" if name is None else str(name)).strip()[:120]
+        if not name:
+            raise ValueError("name can't be empty.")
+        fields = {"script": script, "adapter": adapter.key, "config": cleaned, "connection": connection,
+                  "name": name, "input_map": input_map}
+        if interval is not None:
+            fields["interval_seconds"] = self._bounded(
+                "interval", interval, Watcher.INTERVAL_MIN_SECONDS, Watcher.INTERVAL_MAX_SECONDS)
+        if fire_cap_per_hour is not None:
+            fields["fire_cap_per_hour"] = self._bounded("fire_cap_per_hour", fire_cap_per_hour, 1,
+                                                        Watcher.FIRE_CAP_MAX)
+
+        watcher = self._qs().filter(owner_key=key).first()
+        if watcher is None:
+            try:
+                with transaction.atomic():
+                    return Watcher.objects.create(
+                        workspace=self._ws(), owner_plugin=self.owner, owner_key=key,
+                        created_by=created_by, **fields,
+                    )
+            except IntegrityError:
+                # Another process made it first: update that one instead.
+                watcher = self._qs().get(owner_key=key)
+        source = (watcher.adapter, watcher.config, watcher.connection_id)
+        for attr, value in fields.items():
+            setattr(watcher, attr, value)
+        if source != (watcher.adapter, watcher.config, watcher.connection_id):
+            # A different source: what was seen of the old one means nothing.
+            watcher.state = None
+            watcher.next_check_at = None
+        watcher.save()
+        return watcher
+
+    def get(self, key):
+        """This plugin's watcher ``key`` (a ``Watcher`` row), or None."""
+        return self._qs().filter(owner_key=key).first()
+
+    def list(self):
+        """This plugin's watchers in the workspace, by name."""
+        return list(self._qs().select_related("script").order_by("name", "created_at"))
+
+    def _get(self, key):
+        watcher = self.get(key)
+        if watcher is None:
+            raise ValueError(f"This plugin has no watcher {key!r} in the workspace.")
+        return watcher
+
+    def pause(self, key):
+        """Turn the watcher off; its state is kept. Returns it."""
+        watcher = self._get(key)
+        if watcher.enabled:
+            watcher.enabled = False
+            watcher.save(update_fields=["enabled", "updated_at"])
+        return watcher
+
+    def resume(self, key):
+        """Turn the watcher on, like the console's Turn on: failures cleared, checked within a minute. Returns it."""
+        watcher = self._get(key)
+        if not watcher.enabled:
+            watcher.enabled = True
+            watcher.auto_disabled_at = None
+            watcher.error_count = 0
+            watcher.next_check_at = None
+            watcher.save(update_fields=["enabled", "auto_disabled_at", "error_count", "next_check_at", "updated_at"])
+        return watcher
+
+    def delete(self, key):
+        """Delete the watcher ``key`` (the runs it started stay). True if it existed."""
+        deleted, _ = self._qs().filter(owner_key=key).delete()
+        return bool(deleted)

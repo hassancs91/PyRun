@@ -383,7 +383,7 @@ class PluginService:
 
     @staticmethod
     def delete(plugin: Plugin, *, remove_data: bool = False) -> list:
-        """Remove the plugin's files + DB row. Returns a list of warning strings.
+        """Remove the plugin's files + DB row (and its watchers). Returns a list of warning strings.
 
         With remove_data, first drops the plugin's own DB tables by unapplying its
         migrations in an isolated subprocess (best effort — a broken plugin can't
@@ -391,6 +391,17 @@ class PluginService:
         returned).
         """
         warnings = []
+        # Its watchers (2.5 T33) go in every case: left behind, they would keep
+        # starting runs (of scripts kept without remove_data) for a plugin that
+        # is gone, or fail on its adapters. Re-installing it makes them again.
+        try:
+            from core.models import Watcher
+
+            deleted, _ = Watcher.objects.filter(owner_plugin=plugin.slug).delete()
+            if deleted:
+                logger.info("Plugin %r: %d watcher(s) removed", plugin.slug, deleted)
+        except Exception as exc:
+            logger.warning("Removing the watchers of plugin %r failed: %s", plugin.slug, exc)
         if remove_data:
             # Plugin Platform v2: owned resources (owner_plugin=slug) are the
             # plugin's real persistence — delete them. Best-effort + field-gated so

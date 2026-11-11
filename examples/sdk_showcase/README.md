@@ -23,7 +23,8 @@ idempotent on re-save.
 | **5 · Worker output** | the script side — `pyrunner_datastore`, `pyrunner_vectors`, `$PYRUNNER_OWNER_PLUGIN`, the progress heartbeat, the run-history record |
 | **6 · Schedule** | `ScheduleAPI.sync/list` (manual / interval / daily) |
 | **7 · Vectors** | `VectorAPI.provision`, `add_vectors`, `search_vector` with a payload filter — toy word-hash vectors, so no embedding provider is needed (API 2.6) |
-| **8 · Ownership** | the owned-resource inventory (`.list()` on each API); clean teardown on uninstall |
+| **8 · Watcher** | `WatcherAPI.sync/get/pause/resume` and the plugin's own adapter (`TriggerAdapter` in `triggers.py`, offered as `sdk_showcase:counter_up`): a run per counter increment (PyRun 2.5) |
+| **9 · Ownership** | the owned-resource inventory (`.list()` on each API); clean teardown on uninstall |
 
 The **demo worker uses only the standard library** — no `requests`, no `boto3` —
 so it runs in *any* environment with zero package setup. That makes "see it work"
@@ -63,7 +64,8 @@ The tests live in [`tests.py`](tests.py) and run via a thin shim in
 `core/test_sdk_showcase_plugin.py`. They cover provisioning idempotency, the
 counter read/write, the worker secret/config contract, form validation, and the
 inputs card (declared inputs, `queue_run(inputs=)`, the worker's
-`pyrunner_run` side and the page).
+`pyrunner_run` side and the page), and the watcher card (the adapter's
+checks, `WatcherAPI` and runs started by a watcher check).
 
 ## Package the zip
 
@@ -81,6 +83,7 @@ matching `plugin.json` and `apps.py`.
 |---|---|---|
 | `apps.py`, `urls.py`, `views.py`, `forms.py`, `templates/` | web process | the page (setup form + capability cards) |
 | `provisioning.py` | web process | all SDK calls (idempotent provision + reads/actions) |
+| `triggers.py` | worker / web process | the watcher adapter (`CounterAdapter`), checked by PyRun's watcher runner |
 | `worker_body.py` | environment venv | the managed demo script (stdlib only) |
 | `tests.py` | test runner | unit tests for the provisioning + contract surface |
 

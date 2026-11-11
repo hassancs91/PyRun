@@ -12,6 +12,7 @@ Like every SDK plugin, this spans two processes that cannot import each other:
 |---|---|
 | `apps.py`, `urls.py`, `views.py`, `forms.py`, `templates/` | `worker_body.py` (the managed demo script) |
 | `provisioning.py` — all SDK calls | |
+| `triggers.py` — the watcher adapter (PyRun's watcher runner calls it) | |
 
 The web layer talks to PyRun **only** through `core.plugins.api`. The worker
 imports only stdlib + `pyrunner_datastore` (PyRun injects the last) — **no
@@ -35,24 +36,29 @@ add `requests`/`boto3` here.
    `core.plugins.api` exclusively — never `import core.models|services|tasks`.
    The doctor enforces import-light (test files are exempt).
 3. **No `models.py` / `migrations/`.** State lives in the owned DataStore
-   `sdk_showcase:state` (`config` + `counter` + `runs` + `progress`). The doctor
-   rejects models/migrations.
+   `sdk_showcase:state` (`config` + `counter` + `generation` + `runs` +
+   `progress`). The doctor rejects models/migrations. `generation` goes up on
+   every "Reset demo data", so the counter watcher's event ids
+   (`<generation>:<counter>`) never repeat.
 4. **Ownership + idempotency.** Everything is owned by the slug `sdk_showcase`.
    SDK upserts key on `(owner_plugin, owner_key)`, so `provision()` must stay
    idempotent — re-running creates no duplicates.
 5. **Keep each card a one-capability demo.** A card should map to a small,
    visible SDK call with its snippet. If you add an API, add a card; don't fold
    several calls behind one button.
-6. **There is no SDK `delete`.** "Reset demo data" clears *data* only; the
-   provisioned rows are removed when the plugin is uninstalled. Don't reach into
-   `core.models` to delete rows (it would break import-light).
+6. **"Reset demo data" clears *data* only.** The provisioned rows are removed
+   when the plugin is uninstalled (its watcher with any uninstall). Don't reach
+   into `core.models` to delete rows (it would break import-light).
+7. **`triggers.py` is checked by the doctor's `triggers` rule** (literal `key`
+   and `title`, its own `check`/`test`, a flat literal `config_schema`). The
+   adapter only reads the data store; `test()` never writes.
 
 ## Keep the manifest truthful
 
 `plugin.json` must match the code:
 - **`api` / `min_pyrunner`** = `2.6` / `1.13.0` today. The Inputs & result
-  card needs the PyRun 2.5 SDK (`inputs_schema=`, `queue_run(inputs=)`,
-  `InputsError`), so they move to `2.8` / `2.5.0` when the SDK version is
+  and Watcher cards need the PyRun 2.5 SDK (`inputs_schema=`, `queue_run(inputs=)`,
+  `InputsError`, `WatcherAPI`, `TriggerAdapter`), so they move to `2.8` / `2.5.0` when the SDK version is
   bumped for that release (a `min_pyrunner` above this PyRun's own version
   would block the install).
 - **`provisions`** = what `provision()` creates (1 datastore, 1 secret, 1 script,

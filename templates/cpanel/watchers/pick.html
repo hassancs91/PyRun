@@ -19,7 +19,7 @@
     {% for a in adapters %}
     <a href="{% if watcher %}{% url 'cpanel:watcher_edit' watcher_id=watcher.pk %}?adapter={{ a.key|urlencode }}{% else %}{% url 'cpanel:watcher_create' %}?adapter={{ a.key|urlencode }}{% if script %}&amp;script={{ script.pk }}{% endif %}{% endif %}"
        class="block rounded-2xl border border-line bg-panel p-5 hover:border-faint transition-colors">
-        <p class="text-text font-medium">{{ a.title }}{% if a.requires_connection %} <span class="ml-1 text-xs px-2 py-0.5 rounded-md bg-info/10 text-info">needs a connection</span>{% endif %}</p>
+        <p class="text-text font-medium">{{ a.title }}{% if a.requires_connection %} <span class="ml-1 text-xs px-2 py-0.5 rounded-md bg-info/10 text-info">needs a connection</span>{% endif %} {% include "cpanel/_owner_pill.html" with obj=a %}</p>
         <p class="text-sm text-muted mt-1">{{ a.description }}</p>
         <p class="text-xs text-faint mt-2 font-mono">{{ a.key }}</p>
     </a>

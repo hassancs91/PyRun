@@ -31,6 +31,7 @@ the live process.
   provisioning.py            # optional; your SDK calls (create owned scripts/secrets/…)
   worker_body.py             # optional; the body of a managed Script you provision
   lib/                       # optional; *.py shared by your worker scripts (see Libraries)
+  triggers.py                # optional; watcher adapters (see Watchers)
   assets/icon.svg            # optional; the manifest "icon" path (any path under <slug>/)
   templates/<slug>/...       # extend "base.html" so pages match the console
   static/<slug>/...          # optional
@@ -914,6 +915,119 @@ in [the integrations guide](integrations/framework.md#the-testing-kit).
 
 ---
 
+## Watchers — runs when something new shows up (PyRun 2.5)
+
+A [watcher](scheduling.md#watchers) checks a source on an interval and starts
+one run of a script per new item. A plugin can make watchers for its scripts
+with `WatcherAPI`, and ship its own sources (adapters) in `triggers.py`.
+
+```python
+from core.plugins.api import WatcherAPI
+
+OWNER = "my_flows"
+watchers = WatcherAPI(OWNER)          # workspace=None: the default workspace
+
+# Idempotent on the key: call it on every save of your settings page.
+watchers.sync(
+    "digest",                          # one of your scripts (its key), or any Script of the workspace
+    "rss_new_item",                    # an adapter key (the picker shows them on the watcher form)
+    config={"url": "https://example.com/feed.xml"},
+    interval=600,                      # seconds; at least 60
+    key="blog",                        # default "<script key>:<adapter key>"
+    input_map={"title": "item.title"}, # optional: script inputs from the event
+)
+watchers.pause("blog")                 # off; where the source is is kept
+watchers.resume("blog")                # on again: failures cleared, checked within a minute
+watchers.get("blog"), watchers.list()  # Watcher rows (enabled, last_checked_at, last_error, ...)
+watchers.delete("blog")                # the runs it started stay
+```
+
+`sync` checks everything before it saves (ValueError: an unknown adapter,
+settings its `config_schema` refuses, an interval out of range, an input the
+script doesn't declare). An adapter that needs a connection takes one with
+`connection=`: one of your `requires_connections` keys, a `ConnectionView` or a
+Connection of its provider. A new watcher starts on; `sync` on an existing one
+leaves it on or off, and changing its adapter, settings or connection starts
+it over (its next check only marks where the source is). Pass `created_by=`
+to say who gets the email if it turns itself off after 10 failed checks.
+
+In the console a plugin's watcher carries the plugin's pill. People can turn
+it off and on and press **Check now**, but not edit it (its form sends them
+back); only a superuser can delete it there. **Deleting the plugin deletes its
+watchers**, with or without its data; installing it again and calling `sync`
+makes them anew.
+
+### Your own source: `triggers.py`
+
+Every class in `<slug>/triggers.py` that subclasses `TriggerAdapter` is an
+adapter, offered as `"<slug>:<key>"` in the watcher form's picker of every
+workspace (with the plugin's pill), to people and to `WatcherAPI` alike:
+
+```python
+# my_flows/triggers.py
+from core.plugins.api import DataStoreAPI, TriggerAdapter, TriggerError
+
+
+class NewOrder(TriggerAdapter):
+    key = "new_order"                  # offered as "my_flows:new_order"
+    title = "New order in my shop"
+    description = "A run per order placed since the last check."
+    config_schema = {                  # flat: string, integer, number, boolean settings
+        "type": "object",
+        "properties": {
+            "min_total": {"type": "number", "minimum": 0, "default": 0, "title": "Smallest total"},
+        },
+    }
+
+    def check(self, ctx, config, state):
+        orders = DataStoreAPI("my_flows", workspace=ctx.workspace).get("orders")
+        if orders is None:
+            raise TriggerError("Set up the shop first.")    # shown as the watcher's error
+        rows = orders.get("list", [])
+        if state is None:                                  # the first check only marks
+            return [], {"last": len(rows)}
+        new = [r for r in rows[state["last"]:] if r["total"] >= config["min_total"]]
+        new = new[: ctx.limit] if ctx.limit is not None else new
+        events = [{"id": r["id"], "item": r} for r in new]
+        last = rows.index(new[-1]) + 1 if new else len(rows)
+        return events, {"last": last}                      # move only past what you return
+
+    def test(self, ctx, config):                           # the form's Test button: read only
+        orders = DataStoreAPI("my_flows", workspace=ctx.workspace).get("orders")
+        rows = orders.get("list", []) if orders else []
+        return f"{len(rows)} orders so far.", rows[-3:]
+```
+
+- `check(ctx, config, state)` returns `(events, new_state)`: events oldest
+  first, at most `ctx.limit`, each `{"id": <stable id>, "item": <JSON>}`
+  (the item becomes the run's event); `new_state` is JSON and only moves past
+  the events returned. `state` is None on the first check, which reports
+  nothing. Raise `TriggerError` for a failure worth showing; any other
+  exception counts as a failed check too (and its traceback is logged).
+- `test(ctx, config)` returns a short message and a few sample items. It must
+  not change anything.
+- `config` arrives with the schema's defaults filled in. `ctx` is a
+  `TriggerContext`: `workspace` (pass it on to the other SDK classes),
+  `watcher_id` (None for a Test of an unsaved form), `limit`, `timeout`, and,
+  for an adapter with `requires_connection = True` (and `providers`, e.g.
+  `("google",)`), `connection` (a `ConnectionView`) and `credentials()` (its
+  auth material; `ConnectionUnavailable` when it can't be used).
+- Both run in a worker thread that is waited for `ctx.timeout` + 5 seconds
+  (20 + 5 now): keep them short.
+
+`triggers.py` is checked by the doctor (`triggers` rule): each adapter needs a
+literal `key` (a lowercase letter, then letters, digits and underscores;
+`<slug>:<key>` at most 80 characters, unique), a literal `title`, its own
+`check` and `test`, and, when written as literals, a flat `config_schema` and
+known connection `providers`. The same rule runs again before a loaded
+plugin's adapters are offered (so a dev-mode plugin is held to it too), and
+each adapter object is checked once more when it is imported; one that fails
+is left out (logged). The file is imported once per process, on first use.
+When a plugin goes away, watchers that use its adapters fail with "isn't
+available" and, after 10 failed checks, turn off.
+
+---
+
 ## Ownership & scoped secrets
 
 Every resource the SDK creates carries your `owner_plugin` slug (a string, not an
@@ -1160,6 +1274,8 @@ and run automatically at activation). Tier-1 is a **static lint** — file check
 | `provides.api_resources` drift: declared resource with no `@resource` handler, missing `api.py`, non-GET `methods`, duplicate names, or manifest `api` < `2.3` | fail |
 | `provides.public_pages` drift: declared page with no `@page` handler, missing `api.py`, duplicate names, or manifest `api` < `2.3` | fail |
 | `requires_connections` malformed: not a list of objects, unknown provider, bad `key`, `scopes` that aren't scope names (or on a provider without OAuth), a too-long `label`, a duplicate key, more than 20 entries | fail |
+| `triggers.py` adapters: doesn't parse, a `TriggerAdapter` subclass without a literal valid `key` (or a duplicate, or `<slug>:<key>` over 80 characters), without a literal `title`, without its own `check`/`test`, a literal `config_schema` that isn't flat, unknown `providers` | fail |
+| `triggers.py` defines no `TriggerAdapter` subclass | warn |
 | `apps.py` has heavy/third-party top-level imports | warn |
 | Imports core internals directly instead of `core.plugins.api` | warn |
 | Missing recommended marketplace fields (`author` / `license` / `summary` / `icon`) | warn |

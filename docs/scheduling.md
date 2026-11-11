@@ -331,6 +331,12 @@ The JSON list and feed URLs must answer without signing in. For another
 source that needs a key, a schedule plus `pyrunner_integrations.http` and a
 Connection is the way for now.
 
+Plugins can add sources: theirs are listed with the plugin's name on them
+(keys like `my_plugin:new_order`). A plugin can also make watchers for its
+scripts; those carry the plugin's pill, can be turned off and on (and checked
+now) but not edited, and are deleted with the plugin
+([plugin guide](plugins.md#watchers--runs-when-something-new-shows-up-pyrun-25)).
+
 The connection-backed sources sign in with a connection of the watcher's
 workspace (the form lists only the right kind). The Google, Gmail and GitHub
 watchers call the same `pyrunner_integrations` functions a script would

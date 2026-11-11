@@ -326,16 +326,28 @@ class BackupService:
         A watcher follows its script (skipped, with a warning, when the script
         didn't come back) into the script's workspace. Its connection is
         looked up by id in that workspace; when it's gone, the watcher comes
-        back without one and turned off.
+        back without one and turned off. A plugin's watcher whose owner key
+        another one in the workspace already has (two plugin watchers can't
+        share one, T33) is left out.
         """
         warnings = []
         Watcher.objects.all().delete()
         restored = 0
+        owner_keys = set()
         for row in rows:
             script = script_map.get(row.get("script_id"))
             if script is None:
                 warnings.append(f'Watcher "{row.get("name")}": its script wasn\'t in the backup, so it was left out.')
                 continue
+            if row.get("owner_plugin") and row.get("owner_key"):
+                owner = (script.workspace_id, row["owner_plugin"], row["owner_key"])
+                if owner in owner_keys:
+                    warnings.append(
+                        f'Watcher "{row.get("name")}": another watcher of the "{row["owner_plugin"]}" plugin '
+                        f'has its key "{row["owner_key"]}", so it was left out.'
+                    )
+                    continue
+                owner_keys.add(owner)
             enabled = bool(row.get("enabled", True))
             connection = None
             if row.get("connection_id"):
