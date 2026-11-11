@@ -61,9 +61,23 @@ def channel_create_view(request: HttpRequest) -> HttpResponse:
             )
             return redirect("cpanel:channel_edit", pk=channel.pk)
     else:
-        form = ChannelForm(workspace=request.workspace)
+        # ?provider= picks whose credential fields the form asks for (the
+        # provider select reloads the page with it, keeping a typed ?name=).
+        form = ChannelForm(
+            workspace=request.workspace,
+            provider=request.GET.get("provider"),
+            initial={"name": request.GET.get("name", "")[:120]},
+        )
 
-    return render(request, "cpanel/channels/create.html", {"form": form})
+    return render(
+        request,
+        "cpanel/channels/create.html",
+        {
+            "form": form,
+            "setup_template": getattr(form.provider_obj, "setup_template", ""),
+            "provider_count": len(form.fields["provider"].choices),
+        },
+    )
 
 
 @login_required
@@ -95,6 +109,7 @@ def channel_edit_view(request: HttpRequest, pk) -> HttpResponse:
             "channel": channel,
             "inbound_form": ChannelInboundForm(channel=channel, workspace=request.workspace),
             "supports_inbound": getattr(provider, "supports_inbound", False),
+            "supports_discovery": callable(getattr(provider, "discover_chat_ids", None)),
             "webhook_url": webhook_url,
             "members": channel.members.all(),
             "message_log": ledger.display_rows(

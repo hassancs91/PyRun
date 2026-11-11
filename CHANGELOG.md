@@ -507,6 +507,12 @@ begins tracking at the current release; earlier history is in the git log.
   daily reply cap now counts replies only. The run page has a **Deliveries**
   card and each channel's page a **Message log**; records are kept for 30
   days. The webhook notification now counts as sent only on a 2xx answer.
+- **Channel forms follow the provider.** The Add and Edit channel pages ask
+  for the credentials the chosen provider declares (all stored encrypted;
+  secret ones are never shown again and are kept when left blank), so new chat
+  providers plug in without Telegram-shaped fields. The inbound webhook can now
+  answer a provider's URL-verification handshake (a GET challenge) before the
+  signature check. Telegram channels work exactly as before.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

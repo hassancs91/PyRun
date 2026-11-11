@@ -56,15 +56,78 @@ class ChannelError(Exception):
         self.retry_after = retry_after
 
 
+@dataclass(frozen=True)
+class CredentialField:
+    """One credential a provider needs, as the channel form asks for it.
+
+    Every credential field is stored in the channel's encrypted credential blob
+    under ``name``. ``secret`` fields render as password inputs, are never shown
+    again, and keep their stored value when left blank on edit; non-secret ones
+    (an account or phone-number id) render as text and show the stored value.
+    ``required`` fields must be filled when the channel is created.
+    """
+
+    name: str
+    label: str
+    secret: bool = True
+    help: str = ""
+    required: bool = True
+    placeholder: str = ""
+    # The form error when a required field is left empty on create.
+    required_error: str = ""
+
+    @property
+    def missing_error(self) -> str:
+        return self.required_error or f"{self.label} is required."
+
+
+# Form fields every channel has; a provider's credential field can't reuse them.
+RESERVED_FIELD_NAMES = frozenset({"name", "provider", "default_target", "daily_send_cap", "enabled"})
+_FIELD_NAME_CHARS = frozenset("abcdefghijklmnopqrstuvwxyz0123456789_")
+
+
 class ChannelProvider:
-    """Base class for a chat provider. Subclasses set ``provider_key``."""
+    """Base class for a chat provider. Subclasses set ``provider_key``.
+
+    The channel form is driven by the provider: ``credential_fields`` lists
+    what to ask for (stored encrypted), the ``default_target_*`` texts label the
+    default-recipient field, ``identity_field`` names the credential whose
+    duplicate is reported by ``duplicate_identity_error``, and
+    ``setup_template`` (optional) is the setup help shown next to the Add form.
+    """
 
     provider_key: str = ""
+
+    credential_fields: tuple[CredentialField, ...] = ()
+    identity_field: str = ""
+    duplicate_identity_error: str = (
+        "These credentials are already connected as another channel "
+        "(one account = one channel)."
+    )
+    default_target_label: str = "Default recipient"
+    default_target_help: str = "Where notifications are sent."
+    default_target_placeholder: str = ""
+    setup_template: str = ""
 
     def identity_for_fingerprint(self, creds: dict) -> str:
         """The stable credential identity (e.g. bot token) used for the
         one-bot-one-channel fingerprint. Empty ⇒ no fingerprint."""
         return ""
+
+    # --- inbound URL verification -------------------------------------------
+
+    def handle_challenge(self, channel, request):
+        """Answer a provider's URL-verification handshake, or return None.
+
+        The inbound webhook calls this for every request (GET or POST) BEFORE
+        the signature check, so a provider that verifies its webhook URL with a
+        challenge (WhatsApp's GET ``hub.challenge``, Slack's
+        ``url_verification`` POST) can answer it. Return a Django
+        ``HttpResponse`` to end the request with it; return None to carry on
+        (a GET that no provider answers gets 405). A provider must check the
+        handshake's own proof (e.g. the verify token) before echoing anything.
+        """
+        return None
 
     # --- outbound (Phase 1) ---
     def test_connection(self, channel) -> tuple[bool, str]:
@@ -101,8 +164,23 @@ class ChannelProvider:
 _REGISTRY: dict[str, ChannelProvider] = {}
 
 
+def _check_fields(provider: ChannelProvider) -> None:
+    """Refuse a provider whose credential fields can't drive the channel form."""
+    names = [f.name for f in provider.credential_fields]
+    for name in names:
+        if not name or not set(name) <= _FIELD_NAME_CHARS or name[0].isdigit():
+            raise ValueError(f"{provider.provider_key}: bad credential field name {name!r}")
+        if name in RESERVED_FIELD_NAMES:
+            raise ValueError(f"{provider.provider_key}: credential field {name!r} clashes with a channel field")
+    if len(set(names)) != len(names):
+        raise ValueError(f"{provider.provider_key}: duplicate credential field names")
+    if provider.identity_field and provider.identity_field not in names:
+        raise ValueError(f"{provider.provider_key}: identity_field {provider.identity_field!r} is not a credential field")
+
+
 def register(provider: ChannelProvider) -> ChannelProvider:
     """Register a provider instance under its ``provider_key``."""
+    _check_fields(provider)
     _REGISTRY[provider.provider_key] = provider
     return provider
 

@@ -17,11 +17,13 @@
         <div class="rounded-2xl border border-line bg-panel p-6 space-y-4">
             <div class="flex flex-wrap items-center gap-2.5">
                 <button id="test-btn" type="button" class="text-[13px] font-medium px-3.5 py-2 rounded-lg border border-line text-text hover:border-faint transition-colors">Test connection</button>
-                <button id="find-btn" type="button" class="text-[13px] font-medium px-3.5 py-2 rounded-lg border border-line text-text hover:border-faint transition-colors">Find chat ID</button>
+                {% if supports_discovery %}<button id="find-btn" type="button" class="text-[13px] font-medium px-3.5 py-2 rounded-lg border border-line text-text hover:border-faint transition-colors">Find chat ID</button>{% endif %}
                 <span id="tools-status" class="text-sm text-muted"></span>
             </div>
+            {% if supports_discovery %}
             <div id="chat-results" class="hidden space-y-2"></div>
             <p class="text-xs text-faint">"Find chat ID" reads recent messages your bot received (message the bot first). It works only before inbound webhooks are enabled.</p>
+            {% endif %}
         </div>
 
         <form method="post" autocomplete="off" class="rounded-2xl border border-line bg-panel p-6 space-y-5">
@@ -41,12 +43,15 @@
                 <p class="mt-1.5 text-xs text-faint">Provider can't be changed after creation.</p>
             </div>
 
+            {# The provider's own credential fields (ChannelProvider.credential_fields) #}
+            {% for field in form.credential_bound_fields %}
             <div>
-                <label for="id_bot_token" class="block text-[13px] font-medium text-text mb-1.5">{{ form.bot_token.label }}</label>
-                {{ form.bot_token }}
-                <p class="mt-1.5 text-xs text-faint">Leave blank to keep the current token.</p>
-                {% include "cpanel/_field_errors.html" with field=form.bot_token %}
+                <label for="{{ field.id_for_label }}" class="block text-[13px] font-medium text-text mb-1.5">{{ field.label }}</label>
+                {{ field }}
+                {% if field.field.widget.input_type == "password" %}<p class="mt-1.5 text-xs text-faint">Leave blank to keep the current {{ field.label|lower }}.</p>{% elif field.help_text %}<p class="mt-1.5 text-xs text-faint">{{ field.help_text }}</p>{% endif %}
+                {% include "cpanel/_field_errors.html" with field=field %}
             </div>
+            {% endfor %}
 
             <div>
                 <label for="id_default_target" class="block text-[13px] font-medium text-text mb-1.5">{{ form.default_target.label }}</label>
@@ -224,7 +229,8 @@
             .catch((e) => setStatus("Test failed: " + e, "err"));
     });
 
-    document.getElementById("find-btn").addEventListener("click", function () {
+    const findBtn = document.getElementById("find-btn");
+    if (findBtn) findBtn.addEventListener("click", function () {
         setStatus("Looking for recent chats…", "muted");
         resultsEl.classList.add("hidden");
         resultsEl.innerHTML = "";

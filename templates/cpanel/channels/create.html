@@ -29,12 +29,15 @@
             {% include "cpanel/_field_errors.html" with field=form.provider %}
         </div>
 
+        {# The provider's own credential fields (ChannelProvider.credential_fields) #}
+        {% for field in form.credential_bound_fields %}
         <div>
-            <label for="id_bot_token" class="block text-[13px] font-medium text-text mb-1.5">{{ form.bot_token.label }}</label>
-            {{ form.bot_token }}
-            {% if form.bot_token.help_text %}<p class="mt-1.5 text-xs text-faint">{{ form.bot_token.help_text }}</p>{% endif %}
-            {% include "cpanel/_field_errors.html" with field=form.bot_token %}
+            <label for="{{ field.id_for_label }}" class="block text-[13px] font-medium text-text mb-1.5">{{ field.label }}</label>
+            {{ field }}
+            {% if field.help_text %}<p class="mt-1.5 text-xs text-faint">{{ field.help_text }}</p>{% endif %}
+            {% include "cpanel/_field_errors.html" with field=field %}
         </div>
+        {% endfor %}
 
         <div>
             <label for="id_default_target" class="block text-[13px] font-medium text-text mb-1.5">{{ form.default_target.label }}</label>
@@ -63,16 +66,24 @@
 
     {# Help (side panel on desktop, under the form on phones) #}
     <aside class="space-y-5">
-        <div class="rounded-2xl border border-line bg-panel p-5 flex items-start gap-3">
-                <svg class="w-5 h-5 text-info flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                <div class="text-sm text-muted">
-                    <p class="font-medium text-text">Telegram setup</p>
-                    <ul class="mt-2 space-y-1 list-disc list-inside text-xs">
-                        <li>Create a bot with <span class="font-mono text-text">@BotFather</span> and paste its token here.</li>
-                        <li>After saving, message your bot, then use <span class="text-text">Find chat ID</span> to set the default chat.</li>
-                    </ul>
-                </div>
-            </div>
+        {% if setup_template %}{% include setup_template %}{% endif %}
     </aside>
 </div>
+{% if provider_count > 1 %}
+<script>
+(function () {
+    // The credential fields belong to the chosen provider: reload the form for
+    // another one (without JS, submitting re-renders it with that provider's fields).
+    const select = document.getElementById("id_provider");
+    const current = "{{ form.provider_key|escapejs }}";
+    select.addEventListener("change", function () {
+        if (select.value === current) { return; }
+        const params = new URLSearchParams({ provider: select.value });
+        const name = document.getElementById("id_name").value;
+        if (name) { params.set("name", name); }
+        window.location.search = params.toString();
+    });
+})();
+</script>
+{% endif %}
 {% endblock %}

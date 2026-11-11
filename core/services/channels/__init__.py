@@ -8,6 +8,7 @@ Importing this package registers all built-in providers, so callers only need
 from .base import (
     ChannelError,
     ChannelProvider,
+    CredentialField,
     InboundMessage,
     OutboundMessage,
     get_provider,
@@ -23,6 +24,7 @@ from . import handlers  # noqa: F401  (handler registration)
 __all__ = [
     "ChannelError",
     "ChannelProvider",
+    "CredentialField",
     "InboundMessage",
     "OutboundMessage",
     "get_provider",

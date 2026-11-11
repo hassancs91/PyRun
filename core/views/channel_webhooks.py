@@ -4,8 +4,12 @@ Public inbound webhook for Channels (Phase 2).
 Mounted at /channels/<token>/ (no auth — external chat services POST here). The
 flow is deliberately front-loaded into the web process so we can fast-ack:
 
-  IP rate-limit → resolve channel → verify signature → dedup → parse →
-  per-sender rate-limit → approval inbox → worker-heartbeat preflight → enqueue → 200
+  IP rate-limit → resolve channel → provider URL-verification challenge →
+  verify signature → dedup → parse → per-sender rate-limit → approval inbox →
+  worker-heartbeat preflight → enqueue → 200
+
+GET is accepted only for a provider's challenge (WhatsApp's ``hub.challenge``);
+any other GET gets 405, as before.
 
 All real handler work happens in the django-q worker (dispatch_inbound). Requires
 a publicly reachable HTTPS instance — inbound does not work on localhost.
@@ -15,7 +19,7 @@ import json
 import logging
 
 from django.core.cache import cache
-from django.http import HttpRequest, JsonResponse
+from django.http import HttpRequest, HttpResponse, HttpResponseNotAllowed, JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
@@ -35,8 +39,8 @@ _REPLY_THROTTLE_TTL = 300
 
 
 @csrf_exempt
-@require_http_methods(["POST"])
-def channel_webhook_view(request: HttpRequest, token: str) -> JsonResponse:
+@require_http_methods(["GET", "POST"])
+def channel_webhook_view(request: HttpRequest, token: str) -> HttpResponse:
     # Coarse per-IP rate limit (cheap abuse brake before any work). client_ip honors
     # RATELIMIT_TRUSTED_PROXY_DEPTH so a proxy deploy doesn't collapse every caller
     # onto the proxy IP.
@@ -51,6 +55,19 @@ def channel_webhook_view(request: HttpRequest, token: str) -> JsonResponse:
         return JsonResponse({"error": "not found"}, status=404)
 
     provider = get_provider(channel.provider)
+
+    # URL verification handshake (WhatsApp GET hub.challenge, Slack
+    # url_verification): answered before the signature check, as the
+    # provider proves itself with the handshake's own token.
+    try:
+        challenge = provider.handle_challenge(channel, request)
+    except Exception:
+        logger.exception("Inbound challenge failed for channel %s", channel.id)
+        return JsonResponse({"error": "bad request"}, status=400)
+    if challenge is not None:
+        return challenge
+    if request.method != "POST":
+        return HttpResponseNotAllowed(["POST"])
 
     # Signature verification is the real authenticity gate.
     if not provider.verify_inbound(channel, request):

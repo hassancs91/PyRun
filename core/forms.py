@@ -3520,11 +3520,17 @@ class S3BackupScheduleForm(forms.Form):
 
 
 class ChannelForm(forms.Form):
-    """Create / edit a chat Channel (Channels subsystem; Phase 1 = Telegram).
+    """Create / edit a chat Channel (Channels subsystem).
 
     A plain Form (like StorageConnectionForm) because credentials are encrypted +
     fingerprinted on save. Provider choices are limited to *registered* providers,
     so the picker grows automatically as providers are added.
+
+    The credential fields come from the provider (``credential_fields``): one
+    form field per credential, named after it, all stored in the encrypted
+    blob. A bound form builds them for the provider it was posted with; an
+    unbound Add form for ``provider`` (the ``?provider=`` choice), else the
+    first registered one; an edit form for the channel's own provider.
     """
 
     name = forms.CharField(
@@ -3538,25 +3544,9 @@ class ChannelForm(forms.Form):
         choices=[],  # populated in __init__ from registered providers
         widget=forms.Select(attrs={"class": INPUT_CLASS}),
     )
-    bot_token = forms.CharField(
-        required=False,
-        widget=forms.PasswordInput(
-            attrs={
-                "class": INPUT_CLASS + " font-mono",
-                "placeholder": "Paste the token from @BotFather",
-                "autocomplete": "new-password",
-            }
-        ),
-        label="Bot token",
-        help_text="Telegram: the token from @BotFather (e.g. 123456:ABC-DEF...).",
-    )
     default_target = forms.CharField(
         required=False,
-        widget=forms.TextInput(
-            attrs={"class": INPUT_CLASS + " font-mono", "placeholder": "e.g. 123456789"}
-        ),
-        label="Default chat ID",
-        help_text="Where notifications are sent. Use 'Find chat ID' after saving.",
+        widget=forms.TextInput(attrs={"class": INPUT_CLASS + " font-mono"}),
     )
     daily_send_cap = forms.IntegerField(
         required=False,
@@ -3574,13 +3564,13 @@ class ChannelForm(forms.Form):
         widget=forms.CheckboxInput(attrs={"class": CHECK_CLASS}),
     )
 
-    def __init__(self, *args, instance=None, workspace=None, **kwargs):
+    def __init__(self, *args, instance=None, workspace=None, provider=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.instance = instance
         self.workspace = workspace
 
         from core.models import Channel
-        from core.services.channels import list_providers
+        from core.services.channels import get_provider, list_providers
 
         registered = set(list_providers())
         self.fields["provider"].choices = [
@@ -3588,10 +3578,35 @@ class ChannelForm(forms.Form):
             for value, label in Channel.Provider.choices
             if value in registered
         ]
+        keys = [value for value, _ in self.fields["provider"].choices]
+
+        # Which provider's credential fields this form carries.
+        if instance is not None:
+            key = instance.provider
+        elif self.is_bound and self.data.get("provider") in keys:
+            key = self.data.get("provider")
+        elif provider in keys:
+            key = provider
+        else:
+            key = keys[0] if keys else ""
+        self.provider_key = key
+        self.provider_obj = get_provider(key) if key in registered else None
+        self.credential_specs = tuple(getattr(self.provider_obj, "credential_fields", ()))
+        if instance is None:
+            self.fields["provider"].initial = key
+
+        stored = self._stored_credentials()
+        for spec in self.credential_specs:
+            self.fields[spec.name] = self._credential_field(spec, stored, editing=instance is not None)
+
+        target = self.fields["default_target"]
+        target.label = getattr(self.provider_obj, "default_target_label", "Default recipient")
+        target.help_text = getattr(self.provider_obj, "default_target_help", "")
+        placeholder = getattr(self.provider_obj, "default_target_placeholder", "")
+        if placeholder:
+            target.widget.attrs["placeholder"] = placeholder
 
         if instance is not None:
-            # Only an existing channel has a stored token to keep (U50).
-            self.fields["bot_token"].widget.attrs["placeholder"] = "Leave blank to keep current"
             self.fields["name"].initial = instance.name
             self.fields["provider"].initial = instance.provider
             self.fields["default_target"].initial = instance.default_target
@@ -3599,6 +3614,53 @@ class ChannelForm(forms.Form):
             self.fields["enabled"].initial = instance.enabled
             # Provider is fixed on edit — changing it would orphan the credentials.
             self.fields["provider"].disabled = True
+
+    def _stored_credentials(self) -> dict:
+        """The edited channel's stored credentials ({} on create).
+
+        A blob that can't be decrypted (ENCRYPTION_KEY changed) must not break
+        the page where the credentials are entered again: it reads as empty and
+        ``stored_unreadable`` makes every required secret required again.
+        """
+        self.stored_unreadable = False
+        if self.instance is None:
+            return {}
+        import logging
+
+        from core.services.encryption_service import EncryptionError
+
+        try:
+            return self.instance.get_credentials()
+        except (EncryptionError, ValueError):
+            logging.getLogger(__name__).warning("Channel %s: stored credentials can't be decrypted", self.instance.pk)
+            self.stored_unreadable = True
+            return {}
+
+    @staticmethod
+    def _credential_field(spec, stored, *, editing):
+        if spec.secret:
+            # Only an existing channel has a stored secret to keep (U50).
+            placeholder = "Leave blank to keep current" if editing else spec.placeholder
+            widget = forms.PasswordInput(
+                attrs={
+                    "class": INPUT_CLASS + " font-mono",
+                    "placeholder": placeholder,
+                    "autocomplete": "new-password",
+                }
+            )
+        else:
+            widget = forms.TextInput(
+                attrs={"class": INPUT_CLASS + " font-mono", "placeholder": spec.placeholder}
+            )
+        field = forms.CharField(required=False, widget=widget, label=spec.label, help_text=spec.help)
+        if editing and not spec.secret:
+            field.initial = stored.get(spec.name, "")
+        return field
+
+    @property
+    def credential_bound_fields(self):
+        """The provider's credential fields, in order (for the templates)."""
+        return [self[spec.name] for spec in self.credential_specs]
 
     def clean_name(self):
         from core.models import Channel
@@ -3613,38 +3675,54 @@ class ChannelForm(forms.Form):
 
     def clean(self):
         cleaned = super().clean()
-        bot_token = (cleaned.get("bot_token") or "").strip()
-
-        # Bot token is required on create, optional on edit (blank = keep current).
-        if self.instance is None and not bot_token:
-            self.add_error("bot_token", "A bot token is required.")
+        if self.provider_obj is None:
             return cleaned
 
-        if bot_token:
-            from core.models import Channel
-            from core.services.channels import get_provider
+        # Merge what was typed over what is stored: a blank secret on edit keeps
+        # the stored one; a non-secret field always takes the typed value.
+        creds = self._stored_credentials()
+        changed = False
+        for spec in self.credential_specs:
+            value = (cleaned.get(spec.name) or "").strip()
+            if spec.secret and not value:
+                if spec.required and self.instance is None:
+                    self.add_error(spec.name, spec.missing_error)
+                elif spec.required and self.stored_unreadable:
+                    self.add_error(
+                        spec.name,
+                        f"The stored {spec.label.lower()} can't be decrypted "
+                        "(was ENCRYPTION_KEY changed?); enter it again.",
+                    )
+                continue
+            if not value and spec.required:
+                self.add_error(spec.name, spec.missing_error)
+                continue
+            if creds.get(spec.name, "") != value:
+                changed = True
+            if value:
+                creds[spec.name] = value
+            else:
+                creds.pop(spec.name, None)
+        self.credentials = creds
+        self.credentials_changed = changed or self.instance is None
+        if self.errors or not self.credentials_changed:
+            return cleaned
 
-            provider_key = self.instance.provider if self.instance else cleaned.get("provider")
-            if provider_key:
-                identity = get_provider(provider_key).identity_for_fingerprint(
-                    {"bot_token": bot_token}
-                )
-                fingerprint = Channel.fingerprint_for(provider_key, identity)
-                if fingerprint:
-                    clash = Channel.objects.filter(creds_fingerprint=fingerprint)
-                    if self.instance is not None:
-                        clash = clash.exclude(pk=self.instance.pk)
-                    if clash.exists():
-                        self.add_error(
-                            "bot_token",
-                            "This bot is already connected as another channel "
-                            "(one bot = one channel).",
-                        )
+        from core.models import Channel
+
+        identity = self.provider_obj.identity_for_fingerprint(creds)
+        fingerprint = Channel.fingerprint_for(self.provider_key, identity)
+        if fingerprint:
+            clash = Channel.objects.filter(creds_fingerprint=fingerprint)
+            if self.instance is not None:
+                clash = clash.exclude(pk=self.instance.pk)
+            if clash.exists():
+                field = self.provider_obj.identity_field or None
+                self.add_error(field, self.provider_obj.duplicate_identity_error)
         return cleaned
 
     def save(self, *, created_by=None):
         from core.models import Channel
-        from core.services.channels import get_provider
 
         instance = self.instance or Channel(
             workspace=self.workspace, created_by=created_by
@@ -3659,11 +3737,9 @@ class ChannelForm(forms.Form):
         config["default_target"] = (self.cleaned_data.get("default_target") or "").strip()
         instance.config = config
 
-        bot_token = (self.cleaned_data.get("bot_token") or "").strip()
-        if bot_token:
-            creds = {"bot_token": bot_token}
-            identity = get_provider(instance.provider).identity_for_fingerprint(creds)
-            instance.set_credentials(creds, identity=identity)
+        if self.credentials_changed:
+            identity = self.provider_obj.identity_for_fingerprint(self.credentials)
+            instance.set_credentials(self.credentials, identity=identity)
 
         instance.save()
         return instance

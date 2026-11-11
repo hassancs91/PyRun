@@ -14,7 +14,14 @@ import requests
 
 from core.net_errors import describe_request_error
 
-from .base import ChannelError, ChannelProvider, InboundMessage, OutboundMessage, register
+from .base import (
+    ChannelError,
+    ChannelProvider,
+    CredentialField,
+    InboundMessage,
+    OutboundMessage,
+    register,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +46,25 @@ def _text(value) -> str:
 class TelegramProvider(ChannelProvider):
     provider_key = "telegram"
     supports_inbound = True
+
+    credential_fields = (
+        CredentialField(
+            name="bot_token",
+            label="Bot token",
+            secret=True,
+            help="Telegram: the token from @BotFather (e.g. 123456:ABC-DEF...).",
+            placeholder="Paste the token from @BotFather",
+            required_error="A bot token is required.",
+        ),
+    )
+    identity_field = "bot_token"
+    duplicate_identity_error = (
+        "This bot is already connected as another channel (one bot = one channel)."
+    )
+    default_target_label = "Default chat ID"
+    default_target_help = "Where notifications are sent. Use 'Find chat ID' after saving."
+    default_target_placeholder = "e.g. 123456789"
+    setup_template = "cpanel/channels/setup/telegram.html"
 
     def identity_for_fingerprint(self, creds: dict) -> str:
         return (creds.get("bot_token") or "").strip()
