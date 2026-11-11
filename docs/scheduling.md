@@ -273,14 +273,15 @@ daylight saving changes: a Sunday 01:00 to 05:00 window in New York is three
 hours long on the day the clocks go forward and five on the day they go
 back. The window's page shows its next occurrence.
 
-Pick what it blocks (scheduled runs, webhook calls and chat messages by
-default):
+Pick what it blocks (scheduled runs, webhook calls, chat messages and
+watchers by default):
 
 | Trigger | Inside the window |
 |---|---|
 | Scheduled runs | skipped; the run is not made up afterwards |
 | Webhook calls | `503` with a `Retry-After` header (seconds until the window ends) and `{"status": "maintenance", "until": ..., "run_id": ...}`; a sender that retries delivers it again after the window |
 | Chat messages | the bot replies that the script isn't started, and until when |
+| Watchers | not checked; new items start runs at the first check after the window ([Watchers](#watchers)) |
 | Manual runs (optional) | Run now, Re-run and plugin buttons show the same message |
 | API runs (optional) | not started: any run with trigger type API that isn't a webhook call or a chat message |
 
@@ -300,6 +301,65 @@ schedules.
 
 Maintenance windows are included in backups. Restoring a backup made before
 they existed leaves the instance's windows as they are.
+
+## Watchers
+
+A watcher starts a script when something new shows up somewhere else: an
+entry in a JSON list behind a URL, an item in an RSS or Atom feed. It checks
+the source on an interval and starts **one run per new item**, with the item
+in the run's [event](run-context.md#the-run-event) (kind `watcher`).
+
+Add one from the script's **Triggers** page (the script page links it under
+Schedule): pick what to watch, fill in its settings, and press **Test the
+source** to see what it finds without saving anything. The workspace's
+watchers are all listed under **Triggers** in the sidebar; a watcher's page
+has **Check now** and an event log of the last 50 events, each linking to its
+run.
+
+| Source | Settings | What counts as new |
+|---|---|---|
+| New entry in a JSON list (HTTP) | URL, list path (dotted, empty = the whole response), id path, newest first, optional since parameter | an entry whose id it hasn't seen |
+| New item in an RSS or Atom feed | feed URL | an item whose id (its `guid` or Atom `id`, else its link) it hasn't seen |
+
+The URL must answer without signing in. For a source that needs a key, a
+schedule plus `pyrunner_integrations.http` and a Connection is the way for now.
+
+**The first check only marks where the source is**: what is already there
+never starts runs. After that, each check starts a run per new item, oldest
+first. **Script inputs from the item** maps the script's declared inputs to
+paths in the event (`{"title": "item.title"}`); without it, read
+`pyrunner_run.event()["item"]` in the script.
+
+**Exactly once.** A watcher remembers the ids of the last 5,000 items that
+started runs, and saves where the source is only after every run of a check
+is queued. An item reported twice, a check cut short or a worker that dies
+mid-check never starts a second run for the same item.
+
+**Limits and failures.**
+
+- **Interval**: at least 60 seconds (default 5 minutes). The checks run on
+  their own one-minute task, apart from the schedules.
+- **Most runs an hour** (default 60): new items past it wait for the next
+  hour; none are lost.
+- A source that doesn't answer within 20 seconds counts as a failed check.
+- After a failed check the watcher waits twice as long each time (the
+  interval doubled per failure, up to an hour). After **10 failures in a row**
+  it turns itself off and its creator gets an email. Fix the cause, then turn
+  it on again: that clears the failures, and the next check is within a minute.
+- Changing what a watcher watches (its source, settings or connection) starts
+  it over: the next check only marks.
+- Each run goes through the script's
+  [concurrency policy](#when-the-script-is-still-running) and retries like any
+  other run. A disabled or archived script's watchers aren't checked.
+- A [maintenance window](#maintenance-windows) that blocks watcher runs (new
+  windows do by default) skips the checks while it is on, without losing
+  anything: new items start runs at the first check after it. **Pause all**
+  stops the watchers too.
+
+Watchers are included in backups with where each source was, so a restored
+watcher doesn't start runs for items it already handled. One whose connection
+didn't come back is restored turned off. API and MCP callers list watchers
+with `watchers.list` (never their settings, which can hold a key in a URL).
 
 ---
 

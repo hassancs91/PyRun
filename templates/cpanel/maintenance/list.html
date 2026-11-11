@@ -15,7 +15,7 @@
 
 {% block page %}
 <div class="rounded-2xl border border-line bg-panel p-6">
-    <p class="text-sm text-muted mb-5">While a window is on, the kinds of trigger it blocks don't start runs: a scheduled run is skipped (it doesn't run later), a webhook call gets <span class="font-mono text-xs">503</span> with <span class="font-mono text-xs">Retry-After</span>, Run now and chat messages get a message, and API runs are not started. Each refused trigger is listed as a skipped run. Runs already going are never stopped.</p>
+    <p class="text-sm text-muted mb-5">While a window is on, the kinds of trigger it blocks don't start runs: a scheduled run is skipped (it doesn't run later), a webhook call gets <span class="font-mono text-xs">503</span> with <span class="font-mono text-xs">Retry-After</span>, Run now and chat messages get a message, and API runs are not started; each of these is listed as a skipped run. Watchers aren't checked: their new items start runs after the window. Runs already going are never stopped.</p>
     <div class="space-y-3">
         {% for w in windows %}
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 bg-panel-hi/40 border border-line-soft rounded-lg">

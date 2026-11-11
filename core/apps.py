@@ -40,6 +40,7 @@ class CoreConfig(AppConfig):
         self._ensure_update_check_schedule()
         self._ensure_resync_schedule()
         self._ensure_housekeeping_schedule()
+        self._ensure_watchers_schedule()
 
     def _register_token_grant_cleanup(self):
         """Delete the brain grants of an API token when the token is deleted.
@@ -190,6 +191,19 @@ class CoreConfig(AppConfig):
                 from core.services.schedule_service import ScheduleService
 
                 ScheduleService.ensure_housekeeping_schedule()
+        except Exception:
+            pass  # Database not ready yet
+
+    def _ensure_watchers_schedule(self):
+        """Ensure the minute task that checks watchers exists."""
+        try:
+            # Only run if database tables exist (not during migrations)
+            from django.db import connection
+
+            if "django_q_schedule" in connection.introspection.table_names():
+                from core.services.schedule_service import ScheduleService
+
+                ScheduleService.ensure_watchers_schedule()
         except Exception:
             pass  # Database not ready yet
 

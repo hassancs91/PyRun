@@ -183,7 +183,7 @@ class OccurrenceTests(TestCase):
         self.assertEqual(o.schedule_display, "Once: Tue 1 Dec 2026, 02:00 to Tue 1 Dec 2026, 04:00 (Asia/Tokyo)")
 
     def test_default_blocks(self):
-        self.assertEqual(W(name="d").blocks, ["scheduled", "webhook", "channel"])
+        self.assertEqual(W(name="d").blocks, ["scheduled", "webhook", "channel", "watcher"])
 
 
 # --------------------------------------------------------------------------- #
@@ -708,7 +708,7 @@ class ConsoleTests(_Fixture, TestCase):
         banner = maintenance.banner(self.ws.id)
         self.assertEqual([w.name for w in banner.windows], ["A"])
         self.assertEqual(banner.until, now + datetime.timedelta(hours=2))
-        self.assertEqual(banner.blocks, "scheduled runs, webhook calls and chat messages")
+        self.assertEqual(banner.blocks, "scheduled runs, webhook calls, chat messages and watcher runs")
 
     def test_settings_and_workspace_list_link_to_the_pages(self):
         self.client.force_login(self.admin)

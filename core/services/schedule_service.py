@@ -25,6 +25,7 @@ BACKUP_SCHEDULE_NAME = "pyrunner-scheduled-backup"
 CLEANUP_SCHEDULE_NAME = "pyrunner-auto-cleanup"
 RESYNC_SCHEDULE_NAME = "pyrunner-schedule-resync"
 HOUSEKEEPING_SCHEDULE_NAME = "pyrunner-housekeeping"
+WATCHERS_SCHEDULE_NAME = "pyrunner-watchers-tick"
 INFRA_SCHEDULE_NAMES = (
     HEARTBEAT_SCHEDULE_NAME,
     UPDATE_SCHEDULE_NAME,
@@ -32,6 +33,7 @@ INFRA_SCHEDULE_NAMES = (
     CLEANUP_SCHEDULE_NAME,
     RESYNC_SCHEDULE_NAME,
     HOUSEKEEPING_SCHEDULE_NAME,
+    WATCHERS_SCHEDULE_NAME,
 )
 
 
@@ -799,6 +801,7 @@ class ScheduleService:
         cls.ensure_update_check_schedule()
         cls.ensure_resync_schedule()
         cls.ensure_housekeeping_schedule()
+        cls.ensure_watchers_schedule()
         BackupScheduleService.sync_schedule()
         if settings.auto_cleanup_enabled:
             RetentionService.enable_auto_cleanup()
@@ -875,6 +878,30 @@ class ScheduleService:
             next_run=timezone.now(),  # Runs on first worker tick, then daily
         )
         logger.info("Created housekeeping schedule")
+        return True
+
+    @classmethod
+    def ensure_watchers_schedule(cls) -> bool:
+        """
+        Ensure the minute task that checks watchers exists
+        (``watchers_tick_task``; its own schedule, never the heartbeat, so a
+        slow source can't delay worker health).
+
+        Returns:
+            bool: True if schedule was created, False if it already exists
+        """
+        if QSchedule.objects.filter(name=WATCHERS_SCHEDULE_NAME).exists():
+            return False
+
+        QSchedule.objects.create(
+            name=WATCHERS_SCHEDULE_NAME,
+            func="core.tasks.watchers_tick_task",
+            schedule_type=QSchedule.MINUTES,
+            minutes=1,
+            repeats=-1,  # Run forever
+            next_run=timezone.now(),
+        )
+        logger.info("Created watchers tick schedule")
         return True
 
     @classmethod

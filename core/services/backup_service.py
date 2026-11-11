@@ -38,6 +38,7 @@ from core.models import (
     User,
     VectorCollection,
     VectorConnection,
+    Watcher,
     Workspace,
     WorkspaceMembership,
 )
@@ -193,6 +194,11 @@ class BackupService:
     # carried encrypted, like secrets) plus each script's ``connection_grants``;
     # a connection carries its app (``oauth_client_id``) and token expiry. A
     # backup without either key leaves this instance's rows of that kind alone.
+    # ``watchers`` (2.5 T31: adapter, config, input map, interval, fire cap,
+    # state, event log and health). A backup with the section replaces the
+    # watchers; one without it has none (they go with their scripts). A
+    # watcher whose connection didn't come back restores turned off, named in
+    # the warnings; a claim in progress (``checking_since``) is never carried.
     BACKUP_VERSION = "1.13.0"
     MAX_BACKUP_SIZE_MB = 100
     # Default cap on a gzip backup's expanded size (F92, zip-bomb guard);
@@ -274,8 +280,104 @@ class BackupService:
         backup_data["maintenance_windows"] = cls._export_maintenance_windows()
         backup_data["oauth_clients"] = cls._export_oauth_clients()
         backup_data["connections"] = cls._export_connections()
+        backup_data["watchers"] = cls._export_watchers()
 
         return backup_data
+
+    @classmethod
+    def _export_watchers(cls) -> List[dict]:
+        """Watchers (2.5 T31), with their state so a restore doesn't re-fire old items."""
+        return [
+            {
+                "id": str(w.id),
+                "workspace_id": str(w.workspace_id),
+                "name": w.name,
+                "script_id": str(w.script_id),
+                "adapter": w.adapter,
+                "connection_id": str(w.connection_id) if w.connection_id else None,
+                "config": w.config,
+                "input_map": w.input_map,
+                "interval_seconds": w.interval_seconds,
+                "fire_cap_per_hour": w.fire_cap_per_hour,
+                "enabled": w.enabled,
+                "state": w.state,
+                "recent_events": w.recent_events,
+                "next_check_at": cls._serialize_datetime(w.next_check_at),
+                "last_checked_at": cls._serialize_datetime(w.last_checked_at),
+                "last_event_at": cls._serialize_datetime(w.last_event_at),
+                "last_error": w.last_error,
+                "error_count": w.error_count,
+                "auto_disabled_at": cls._serialize_datetime(w.auto_disabled_at),
+                "cap_window_start": cls._serialize_datetime(w.cap_window_start),
+                "cap_window_count": w.cap_window_count,
+                "owner_plugin": w.owner_plugin,
+                "owner_key": w.owner_key,
+                "created_by_email": w.created_by.email if w.created_by else None,
+                "created_at": cls._serialize_datetime(w.created_at),
+                "updated_at": cls._serialize_datetime(w.updated_at),
+            }
+            for w in Watcher.objects.select_related("created_by").order_by("created_at")
+        ]
+
+    @classmethod
+    def _import_watchers(cls, rows: List[dict], script_map: dict, user_map: dict) -> Tuple[int, List[str]]:
+        """Replace the watchers with the backup's (after scripts and connections).
+
+        A watcher follows its script (skipped, with a warning, when the script
+        didn't come back) into the script's workspace. Its connection is
+        looked up by id in that workspace; when it's gone, the watcher comes
+        back without one and turned off.
+        """
+        warnings = []
+        Watcher.objects.all().delete()
+        restored = 0
+        for row in rows:
+            script = script_map.get(row.get("script_id"))
+            if script is None:
+                warnings.append(f'Watcher "{row.get("name")}": its script wasn\'t in the backup, so it was left out.')
+                continue
+            enabled = bool(row.get("enabled", True))
+            connection = None
+            if row.get("connection_id"):
+                connection = Connection.objects.filter(
+                    pk=row["connection_id"], workspace_id=script.workspace_id,
+                ).first()
+                if connection is None:
+                    if enabled:
+                        warnings.append(
+                            f'Watcher "{row["name"]}": its connection is gone, so it was turned off. '
+                            "Edit it to pick a connection, then turn it on."
+                        )
+                    enabled = False
+            Watcher.objects.create(
+                id=row["id"],
+                workspace_id=script.workspace_id,
+                name=row["name"],
+                script=script,
+                adapter=row.get("adapter") or "",
+                connection=connection,
+                config=row.get("config") or {},
+                input_map=row.get("input_map") or {},
+                interval_seconds=max(int(row.get("interval_seconds") or Watcher.DEFAULT_INTERVAL_SECONDS),
+                                     Watcher.INTERVAL_MIN_SECONDS),
+                fire_cap_per_hour=int(row.get("fire_cap_per_hour") or Watcher.DEFAULT_FIRE_CAP),
+                enabled=enabled,
+                state=row.get("state"),
+                recent_events=row.get("recent_events") or [],
+                next_check_at=cls._deserialize_datetime(row.get("next_check_at")),
+                last_checked_at=cls._deserialize_datetime(row.get("last_checked_at")),
+                last_event_at=cls._deserialize_datetime(row.get("last_event_at")),
+                last_error=row.get("last_error") or "",
+                error_count=int(row.get("error_count") or 0),
+                auto_disabled_at=cls._deserialize_datetime(row.get("auto_disabled_at")),
+                cap_window_start=cls._deserialize_datetime(row.get("cap_window_start")),
+                cap_window_count=int(row.get("cap_window_count") or 0),
+                owner_plugin=row.get("owner_plugin"),
+                owner_key=row.get("owner_key"),
+                created_by=user_map.get(row.get("created_by_email")),
+            )
+            restored += 1
+        return restored, warnings
 
     @classmethod
     def _export_global_settings(cls) -> dict:
@@ -1440,6 +1542,12 @@ class BackupService:
                     backup_data["maintenance_windows"], ws_map, default_ws
                 )
                 warnings.extend(window_warnings)
+            watchers_restored = None
+            if "watchers" in backup_data:
+                watchers_restored, watcher_warnings = cls._import_watchers(
+                    backup_data["watchers"], script_map, user_map
+                )
+                warnings.extend(watcher_warnings)
 
             # create() can't set auto_now/auto_now_add fields: Django overwrites
             # them, so every row above was stamped with the restore time. Put
@@ -1468,6 +1576,8 @@ class BackupService:
             }
             if maintenance_windows_restored is not None:
                 counts["maintenance_windows"] = maintenance_windows_restored
+            if watchers_restored is not None:
+                counts["watchers"] = watchers_restored
             if connections_restored is not None:
                 counts["connections"] = connections_restored
             if oauth_clients_restored is not None:
@@ -1494,6 +1604,7 @@ class BackupService:
         ("maintenance_windows", MaintenanceWindow),
         ("connections", Connection),
         ("oauth_clients", OAuthClient),
+        ("watchers", Watcher),
     )
 
     @classmethod

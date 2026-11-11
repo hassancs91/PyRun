@@ -248,6 +248,7 @@ from core.views.maintenance import (
     maintenance_toggle_view,
     maintenance_delete_view,
 )
+from core.views import watchers
 
 app_name = "cpanel"
 
@@ -299,6 +300,15 @@ urlpatterns = [
     path("scripts/<uuid:pk>/webhook/disable/", webhook_disable_view, name="webhook_disable"),
     path("scripts/<uuid:pk>/webhook/regenerate/", webhook_regenerate_view, name="webhook_regenerate"),
     path("scripts/<uuid:pk>/webhook/settings/", webhook_settings_view, name="webhook_settings"),
+    # Triggers: a script's triggers and the workspace's watchers
+    path("scripts/<uuid:pk>/triggers/", watchers.script_triggers_view, name="script_triggers"),
+    path("triggers/", watchers.watcher_list_view, name="watcher_list"),
+    path("triggers/new/", watchers.watcher_edit_view, name="watcher_create"),
+    path("triggers/<uuid:watcher_id>/", watchers.watcher_detail_view, name="watcher_detail"),
+    path("triggers/<uuid:watcher_id>/edit/", watchers.watcher_edit_view, name="watcher_edit"),
+    path("triggers/<uuid:watcher_id>/check/", watchers.watcher_check_view, name="watcher_check"),
+    path("triggers/<uuid:watcher_id>/toggle/", watchers.watcher_toggle_view, name="watcher_toggle"),
+    path("triggers/<uuid:watcher_id>/delete/", watchers.watcher_delete_view, name="watcher_delete"),
 
     # Runs
     path("runs/", run_list_view, name="run_list"),

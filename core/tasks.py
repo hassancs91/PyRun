@@ -503,6 +503,25 @@ def daily_housekeeping_task() -> dict:
         return {"success": False, "error": str(e)}
 
 
+def watchers_tick_task() -> dict:
+    """
+    Check every due watcher (2.5 Stage 7). Called every minute by django-q2.
+
+    See ``core.triggers.runner``: claims, maintenance, fire caps, backoff.
+    Nothing is checked while Pause all is on.
+
+    Returns:
+        dict: How many watchers were checked, by outcome.
+    """
+    from core.triggers import runner
+
+    try:
+        return runner.tick()
+    except Exception as e:
+        logger.exception("Watchers tick failed")
+        return {"success": False, "error": str(e)}
+
+
 def check_for_updates_task() -> dict:
     """
     Check GitHub for a newer PyRun release and store the result.

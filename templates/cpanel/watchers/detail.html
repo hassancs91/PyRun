@@ -1,0 +1,95 @@
+{% extends "cpanel/layout.html" %}
+{% load time_tags %}
+
+{% block title %}{{ watcher.name }} - {{ instance_name }}{% endblock %}
+
+{% block breadcrumbs %}
+<a href="{% url 'cpanel:script_list' %}">Scripts</a>
+<a href="{% url 'cpanel:script_detail' pk=watcher.script_id %}">{{ watcher.script.name }}</a>
+<a href="{% url 'cpanel:script_triggers' pk=watcher.script_id %}">Triggers</a>
+<span>{{ watcher.name }}</span>
+{% endblock %}
+{% block heading %}{{ watcher.name }}{% endblock %}
+{% block heading_badges %}
+<span class="inline-flex items-center px-2 py-0.5 text-xs rounded-md {{ watcher.status_class }}">{{ watcher.status }}</span>
+{% include "cpanel/_owner_pill.html" with obj=watcher %}
+{% endblock %}
+{% block subtitle %}{{ watcher.adapter_title }} · starts {{ watcher.script.name }}{% endblock %}
+{% block actions %}
+<form method="post" action="{% url 'cpanel:watcher_check' watcher_id=watcher.pk %}">
+    {% csrf_token %}
+    <button type="submit" class="text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition {% if not watcher.enabled %}opacity-50 cursor-not-allowed{% endif %}" {% if not watcher.enabled %}disabled title="Turn the watcher on first"{% endif %}>Check now</button>
+</form>
+<a href="{% url 'cpanel:watcher_edit' watcher_id=watcher.pk %}" class="text-[13px] px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Edit</a>
+<form method="post" action="{% url 'cpanel:watcher_toggle' watcher_id=watcher.pk %}">
+    {% csrf_token %}
+    <button type="submit" class="text-[13px] px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">{% if watcher.enabled %}Turn off{% else %}Turn on{% endif %}</button>
+</form>
+{% endblock %}
+
+{% block page %}
+{% if watcher.is_auto_disabled %}
+<div class="rounded-2xl border border-fail/30 bg-fail/5 p-4 text-sm text-fail break-words">It failed {{ watcher.error_count }} checks in a row and turned itself off {{ watcher.auto_disabled_at|ago }}. Fix the cause, then turn it on again.</div>
+{% endif %}
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+    <section class="rounded-2xl border border-line bg-panel p-5">
+        <h3 class="eyebrow text-faint mb-4">Settings</h3>
+        <dl class="space-y-2.5 text-sm">
+            <div class="flex justify-between gap-3"><dt class="text-muted">Source</dt><dd class="text-text text-right break-words">{{ watcher.adapter_title }}</dd></div>
+            {% if watcher.connection %}<div class="flex justify-between gap-3"><dt class="text-muted">Connection</dt><dd class="text-text text-right break-words">{{ watcher.connection.name }}</dd></div>{% endif %}
+            <div class="flex justify-between gap-3"><dt class="text-muted">Script</dt><dd class="text-right"><a href="{% url 'cpanel:script_detail' pk=watcher.script_id %}" class="text-info hover:underline break-words">{{ watcher.script.name }}</a></dd></div>
+            <div class="flex justify-between gap-3"><dt class="text-muted">Checks every</dt><dd class="font-mono tnum text-text">{{ watcher.interval_seconds }} s</dd></div>
+            <div class="flex justify-between gap-3"><dt class="text-muted">Most runs an hour</dt><dd class="font-mono tnum text-text">{{ watcher.fire_cap_per_hour }}</dd></div>
+            <div class="flex justify-between gap-3"><dt class="text-muted">Inputs from the item</dt><dd class="font-mono text-xs text-text text-right break-all">{% if watcher.input_map %}{% for name, path in watcher.input_map.items %}{{ name }} ← {{ path }}{% if not forloop.last %}<br>{% endif %}{% endfor %}{% else %}<span class="text-faint">none</span>{% endif %}</dd></div>
+        </dl>
+    </section>
+
+    <section class="rounded-2xl border border-line bg-panel p-5">
+        <h3 class="eyebrow text-faint mb-4">Health</h3>
+        <dl class="space-y-2.5 text-sm">
+            <div class="flex justify-between gap-3"><dt class="text-muted">Last check</dt><dd class="text-text">{% if watcher.last_checked_at %}<span title="{{ watcher.last_checked_at|date:'j M Y, H:i:s T' }}">{{ watcher.last_checked_at|ago }}</span>{% else %}never{% endif %}</dd></div>
+            <div class="flex justify-between gap-3"><dt class="text-muted">Next check</dt><dd class="text-text">{% if not watcher.enabled %}<span class="text-faint">off</span>{% elif watcher.next_check_at %}<span title="{{ watcher.next_check_at|date:'j M Y, H:i:s T' }}">{{ watcher.next_check_at|until }}</span>{% else %}within a minute{% endif %}</dd></div>
+            <div class="flex justify-between gap-3"><dt class="text-muted">Last event</dt><dd class="text-text">{% if watcher.last_event_at %}{{ watcher.last_event_at|ago }}{% else %}none yet{% endif %}</dd></div>
+            <div class="flex justify-between gap-3"><dt class="text-muted">Failures in a row</dt><dd class="font-mono tnum {% if watcher.error_count %}text-warn{% else %}text-text{% endif %}">{{ watcher.error_count }}</dd></div>
+            {% if watcher.last_error %}<div><dt class="text-muted">Last error</dt><dd class="mt-1 text-xs text-fail break-words">{{ watcher.last_error }}</dd></div>{% endif %}
+        </dl>
+    </section>
+</div>
+
+<section class="rounded-2xl border border-line bg-panel overflow-hidden" id="watcher-events">
+    <div class="px-6 py-4 border-b border-line-soft">
+        <h2 class="text-sm font-semibold">Event log</h2>
+        <p class="text-xs text-faint mt-0.5">The last {{ event_log_max }} events that started a run, newest first.</p>
+    </div>
+    {% if events %}
+    <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+        <thead><tr class="text-left">
+            <th class="px-6 py-3 eyebrow text-faint font-normal">Event</th>
+            <th class="px-6 py-3 eyebrow text-faint font-normal">Seen</th>
+            <th class="px-6 py-3 eyebrow text-faint font-normal">Run</th>
+        </tr></thead>
+        <tbody class="divide-y divide-line-soft">
+            {% for e in events %}
+            <tr>
+                <td class="px-6 py-3 font-mono text-xs text-text break-all">{{ e.id|truncatechars:80 }}</td>
+                <td class="px-6 py-3 text-muted whitespace-nowrap">{% if e.at %}<span title="{{ e.at|date:'j M Y, H:i:s T' }}">{{ e.at|ago }}</span>{% else %}—{% endif %}</td>
+                <td class="px-6 py-3">{% if e.run %}<a href="{% url 'cpanel:run_detail' pk=e.run.pk %}" class="inline-flex flex-wrap items-center gap-1 hover:opacity-80" title="View run">{% include "cpanel/runs/_status_badge.html" with run=e.run wrap_chip=True %}</a>{% else %}<span class="text-xs text-faint">deleted</span>{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="px-6 py-5 text-sm text-faint">No events yet.{% if watcher.state is None %} The first check marks where the source is; new items after it start runs.{% endif %}</p>
+    {% endif %}
+</section>
+
+<form method="post" action="{% url 'cpanel:watcher_delete' watcher_id=watcher.pk %}" class="rounded-2xl border border-fail/30 bg-panel p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3" onsubmit="return confirm('Delete this watcher?');">
+    {% csrf_token %}
+    {% if watcher.owner_plugin and user.is_superuser %}<input type="hidden" name="force" value="1">{% endif %}
+    <p class="text-sm text-muted">Delete the watcher. The runs it started stay.{% if watcher.owner_plugin %} The "{{ watcher.owner_plugin }}" plugin manages it{% if user.is_superuser %}: deleting it here may break the plugin{% else %}: remove it from the plugin's page{% endif %}.{% endif %}</p>
+    <button type="submit" class="text-[13px] font-medium px-3.5 py-2 rounded-lg border border-fail/40 text-fail hover:bg-fail/10 transition">Delete watcher</button>
+</form>
+{% endblock %}

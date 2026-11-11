@@ -38,6 +38,7 @@ class Run(models.Model):
         MANUAL = "manual", "Manual"
         SCHEDULED = "scheduled", "Scheduled"
         API = "api", "API"
+        WATCHER = "watcher", "Watcher"
 
     # Why a CANCELLED run was cancelled, when the platform did it rather than
     # someone pressing Stop. Blank = an ordinary cancel.

@@ -1,0 +1,28 @@
+{% comment %}
+One watcher in a list. Expects `w` (annotated by core.views.watchers._annotate)
+and `next` (the page to come back to after Check now / On / Off). With
+`show_script`, the row names the script it starts.
+{% endcomment %}{% load time_tags %}
+<div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 p-4 bg-panel-hi/40 border border-line-soft rounded-lg">
+    <div class="min-w-0">
+        <p class="text-text font-medium break-words">
+            <a href="{% url 'cpanel:watcher_detail' watcher_id=w.pk %}" class="hover:underline">{{ w.name }}</a>
+            <span class="ml-1 px-2 py-0.5 text-xs rounded-md {{ w.status_class }}">{{ w.status }}</span>
+            {% include "cpanel/_owner_pill.html" with obj=w %}
+        </p>
+        <p class="text-sm text-muted break-words">{{ w.adapter_title }}{% if show_script %} · starts <a href="{% url 'cpanel:script_triggers' pk=w.script_id %}" class="text-info hover:underline">{{ w.script.name }}</a>{% endif %}{% if w.connection %} · as {{ w.connection.name }}{% endif %} · every {{ w.interval_seconds }} s</p>
+        <p class="text-xs text-faint break-words">Last check: {% if w.last_checked_at %}{{ w.last_checked_at|ago }}{% else %}never{% endif %} · Last event: {% if w.last_event_at %}{{ w.last_event_at|ago }}{% else %}none yet{% endif %}</p>
+        {% if w.last_error %}<p class="text-xs text-fail break-words mt-0.5">{{ w.last_error|truncatechars:240 }}</p>{% endif %}
+    </div>
+    <div class="flex flex-wrap items-center gap-2 flex-shrink-0">
+        <form method="post" action="{% url 'cpanel:watcher_check' watcher_id=w.pk %}">
+            {% csrf_token %}<input type="hidden" name="next" value="{{ next }}">
+            <button type="submit" class="text-[13px] px-3 py-1.5 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors" {% if not w.enabled %}disabled title="Turn the watcher on first"{% endif %}>Check now</button>
+        </form>
+        <a href="{% url 'cpanel:watcher_edit' watcher_id=w.pk %}" class="text-[13px] px-3 py-1.5 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Edit</a>
+        <form method="post" action="{% url 'cpanel:watcher_toggle' watcher_id=w.pk %}">
+            {% csrf_token %}<input type="hidden" name="next" value="{{ next }}">
+            <button type="submit" class="text-[13px] px-3 py-1.5 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">{% if w.enabled %}Turn off{% else %}Turn on{% endif %}</button>
+        </form>
+    </div>
+</div>

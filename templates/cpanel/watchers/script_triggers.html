@@ -1,0 +1,78 @@
+{% extends "cpanel/layout.html" %}
+{% load time_tags %}
+
+{% block title %}Triggers · {{ script.name }} - {{ instance_name }}{% endblock %}
+
+{% block breadcrumbs %}
+<a href="{% url 'cpanel:script_list' %}">Scripts</a>
+<a href="{% url 'cpanel:script_detail' pk=script.pk %}">{{ script.name }}</a>
+<span>Triggers</span>
+{% endblock %}
+{% block heading %}Triggers{% endblock %}
+{% block subtitle %}Everything that starts {{ script.name }}: its schedule, its webhook, its watchers and the chat channels that run it.{% endblock %}
+{% block actions %}
+<a href="{% url 'cpanel:watcher_create' %}?script={{ script.pk }}" class="text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">Add a watcher</a>
+{% endblock %}
+
+{% block page %}
+{% if not script.can_run %}
+<div class="rounded-2xl border border-warn/30 bg-warn/5 p-4 text-sm text-warn">The script is {% if script.is_archived %}archived{% else %}disabled{% endif %}: none of these start it until it can run again. Its watchers aren't checked meanwhile.</div>
+{% endif %}
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+    {# Schedule #}
+    <section class="rounded-2xl border border-line bg-panel p-5" id="trigger-schedule">
+        <div class="flex items-center justify-between gap-3 mb-3">
+            <h3 class="text-sm font-semibold">Schedule</h3>
+            {% if schedule and schedule.run_mode != 'manual' %}
+            {% if not schedule.is_active %}<span class="text-xs px-2 py-0.5 rounded-md bg-warn/10 text-warn">Paused</span>{% elif schedules_globally_paused %}<span class="text-xs px-2 py-0.5 rounded-md bg-warn/10 text-warn">Held: all schedules paused</span>{% else %}<span class="text-xs px-2 py-0.5 rounded-md bg-ok/10 text-ok">On</span>{% endif %}
+            {% else %}<span class="text-xs px-2 py-0.5 rounded-md bg-panel-hi text-muted">None</span>{% endif %}
+        </div>
+        <p class="text-sm text-text">{% if schedule %}{{ schedule.schedule_display }}{% else %}Manual{% endif %}</p>
+        {% if schedule.next_run and schedule.is_active %}<p class="text-xs text-faint mt-1">Next run: {{ schedule.next_run|in_tz:schedule.timezone }}</p>{% endif %}
+        <p class="mt-3 text-xs"><a href="{% url 'cpanel:script_edit' pk=script.pk %}" class="text-info hover:underline">Change the schedule</a> · <a href="{% url 'cpanel:schedule_history' pk=script.pk %}" class="text-info hover:underline">Schedule history</a></p>
+    </section>
+
+    {# Webhook #}
+    <section class="rounded-2xl border border-line bg-panel p-5" id="trigger-webhook">
+        <div class="flex items-center justify-between gap-3 mb-3">
+            <h3 class="text-sm font-semibold">Webhook</h3>
+            {% if script.has_webhook %}<span class="text-xs px-2 py-0.5 rounded-md bg-ok/10 text-ok">On</span>{% else %}<span class="text-xs px-2 py-0.5 rounded-md bg-panel-hi text-muted">Off</span>{% endif %}
+        </div>
+        <p class="text-sm text-text">{% if script.has_webhook %}A call to the script's webhook URL starts a run ({{ script.get_webhook_mode_display|lower }}).{% else %}No webhook URL. Turn it on from the script's page.{% endif %}</p>
+        <p class="mt-3 text-xs"><a href="{% url 'cpanel:script_detail' pk=script.pk %}#webhook-settings-summary" class="text-info hover:underline">Webhook URL and calls</a>{% if script.has_webhook %} · <a href="{% url 'cpanel:webhook_settings' pk=script.pk %}" class="text-info hover:underline">Webhook settings</a>{% endif %}</p>
+    </section>
+</div>
+
+{# Watchers #}
+<section class="rounded-2xl border border-line bg-panel p-6" id="trigger-watchers">
+    <div class="flex items-center justify-between gap-3 mb-1">
+        <h3 class="text-base font-semibold text-text">Watchers</h3>
+        <a href="{% url 'cpanel:watcher_create' %}?script={{ script.pk }}" class="text-xs text-info hover:underline">Add a watcher</a>
+    </div>
+    <p class="text-sm text-muted mb-4">A watcher checks a source every few minutes and starts one run per new item, with the item in the run's event. Its first check only marks where the source is.</p>
+    <div class="space-y-3">
+        {% for w in watchers %}
+        {% include "cpanel/watchers/_row.html" with next=request.get_full_path %}
+        {% empty %}
+        <p class="text-sm text-faint">No watchers. Available sources: {% for a in adapters %}{{ a.title }}{% if not forloop.last %}; {% endif %}{% endfor %}.</p>
+        {% endfor %}
+    </div>
+</section>
+
+{# Channels #}
+<section class="rounded-2xl border border-line bg-panel p-6" id="trigger-channels">
+    <h3 class="text-base font-semibold text-text mb-1">Chat channels</h3>
+    <p class="text-sm text-muted mb-4">Messages sent to these channels start a run of this script.</p>
+    <div class="space-y-2">
+        {% for ch in channels %}
+        <div class="flex flex-wrap items-center justify-between gap-2 p-3 bg-panel-hi/40 border border-line-soft rounded-lg text-sm">
+            <span class="text-text break-words">{{ ch.name }} <span class="text-faint">· {{ ch.get_provider_display }}</span></span>
+            {% if ch.inbound_enabled %}<span class="text-xs px-2 py-0.5 rounded-md bg-ok/10 text-ok">Receiving</span>{% else %}<span class="text-xs px-2 py-0.5 rounded-md bg-panel-hi text-muted">Inbound off</span>{% endif %}
+        </div>
+        {% empty %}
+        <p class="text-sm text-faint">No channel runs this script. A channel's inbound settings pick the script its messages run (<a href="{% url 'cpanel:channel_list' %}" class="text-info hover:underline">Channels</a>).</p>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

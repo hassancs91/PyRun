@@ -50,8 +50,9 @@ class MaintenanceWindow(models.Model):
         CHANNEL = "channel", "Chat messages"
         MANUAL = "manual", "Manual runs"
         API = "api", "API runs"
+        WATCHER = "watcher", "Watcher runs"
 
-    DEFAULT_BLOCKS = [Block.SCHEDULED, Block.WEBHOOK, Block.CHANNEL]
+    DEFAULT_BLOCKS = [Block.SCHEDULED, Block.WEBHOOK, Block.CHANNEL, Block.WATCHER]
     # Each class mid-sentence ("blocks scheduled runs until ...").
     BLOCK_PHRASES = {
         Block.SCHEDULED: "scheduled runs",
@@ -59,6 +60,7 @@ class MaintenanceWindow(models.Model):
         Block.CHANNEL: "chat messages",
         Block.MANUAL: "manual runs",
         Block.API: "API runs",
+        Block.WATCHER: "watcher runs",
     }
     DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 

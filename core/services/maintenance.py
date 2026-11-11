@@ -14,6 +14,9 @@ does with that outcome:
 - a webhook call: 503 with ``Retry-After`` (seconds until the window ends);
 - Run now / Re-run, a chat message, a plugin: a message saying so;
 - a retry coming due: dropped; the failed attempt before it notifies.
+- a watcher: its check is skipped before the source is asked, so its
+  cursor stays where it was and the new items start runs after the window
+  (``core.triggers.runner``).
 
 Runs already going are never touched, and a run held by the Queue
 concurrency policy was admitted before the window, so it still starts when
@@ -40,8 +43,9 @@ _CLASS_FOR_KIND = {
     "webhook": "webhook",
     "channel": "channel",
     "api": "api",
+    "watcher": "watcher",
 }
-_CLASS_FOR_TRIGGER = {"manual": "manual", "scheduled": "scheduled", "api": "api"}
+_CLASS_FOR_TRIGGER = {"manual": "manual", "scheduled": "scheduled", "api": "api", "watcher": "watcher"}
 
 # Back-to-back windows: "until" follows the chain at most this many times.
 _MAX_CHAIN = 10

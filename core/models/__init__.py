@@ -34,6 +34,7 @@ from .brain import Brain, BrainBlob, BrainRevision, BrainEntity, BrainGrant, Bra
 from .ratelimit import RateLimitCounter
 from .maintenance import MaintenanceWindow
 from .connection import Connection, ConnectionGrant, OAuthClient, RunMask
+from .watcher import Watcher
 
 __all__ = [
     "User",
@@ -43,6 +44,7 @@ __all__ = [
     "Workspace",
     "WorkspaceMembership",
     "MaintenanceWindow",
+    "Watcher",
     "Environment",
     "Script",
     "Run",

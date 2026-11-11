@@ -1,0 +1,103 @@
+{% extends "cpanel/layout.html" %}
+
+{% block title %}{% if watcher %}{{ watcher.name }}{% else %}New watcher{% endif %} - {{ instance_name }}{% endblock %}
+
+{% block breadcrumbs %}
+{% if script %}<a href="{% url 'cpanel:script_list' %}">Scripts</a>
+<a href="{% url 'cpanel:script_detail' pk=script.pk %}">{{ script.name }}</a>
+<a href="{% url 'cpanel:script_triggers' pk=script.pk %}">Triggers</a>{% else %}<a href="{% url 'cpanel:watcher_list' %}">Triggers</a>{% endif %}
+<span>{% if watcher %}Edit{% else %}New watcher{% endif %}</span>
+{% endblock %}
+{% block heading %}{% if watcher %}{{ watcher.name }}{% else %}New watcher{% endif %}{% endblock %}
+{% block subtitle %}{{ adapter.title }}. {{ adapter.description }}{% endblock %}
+
+{% block page %}
+{% if adapter_changed %}
+<div class="rounded-2xl border border-warn/30 bg-warn/5 p-4 text-sm text-warn">Saving switches this watcher to a new source. Its state starts over: the next check only marks where the source is.</div>
+{% endif %}
+
+{% if test_result %}
+<div class="rounded-2xl border {% if test_result.ok %}border-ok/30 bg-ok/5{% else %}border-fail/30 bg-fail/5{% endif %} p-5" id="watcher-test-result">
+    <p class="text-sm {% if test_result.ok %}text-ok{% else %}text-fail{% endif %} break-words">{% if test_result.ok %}Test: {% else %}Test failed: {% endif %}{{ test_result.message }}</p>
+    {% for item in test_result.items %}
+    <pre class="mt-3 font-mono text-xs text-text bg-ink rounded-lg p-3 max-h-48 overflow-auto whitespace-pre-wrap break-words">{{ item }}</pre>
+    {% endfor %}
+    {% if test_result.ok %}<p class="mt-2 text-xs text-faint">Nothing was saved and no run started.</p>{% endif %}
+</div>
+{% endif %}
+
+<form method="post" action="{{ request.get_full_path }}" class="rounded-2xl border border-line bg-panel p-6 space-y-5">
+    {% csrf_token %}
+    {% include "cpanel/_form_errors.html" %}
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+            <label for="{{ form.name.id_for_label }}" class="block text-sm font-medium text-text mb-1.5">Name</label>
+            {{ form.name }}
+            {% include "cpanel/_field_errors.html" with field=form.name %}
+        </div>
+        <div>
+            <label for="{{ form.script.id_for_label }}" class="block text-sm font-medium text-text mb-1.5">Script</label>
+            {{ form.script }}
+            <p class="text-xs text-faint mt-1">{{ form.script.help_text }}</p>
+            {% include "cpanel/_field_errors.html" with field=form.script %}
+        </div>
+    </div>
+
+    <fieldset class="space-y-4 border-t border-line-soft pt-5">
+        <legend class="text-sm font-semibold text-text">Source <a href="{% if watcher %}{% url 'cpanel:watcher_edit' watcher_id=watcher.pk %}?adapter={% else %}{% url 'cpanel:watcher_create' %}?adapter={% if script %}&amp;script={{ script.pk }}{% endif %}{% endif %}" class="ml-2 text-xs font-normal text-info hover:underline">change</a></legend>
+        {% if form.connection %}
+        <div>
+            <label for="{{ form.connection.id_for_label }}" class="block text-sm font-medium text-text mb-1.5">Connection</label>
+            {{ form.connection }}
+            <p class="text-xs text-faint mt-1">{{ form.connection.help_text }}</p>
+            {% include "cpanel/_field_errors.html" with field=form.connection %}
+        </div>
+        {% endif %}
+        {% for field in form.config_fields %}
+        <div>
+            {% if field.widget_type == "checkbox" %}
+            <label class="flex items-center gap-2 text-sm text-text">{{ field }} {{ field.label }}</label>
+            {% else %}
+            <label for="{{ field.id_for_label }}" class="block text-sm font-medium text-text mb-1.5">{{ field.label }}{% if field.field.required %} <span class="text-fail">*</span>{% endif %}</label>
+            {{ field }}
+            {% endif %}
+            {% if field.help_text %}<p class="text-xs text-faint mt-1">{{ field.help_text }}</p>{% endif %}
+            {% include "cpanel/_field_errors.html" with field=field %}
+        </div>
+        {% endfor %}
+    </fieldset>
+
+    <fieldset class="space-y-4 border-t border-line-soft pt-5">
+        <legend class="text-sm font-semibold text-text">When and how</legend>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+                <label for="{{ form.interval_seconds.id_for_label }}" class="block text-sm font-medium text-text mb-1.5">{{ form.interval_seconds.label }}</label>
+                {{ form.interval_seconds }}
+                <p class="text-xs text-faint mt-1">{{ form.interval_seconds.help_text }}</p>
+                {% include "cpanel/_field_errors.html" with field=form.interval_seconds %}
+            </div>
+            <div>
+                <label for="{{ form.fire_cap_per_hour.id_for_label }}" class="block text-sm font-medium text-text mb-1.5">{{ form.fire_cap_per_hour.label }}</label>
+                {{ form.fire_cap_per_hour }}
+                <p class="text-xs text-faint mt-1">{{ form.fire_cap_per_hour.help_text }}</p>
+                {% include "cpanel/_field_errors.html" with field=form.fire_cap_per_hour %}
+            </div>
+        </div>
+        <div>
+            <label for="{{ form.input_map.id_for_label }}" class="block text-sm font-medium text-text mb-1.5">{{ form.input_map.label }}</label>
+            {{ form.input_map }}
+            <p class="text-xs text-faint mt-1">{{ form.input_map.help_text }}</p>
+            {% include "cpanel/_field_errors.html" with field=form.input_map %}
+        </div>
+        <label class="flex items-center gap-2 text-sm text-text">{{ form.enabled }} {{ form.enabled.label }}</label>
+    </fieldset>
+
+    <div class="flex flex-wrap items-center gap-2.5 pt-2">
+        <button type="submit" name="action" value="save" class="text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">Save</button>
+        {# After Save, so Enter in a field saves. #}
+        <button type="submit" name="action" value="test" title="Asks the source now and shows what it sees. Saves nothing, starts nothing." class="text-[13px] px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Test the source</button>
+        <a href="{% if watcher %}{% url 'cpanel:watcher_detail' watcher_id=watcher.pk %}{% elif script %}{% url 'cpanel:script_triggers' pk=script.pk %}{% else %}{% url 'cpanel:watcher_list' %}{% endif %}" class="text-[13px] px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Cancel</a>
+    </div>
+</form>
+{% endblock %}

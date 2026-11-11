@@ -456,6 +456,23 @@ begins tracking at the current release; earlier history is in the git log.
   (`github_new_issue`). Both work on a Slack or GitHub connection (Connect or
   a pasted token), have a generated page with an example script in
   `docs/integrations/` and a `manage.py integration_smoke` check.
+- **Watchers: start a script when something new shows up.** A watcher
+  checks a source on an interval (at least a minute) and starts one run per
+  new item, with the item in the run's event (kind `watcher`) and, optionally,
+  script inputs mapped from it. Two sources ship: a new entry in a JSON list
+  behind a URL (`http_poll`: list path, id path, optional since parameter)
+  and a new item in an RSS or Atom feed (`rss_new_item`). The first check
+  only marks where the source is; after that each item starts exactly one run,
+  across checks, restarts and a worker dying mid-check. Watchers run on their
+  own minute task with a fire cap per hour, back off on failures (doubling,
+  up to an hour), turn themselves off after 10 failures in a row and email
+  their creator; maintenance windows (new ones block watchers by default) and
+  Pause all stop the checks, and each run goes through the script's
+  concurrency policy. Each script has a Triggers page listing its schedule,
+  webhook, watchers and chat channels; the sidebar's Triggers lists the
+  workspace's watchers, each with Check now, a Test button on its form and an
+  event log of the last 50 events linking to their runs. `watchers.list`
+  (`watchers:read`) lists them over the API and MCP, and backups include them.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

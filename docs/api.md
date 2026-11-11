@@ -428,7 +428,7 @@ Search a workspace's vector collections and, while
 
 Describe the rest of a workspace, and the instance it runs on: providers, secret
 names, chat channels, connections, plugins, environments, libraries, schedules,
-a script's code, and whether everything is OK. All are `read` endpoints, each with its own
+watchers, a script's code, and whether everything is OK. All are `read` endpoints, each with its own
 permission.
 
 | REST endpoint | Parameters | Permission |
@@ -441,6 +441,7 @@ permission.
 | `environments.list` | Optional `environment` (a name or id: that one, with its installed packages) | `environments:read` |
 | `libraries.list` | None | `libraries:read` |
 | `schedules.list` | Optional `active` (only schedules that are on, or off) | `schedules:read` |
+| `watchers.list` | Optional `script` (its id: only its watchers) and `enabled` (only watchers that are on, or off) | `watchers:read` |
 | `scripts.code` | `script` (its id); optional for a token bound to one script | `scripts:read_code` |
 | `system.health` | None | `system:read` |
 
@@ -452,8 +453,8 @@ None of them returns a secret value, a provider's key or base URL, a channel's
 bot token, inbound token or signing secret, a connection's key, token or
 password, or a library's code. AI and
 embedding providers, plugins and environments belong to the instance, so every
-workspace lists the same ones; usage, scripts, channels, libraries, schedules
-and runs are the token's workspace's. As in the console, which shows providers
+workspace lists the same ones; usage, scripts, channels, libraries, schedules,
+watchers and runs are the token's workspace's. As in the console, which shows providers
 and plugins to superusers only, `providers.list` and `plugins.list` answer only
 a token created by a superuser: any other token gets 403 `forbidden`, even with
 the permission, and a token stops answering when its creator is no longer a
@@ -510,6 +511,14 @@ reads them by its tiers below.
   each with `script` (`id`, `name`, `enabled`), `mode`, `active`, `summary`,
   `timezone`, `next_run` and `last_run_at`, and `paused`: the **Pause all**
   switch in Settings, which stops every schedule while it is on.
+- `watchers.list` returns `watchers` (see [Watchers](scheduling.md#watchers)),
+  each with `id`, `name`, `adapter` (`key`, `title`), `script` (`id`, `name`),
+  `connection` (its name, or null), `interval_seconds`, `fire_cap_per_hour`,
+  `enabled`, `auto_disabled_at` (set when it turned itself off after 10
+  failed checks in a row), `last_checked_at`, `last_event_at`, `next_check_at`,
+  `error_count` (failed checks in a row) and `owner_plugin`. A watcher's
+  settings, state and input map are never returned (a polled URL can hold a
+  key), nor its last error text: the console's watcher page shows it.
 - `scripts.code` returns the script's `code` as saved, with the values of the
   secrets it gets (and the AI credential its runs get) masked as
   `[NAME:MASKED]`, and `lines`. When a secret can't be resolved (an external
@@ -529,7 +538,7 @@ reads them by its tiers below.
   `failed_last_24h`). Error texts aren't returned; the console's pages show them.
 - A token bound to one script sees that script only, wherever these name
   scripts (`secrets.names`, `channels.list`, `connections.list`, the `scripts` counts of
-  `environments.list`, `libraries.list`, `schedules.list`), and `scripts.code`
+  `environments.list`, `libraries.list`, `schedules.list`, `watchers.list`), and `scripts.code`
   reads that script alone. Its binding doesn't narrow anything else, as for
   databases and vectors.
 
@@ -584,7 +593,7 @@ Each endpoint declares a Py AI tier:
 | Tier | Who | Endpoints |
 |---|---|---|
 | `console` | The console's Py AI, open to workspace owners and admins | Every read endpoint |
-| `channel` | Py AI on a chat channel (Telegram), whose approved senders need not be owners or admins | `scripts.list`, `scripts.get`, `runs.list`, `runs.get`, the four datastore reads, `databases.list`, `databases.tables`, `vectors.list`, `vectors.search`, `plugins.list`, `environments.list`, `libraries.list`, `schedules.list`, `system.health`, `help.search`, and the Brain reads |
+| `channel` | Py AI on a chat channel (Telegram), whose approved senders need not be owners or admins | `scripts.list`, `scripts.get`, `runs.list`, `runs.get`, the four datastore reads, `databases.list`, `databases.tables`, `vectors.list`, `vectors.search`, `plugins.list`, `environments.list`, `libraries.list`, `schedules.list`, `watchers.list`, `system.health`, `help.search`, and the Brain reads |
 
 So a chat channel can't read a run's output (`runs.output`), run a database
 query (`databases.query`), read a script's code (`scripts.code`) or list secret
@@ -641,7 +650,7 @@ permissions that guard read endpoints alone: `brain:read`, `scripts:read`,
 `scripts:read_code`, `runs:read`, `runs:output`, `datastores:read`,
 `databases:read`, `vectors:read`, `secrets:read_names`, `providers:read`,
 `channels:read`, `plugins:read`, `environments:read`, `libraries:read`,
-`schedules:read`, `system:read` and `help:read`, not `brain:write`. Its endpoint is
+`schedules:read`, `watchers:read`, `system:read` and `help:read`, not `brain:write`. Its endpoint is
 `POST /mcp/k/<url-token>/`. It cannot be used as a REST/bearer token. The URL itself
 is a credential: keep connector configuration private and redact that route from
 reverse-proxy access logs. Because the token travels in the request path, reverse

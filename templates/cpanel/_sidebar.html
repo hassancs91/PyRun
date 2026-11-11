@@ -71,6 +71,14 @@
             <span>Runs</span>
         </a>
 
+        {# Triggers (watchers; a script's own triggers page highlights Scripts) #}
+        <a href="{% url 'cpanel:watcher_list' %}"
+           class="relative flex items-center gap-3 px-3 py-1.5 rounded-md text-sm transition-colors {% if 'watcher' in request.resolver_match.url_name %}font-medium text-ok bg-ok/10{% else %}text-muted hover:text-text hover:bg-panel-hi{% endif %}">
+            {% if 'watcher' in request.resolver_match.url_name %}<span class="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-ok"></span>{% endif %}
+            {% icon "plug-zap" %}
+            <span>Triggers</span>
+        </a>
+
         {# Py AI (owners/admins of the workspace; members are refused by the view) #}
         {% if user_can_manage_workspace %}
         <a href="{% url 'cpanel:pyai' %}"

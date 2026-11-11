@@ -1,0 +1,22 @@
+{% extends "cpanel/layout.html" %}
+
+{% block title %}Triggers - {{ instance_name }}{% endblock %}
+
+{% block breadcrumbs %}
+<span>Triggers</span>
+{% endblock %}
+{% block heading %}Triggers{% endblock %}
+{% block subtitle %}Watchers check an outside source on an interval and start a run of their script for each new item.{% endblock %}
+
+{% block page %}
+<div class="rounded-2xl border border-line bg-panel p-6">
+    <p class="text-sm text-muted mb-5">To add a watcher, open a script's Triggers page. That page also lists the script's schedule, webhook and chat channels.</p>
+    <div class="space-y-3">
+        {% for w in watchers %}
+        {% include "cpanel/watchers/_row.html" with show_script=True next=request.get_full_path %}
+        {% empty %}
+        <p class="text-sm text-faint">No watchers yet. Open a script, then Triggers, then Add a watcher.</p>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

@@ -59,6 +59,7 @@ class APIToken(models.Model):
         ("environments:read", "Read environments (and their installed packages)"),
         ("libraries:read", "Read libraries (modules and attached scripts, never code)"),
         ("schedules:read", "Read schedules"),
+        ("watchers:read", "Read watchers (never their settings or state)"),
         ("system:read", "Read system health"),
         ("help:read", "Search the PyRun documentation bundled with this version"),
     )

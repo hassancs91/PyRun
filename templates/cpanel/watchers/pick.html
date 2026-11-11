@@ -1,0 +1,28 @@
+{% extends "cpanel/layout.html" %}
+
+{% block title %}{% if watcher %}{{ watcher.name }}{% else %}New watcher{% endif %} - {{ instance_name }}{% endblock %}
+
+{% block breadcrumbs %}
+{% if script %}<a href="{% url 'cpanel:script_list' %}">Scripts</a>
+<a href="{% url 'cpanel:script_detail' pk=script.pk %}">{{ script.name }}</a>
+<a href="{% url 'cpanel:script_triggers' pk=script.pk %}">Triggers</a>{% else %}<a href="{% url 'cpanel:watcher_list' %}">Triggers</a>{% endif %}
+<span>{% if watcher %}Change the source{% else %}New watcher{% endif %}</span>
+{% endblock %}
+{% block heading %}{% if watcher %}{{ watcher.name }}{% else %}New watcher{% endif %}{% endblock %}
+{% block subtitle %}What should it watch?{% endblock %}
+
+{% block page %}
+{% if unknown_adapter %}
+<div class="rounded-2xl border border-warn/30 bg-warn/5 p-4 text-sm text-warn">This watcher uses "{{ unknown_adapter }}", which isn't available any more (a plugin removed?). Pick another source; its state starts over.</div>
+{% endif %}
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    {% for a in adapters %}
+    <a href="{% if watcher %}{% url 'cpanel:watcher_edit' watcher_id=watcher.pk %}?adapter={{ a.key|urlencode }}{% else %}{% url 'cpanel:watcher_create' %}?adapter={{ a.key|urlencode }}{% if script %}&amp;script={{ script.pk }}{% endif %}{% endif %}"
+       class="block rounded-2xl border border-line bg-panel p-5 hover:border-faint transition-colors">
+        <p class="text-text font-medium">{{ a.title }}{% if a.requires_connection %} <span class="ml-1 text-xs px-2 py-0.5 rounded-md bg-info/10 text-info">needs a connection</span>{% endif %}</p>
+        <p class="text-sm text-muted mt-1">{{ a.description }}</p>
+        <p class="text-xs text-faint mt-2 font-mono">{{ a.key }}</p>
+    </a>
+    {% endfor %}
+</div>
+{% endblock %}

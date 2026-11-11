@@ -63,6 +63,7 @@ KIND_WEBHOOK = "webhook"
 KIND_CHANNEL = "channel"
 KIND_PLUGIN = "plugin"
 KIND_API = "api"
+KIND_WATCHER = "watcher"
 
 KIND_LABELS = {
     KIND_MANUAL: "Manual",
@@ -71,6 +72,7 @@ KIND_LABELS = {
     KIND_CHANNEL: "Chat channel",
     KIND_PLUGIN: "Plugin",
     KIND_API: "API",
+    KIND_WATCHER: "Watcher",
 }
 
 def _iso(when) -> str:
@@ -253,7 +255,21 @@ def api_event(token_id, via) -> dict:
     return build_event(KIND_API, None, token_id=str(token_id), via=str(via))
 
 
-_KIND_FOR_TRIGGER = {"manual": KIND_MANUAL, "scheduled": KIND_SCHEDULE, "api": KIND_API}
+def watcher_event(watcher, event_id, item, received_at=None) -> dict:
+    """A watcher saw a new item: which watcher (id, name, adapter), the item's
+    ``event_id`` (the de-duplication key) and the ``item`` itself.
+
+    An item too big for the event cap is left out (``truncated: true``); the
+    watcher and the event id always stay, so the run knows what it was for.
+    """
+    ref = {"id": str(watcher.pk), "name": watcher.name, "adapter": watcher.adapter}
+    event = build_event(KIND_WATCHER, received_at, watcher=ref, event_id=str(event_id), item=item)
+    if "item" not in event:
+        event = build_event(KIND_WATCHER, received_at, watcher=ref, event_id=str(event_id), truncated=True)
+    return event
+
+
+_KIND_FOR_TRIGGER = {"manual": KIND_MANUAL, "scheduled": KIND_SCHEDULE, "api": KIND_API, "watcher": KIND_WATCHER}
 
 
 def default_event(run) -> dict:

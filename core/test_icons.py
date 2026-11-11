@@ -13,7 +13,7 @@ from core.test_console_layout import ShellBase
 
 SIDEBAR = {
     "Dashboard": "layout-dashboard", "Scripts": "file-code-2", "Libraries": "library-big", "Brains": "brain",
-    "Runs": "circle-play", "Py AI": "sparkles", "Tasks": "list-checks", "Connect": "plug-zap",
+    "Runs": "circle-play", "Py AI": "sparkles", "Tasks": "list-checks", "Connect": "plug-zap", "Triggers": "plug-zap",
     "Environments": "boxes", "Secrets": "key-round", "Connections": "link", "Tags": "tag", "Data Stores": "hard-drive",
     "Databases": "database", "Vectors": "chart-scatter", "Channels": "messages-square", "Services": "blocks",
     "Settings": "settings", "Logs": "scroll-text", "Workspaces": "layout-grid", "Users": "users", "Plugins": "puzzle",
@@ -67,9 +67,15 @@ class SidebarIconTests(ShellBase):
         for label, name in SIDEBAR.items():
             with self.subTest(section=label):
                 body = icon_body(name)
-                link = re.search(r"<a [^>]*>(?:(?!</a>).)*?" + re.escape(body) + r"(?:(?!</a>).)*?</a>", aside, re.S)
-                self.assertIsNotNone(link, f"{label} should use {name}")
-                self.assertIn(label, re.sub(r"<[^>]+>", " ", link.group(0)))
+                # The link named ``label`` (a whole word: "Connect" isn't "Connections"); an
+                # icon may serve two entries (Connect and Triggers share plug-zap).
+                named = re.compile(r"(?<!\w)" + re.escape(label) + r"(?!\w)")
+                links = [
+                    m.group(0) for m in re.finditer(r"<a [^>]*>(?:(?!</a>).)*?</a>", aside, re.S)
+                    if named.search(re.sub(r"<[^>]+>", " ", m.group(0)))
+                ]
+                self.assertEqual(len(links), 1, f"one sidebar link named {label}")
+                self.assertIn(body, links[0], f"{label} should use {name}")
         self.assertIn('d="M13 2 4.5 13.5H11l-1 8.5L19.5 10H13z"', aside)  # lightning-bolt logo kept
 
     def test_plugin_icon_svg_still_renders_with_lucide_fallback(self):

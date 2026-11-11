@@ -254,8 +254,9 @@
             </div>
             {% endif %}
         </dl>
-        <div class="mt-4 pt-4 border-t border-line-soft">
+        <div class="mt-4 pt-4 border-t border-line-soft flex flex-wrap gap-x-3 gap-y-1">
             <a href="{% url 'cpanel:schedule_history' pk=script.pk %}" class="text-xs text-info hover:underline">View schedule history</a>
+            <a href="{% url 'cpanel:script_triggers' pk=script.pk %}" class="text-xs text-info hover:underline" id="script-triggers-link">All triggers{% with n=script.watchers.count %}{% if n %} ({{ n }} watcher{{ n|pluralize }}){% endif %}{% endwith %}</a>
         </div>
     </section>
 
