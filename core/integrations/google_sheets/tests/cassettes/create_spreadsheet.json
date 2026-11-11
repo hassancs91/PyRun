@@ -1,0 +1,71 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets",
+        "json": {
+          "properties": {
+            "title": "Weekly report"
+          },
+          "sheets": [
+            {
+              "properties": {
+                "title": "Summary"
+              }
+            },
+            {
+              "properties": {
+                "title": "Data"
+              }
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "spreadsheetId": "1NewSheetId0123456789abcdefghijklmnopqrstuvw",
+          "properties": {
+            "title": "Weekly report",
+            "locale": "en_US",
+            "autoRecalc": "ON_CHANGE",
+            "timeZone": "Etc/GMT"
+          },
+          "sheets": [
+            {
+              "properties": {
+                "sheetId": 0,
+                "title": "Summary",
+                "index": 0,
+                "sheetType": "GRID",
+                "gridProperties": {
+                  "rowCount": 1000,
+                  "columnCount": 26
+                }
+              }
+            },
+            {
+              "properties": {
+                "sheetId": 1,
+                "title": "Data",
+                "index": 1,
+                "sheetType": "GRID",
+                "gridProperties": {
+                  "rowCount": 1000,
+                  "columnCount": 26
+                }
+              }
+            }
+          ],
+          "spreadsheetUrl": "https://docs.google.com/spreadsheets/d/1NewSheetId0123456789abcdefghijklmnopqrstuvw/edit"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,104 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/1ExampleSheetId0123456789abcdefghijklmnopqrs/values/Leads:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS",
+        "json": {
+          "majorDimension": "ROWS",
+          "values": [
+            [
+              "Linus",
+              "linus@example.com",
+              7,
+              "New"
+            ]
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "spreadsheetId": "1ExampleSheetId0123456789abcdefghijklmnopqrs",
+          "tableRange": "Leads!A1:D5",
+          "updates": {
+            "spreadsheetId": "1ExampleSheetId0123456789abcdefghijklmnopqrs",
+            "updatedRange": "Leads!A6:D6",
+            "updatedRows": 1,
+            "updatedColumns": 4,
+            "updatedCells": 4
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/1ExampleSheetId0123456789abcdefghijklmnopqrs/values/Leads%211%3A1?valueRenderOption=FORMATTED_VALUE"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "range": "Leads!A1:Z1",
+          "majorDimension": "ROWS",
+          "values": [
+            [
+              "Name",
+              "Email",
+              "Score",
+              "Status"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/1ExampleSheetId0123456789abcdefghijklmnopqrs/values/Leads:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS",
+        "json": {
+          "majorDimension": "ROWS",
+          "values": [
+            [
+              "Margaret",
+              null,
+              null,
+              "New"
+            ],
+            [
+              "Ken",
+              "ken@example.com",
+              3,
+              null
+            ]
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "spreadsheetId": "1ExampleSheetId0123456789abcdefghijklmnopqrs",
+          "tableRange": "Leads!A1:D6",
+          "updates": {
+            "spreadsheetId": "1ExampleSheetId0123456789abcdefghijklmnopqrs",
+            "updatedRange": "Leads!A7:D8",
+            "updatedRows": 2,
+            "updatedColumns": 4,
+            "updatedCells": 6
+          }
+        }
+      }
+    }
+  ]
+}

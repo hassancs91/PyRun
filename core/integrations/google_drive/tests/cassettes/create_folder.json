@@ -1,0 +1,35 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "/drive/v3/files?fields=id%2C+name%2C+mimeType%2C+parents%2C+size%2C+modifiedTime%2C+webViewLink&supportsAllDrives=true",
+        "json": {
+          "name": "Reports 2026",
+          "mimeType": "application/vnd.google-apps.folder",
+          "parents": [
+            "0AParentRootFolder0"
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "id": "1FolderReports0123456789abcdefghi",
+          "name": "Reports 2026",
+          "mimeType": "application/vnd.google-apps.folder",
+          "parents": [
+            "0AParentRootFolder0"
+          ],
+          "modifiedTime": "2026-11-10T09:30:00.000Z",
+          "webViewLink": "https://drive.google.com/drive/folders/1FolderReports0123456789abcdefghi"
+        }
+      }
+    }
+  ]
+}

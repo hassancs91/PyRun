@@ -13,9 +13,11 @@ http.post("/v1/items", json={"name": "Ada"}, connection="crm")
 
 Each module has its own page here, generated from its code, with an example
 script: `http.md` (any HTTP API with an API key, bearer token or basic auth),
-`airtable.md` (list, find, create, update and delete records) and `notion.md`
-(query databases, create and update pages, append blocks, search). More
-services build on the same framework.
+`airtable.md` (list, find, create, update and delete records), `notion.md`
+(query databases, create and update pages, append blocks, search),
+`google_sheets.md` (read, append, update and find rows, list sheets, create
+spreadsheets, new rows since last time) and `google_drive.md` (list, upload,
+download, folders, share links). More services build on the same framework.
 
 ## What every integration does
 
@@ -27,7 +29,8 @@ services build on the same framework.
   `<module>.client()` gives the shared client for anything a module has no
   function for; its `request()` returns the reply itself.
 - **Credentials only to the service.** They go on requests to the
-  connection's base URL; a redirect elsewhere goes on without them. They are
+  connection's base URL (for Google Sheets, Google's Sheets host
+  `sheets.googleapis.com` instead); a redirect elsewhere goes on without them. They are
   read before every request, so a token PyRun refreshed is used at once, and
   every value is masked in the run's output as usual.
 - **One exception.** Failures raise `pyrunner_integrations.IntegrationError`
@@ -57,7 +60,7 @@ changelog. `pyrunner_integrations.__version__` says which version a script has.
 core/integrations/<key>/
     preset.py            the connection preset (shared with Connections)
     api.py               INTEGRATION = Integration(...): module, functions, example, smoke checks
-    triggers.py          optional, reserved for watcher adapters (nothing reads it yet)
+    triggers.py          optional: TRIGGERS, watcher adapters for Triggers (google_sheets has one)
     tests/test_api.py    the conformance suite and cassette tests
     tests/cassettes/     recorded exchanges, replayed offline
 core/script_helpers/pyrunner_integrations/<key>.py   what scripts import
@@ -83,7 +86,21 @@ The script-facing module:
   Retry-After, sets `RATE_LIMIT_WAIT` (seconds) and passes it to its client,
   `_client.shared(connection, PROVIDER, rate_limit_wait=RATE_LIMIT_WAIT)` (and
   in `client()`): the client waits that long instead of 1, 2 and 4 seconds,
-  and the generated page says so.
+  and the generated page says so;
+- for a service whose API lives on another host than the connection's base
+  URL (Google Sheets: `sheets.googleapis.com`, the Google connection's base is
+  `www.googleapis.com`), sets `BASE_URL` and passes it to its client,
+  `_client.shared(connection, PROVIDER, base_url=BASE_URL)` (and in
+  `client()`): the credentials go to that host instead, which must be an https
+  host beside the base URL's (it shares its parent domain; anything else
+  raises ValueError), and the generated page names it.
+
+A `triggers.py` declares `TRIGGERS = (framework.Trigger(key, title,
+config_schema, check),)`: `check(module, connection, config, state,
+limit=None)` returns `(events, new_state)`, each event `{"id", "item"}`, and
+reports nothing on its first call (`state` None). `framework.load_triggers(key)`
+reads them (the Triggers feature runs them). `google_sheets`' `sheets_new_row` is built on
+`google_sheets.new_rows`.
 
 ## Starting one
 
@@ -186,8 +203,8 @@ personal data in the replies are kept as they came (pass `scrub=("value",
 ...)` to mask more).
 
 A cassette is plain JSON, so it can also be written by hand from the
-service's API reference when there is no account to record with: Airtable's
-and Notion's were, and their `note` says so. Re-record them with real
+service's API reference when there is no account to record with: Airtable's,
+Notion's, Google Sheets' and Google Drive's were, and their `note` says so. Re-record them with real
 credentials when you have them; replay checks the same things either way.
 
 ### The conformance suite

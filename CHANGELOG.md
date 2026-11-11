@@ -403,6 +403,24 @@ begins tracking at the current release; earlier history is in the git log.
   checks. Their tests replay exchanges written from each service's API
   reference. For module authors, the shared client takes `rate_limit_wait`
   for a service that pauses for a fixed time after a 429.
+- **Google Sheets and Google Drive integrations.**
+  `pyrunner_integrations.google_sheets` reads ranges, appends rows (lists of
+  values, or dicts keyed by the header row), updates ranges, finds rows by
+  header values (`find_rows(id, "Leads", {"Email": "ada@example.com"})` gives
+  each row's number and values), lists a spreadsheet's sheets and creates
+  spreadsheets; `new_rows(id, "Leads", state)` returns the rows added since the
+  last call, for a scheduled script and for the coming "new row" watcher.
+  `pyrunner_integrations.google_drive` lists files (in a folder, with a Drive
+  query, page by page), uploads a path or bytes (into a folder, or replacing a
+  file's content; over 5 MB as a resumable upload), downloads (Google Docs,
+  Sheets and Slides exported as PDF, CSV, XLSX...), makes folders and returns a
+  link anyone with it can open. Both use a Google connection (Sheets or Drive
+  scope set) and have a generated page with an example script in
+  `docs/integrations/` and `manage.py integration_smoke` checks; their tests
+  replay exchanges written from Google's API references. For module authors,
+  the shared client takes `base_url` for another API host of the same service
+  (the token goes there, never to an unrelated host), and an integration can
+  declare watcher adapters in its `triggers.py`.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

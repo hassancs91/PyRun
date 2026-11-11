@@ -391,10 +391,15 @@ class Client:
     ``rate_limit_wait`` is the seconds to wait after a 429 without Retry-After,
     for a service that documents a fixed pause (Airtable's 30 s); otherwise
     the usual backoff applies.
+    ``base_url`` sends the requests (and the credentials) to another API host of
+    the same service instead of the connection's base URL: an https URL whose
+    host is a sibling of the base URL's (``https://sheets.googleapis.com`` for a
+    Google connection at ``https://www.googleapis.com``). Anything else raises
+    ValueError.
     """
 
     def __init__(self, connection=None, *, provider="http", timeout=30, max_retries=MAX_RETRIES,
-                 max_wait=MAX_WAIT, check=None, rate_limit_wait=None):
+                 max_wait=MAX_WAIT, check=None, rate_limit_wait=None, base_url=None):
         self.connection = connection or provider
         self.provider = provider
         self.timeout = timeout
@@ -402,6 +407,7 @@ class Client:
         self.max_wait = max_wait
         self.check = check
         self.rate_limit_wait = rate_limit_wait
+        self.base_url = base_url
         self._session = None
 
     def __repr__(self):
@@ -419,6 +425,8 @@ class Client:
         if not material.get("base_url"):
             raise IntegrationError(
                 f"Connection '{self.connection}' is not an HTTP connection.", "NOT_HTTP")
+        if self.base_url:
+            material = dict(material, base_url=sibling_base(material["base_url"], self.base_url))
         return material
 
     # -- sending --------------------------------------------------------------
@@ -599,13 +607,35 @@ class Client:
         return paginate(fetch, limit=limit, max_pages=max_pages)
 
 
+def sibling_base(connection_base, base_url) -> str:
+    """``base_url`` when it may stand in for ``connection_base`` (``Client(base_url=...)``), else ValueError.
+
+    It must be https, with no path, user info or query, on a host that shares
+    the connection host's parent domain: ``sheets.googleapis.com`` for
+    ``www.googleapis.com``. It keeps a module from sending a connection's
+    credentials to an unrelated host by mistake; it is not a boundary against
+    the script itself, which can read its token anyway (``pyrunner_connections.token()``).
+    """
+    parts, base = urllib.parse.urlsplit(base_url), urllib.parse.urlsplit(connection_base)
+    host, base_host = (parts.hostname or "").lower(), (base.hostname or "").lower()
+    parent = base_host.partition(".")[2]
+    if (parts.scheme != "https" or parts.username or parts.password or parts.query or parts.fragment
+            or parts.path.strip("/") or "." not in parent or not host.endswith("." + parent)):
+        raise ValueError(
+            f"base_url {safe_url(base_url)!r} isn't another https host of the connection's service "
+            f"(a sibling of {base_host or 'its host'})."
+        )
+    return f"https://{_host(base_url)}"
+
+
 def shared(connection=None, provider="http", **options) -> Client:
     """The module-wide Client for ``connection`` (one session reused across calls).
 
     ``options`` are Client keyword arguments, used when the client is made: a
-    module passes the same ones on every call.
+    module passes the same ones on every call (two modules of one provider
+    with different options, such as another ``base_url``, get their own client).
     """
-    key = (connection or provider, provider)
+    key = (connection or provider, provider, tuple(sorted(options.items())))
     client = _clients.get(key)
     if client is None:
         client = _clients[key] = Client(connection, provider=provider, **options)

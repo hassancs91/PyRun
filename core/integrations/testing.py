@@ -892,8 +892,9 @@ class ConformanceSuite(IntegrationTestCase):
         self._connect()
         self._fake(*[{"status": 429}] * (self.integration_client.MAX_RETRIES + 1))
         error = self._raises("RATE_LIMITED")
-        # A module whose service documents a fixed pause after a 429 (rate_limit_wait) waits that each time.
-        pause = self.integration_client.shared(None, self.spec.provider).rate_limit_wait
+        # A module whose service documents a fixed pause after a 429 declares it (RATE_LIMIT_WAIT, passed to
+        # its client as rate_limit_wait) and waits that each time.
+        pause = getattr(self.module, "RATE_LIMIT_WAIT", None)
         retries = self.integration_client.MAX_RETRIES
         backoff = [pause] * retries if pause is not None else [1.0, 2.0, 4.0][:retries]
         self.assertEqual(self.sleeps, backoff)

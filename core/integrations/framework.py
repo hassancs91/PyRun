@@ -9,8 +9,9 @@ An integration is one service's typed functions for scripts. Its files:
   public API as PyRun documents, tests and smoke-tests it: the script-facing
   module, the functions in it (the stable signatures), an example script and
   the live smoke checks.
-- ``core/integrations/<key>/triggers.py`` (optional): reserved for watcher
-  adapters; nothing reads it yet.
+- ``core/integrations/<key>/triggers.py`` (optional): ``TRIGGERS = (Trigger(...),)``,
+  the watcher adapters the integration offers to Triggers (2.5 Stage 7;
+  ``load_triggers()`` reads them, nothing runs them yet).
 - ``core/integrations/<key>/tests/``: ``test_api.py`` (the conformance suite and
   cassette tests) and ``cassettes/`` (recorded exchanges, replayed offline).
 - ``core/script_helpers/pyrunner_integrations/<key>.py``: the module scripts
@@ -30,7 +31,7 @@ from pathlib import Path
 
 # Every integration with a module. Explicit (not a directory scan), like
 # presets.PRESET_MODULES.
-INTEGRATION_MODULES = ("http", "airtable", "notion")
+INTEGRATION_MODULES = ("http", "airtable", "notion", "google_sheets", "google_drive")
 
 KEY_RE = re.compile(r"^[a-z][a-z0-9_]{1,39}$")
 HELPERS_DIR = Path(__file__).resolve().parent.parent / "script_helpers"
@@ -48,6 +49,25 @@ class Smoke:
 
     name: str
     run: object
+
+
+@dataclass(frozen=True)
+class Trigger:
+    """One watcher adapter an integration offers (``TRIGGERS`` in its triggers.py).
+
+    ``check(module, connection, config, state, limit=None)`` asks the service
+    what is new since ``state`` through the integration's script-facing module
+    (as the connection named ``connection``; ``config`` is the watcher's
+    settings, valid for ``config_schema``) and returns ``(events, new_state)``:
+    each event ``{"id": <stable id, for de-duplication>, "item": <what the
+    run gets>}``, in order, at most ``limit``; ``new_state`` is JSON. The first
+    check (``state`` None) reports nothing and marks where the service is.
+    """
+
+    key: str
+    title: str
+    config_schema: dict
+    check: object
 
 
 @dataclass(frozen=True)
@@ -108,6 +128,18 @@ def script_module(integration):
         integration = load(integration)
     helpers_on_path()
     return importlib.import_module(integration.module_name)
+
+
+def load_triggers(key) -> tuple:
+    """The ``Trigger`` adapters in ``core/integrations/<key>/triggers.py`` (empty when it has none)."""
+    load(key)
+    try:
+        module = importlib.import_module(f"core.integrations.{key}.triggers")
+    except ModuleNotFoundError as e:
+        if e.name == f"core.integrations.{key}.triggers":
+            return ()
+        raise
+    return tuple(module.TRIGGERS)
 
 
 def script_helpers():

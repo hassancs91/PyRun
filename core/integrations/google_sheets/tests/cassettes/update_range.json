@@ -1,0 +1,62 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "PUT",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/1ExampleSheetId0123456789abcdefghijklmnopqrs/values/Leads%21D2?valueInputOption=USER_ENTERED",
+        "json": {
+          "majorDimension": "ROWS",
+          "values": [
+            [
+              "Contacted"
+            ]
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "spreadsheetId": "1ExampleSheetId0123456789abcdefghijklmnopqrs",
+          "updatedRange": "Leads!D2",
+          "updatedRows": 1,
+          "updatedColumns": 1,
+          "updatedCells": 1
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "PUT",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/1ExampleSheetId0123456789abcdefghijklmnopqrs/values/Leads%21A5%3AC5?valueInputOption=RAW",
+        "json": {
+          "majorDimension": "ROWS",
+          "values": [
+            [
+              "Alan",
+              "alan@example.com",
+              "=41"
+            ]
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "spreadsheetId": "1ExampleSheetId0123456789abcdefghijklmnopqrs",
+          "updatedRange": "Leads!A5:C5",
+          "updatedRows": 1,
+          "updatedColumns": 3,
+          "updatedCells": 3
+        }
+      }
+    }
+  ]
+}

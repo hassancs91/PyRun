@@ -1,0 +1,54 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "/upload/drive/v3/files?uploadType=multipart&fields=id%2C+name%2C+mimeType%2C+parents%2C+size%2C+modifiedTime%2C+webViewLink&supportsAllDrives=true",
+        "text": "--pyrunner-ad25c581439d2303b4ae65bb38f78bcd\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{\"name\": \"totals.csv\", \"parents\": [\"1FolderReports0123456789abcdefghi\"]}\r\n--pyrunner-ad25c581439d2303b4ae65bb38f78bcd\r\nContent-Type: text/csv\r\n\r\nid,total\n1,30\n2,12\n\r\n--pyrunner-ad25c581439d2303b4ae65bb38f78bcd--"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "id": "1FileTotals0123456789abcdefghij",
+          "name": "totals.csv",
+          "mimeType": "text/csv",
+          "parents": [
+            "1FolderReports0123456789abcdefghi"
+          ],
+          "modifiedTime": "2026-11-09T18:00:00.000Z",
+          "webViewLink": "https://drive.google.com/file/d/1FileTotals0123456789abcdefghij/view?usp=drivesdk",
+          "size": "14"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "PATCH",
+        "url": "/upload/drive/v3/files/1FileTotals0123456789abcdefghij?uploadType=multipart&fields=id%2C+name%2C+mimeType%2C+parents%2C+size%2C+modifiedTime%2C+webViewLink&supportsAllDrives=true",
+        "text": "--pyrunner-b9453687b609218b58363cdaf667c3ce\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{\"name\": \"totals.csv\"}\r\n--pyrunner-b9453687b609218b58363cdaf667c3ce\r\nContent-Type: text/csv\r\n\r\nid,total\n1,30\n2,12\n3,9\n\r\n--pyrunner-b9453687b609218b58363cdaf667c3ce--"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "id": "1FileTotals0123456789abcdefghij",
+          "name": "totals.csv",
+          "mimeType": "text/csv",
+          "parents": [
+            "1FolderReports0123456789abcdefghi"
+          ],
+          "modifiedTime": "2026-11-11T08:00:00.000Z",
+          "webViewLink": "https://drive.google.com/file/d/1FileTotals0123456789abcdefghij/view?usp=drivesdk",
+          "size": "18"
+        }
+      }
+    }
+  ]
+}

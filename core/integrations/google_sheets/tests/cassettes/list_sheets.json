@@ -1,0 +1,47 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/1ExampleSheetId0123456789abcdefghijklmnopqrs?fields=sheets.properties"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "sheets": [
+            {
+              "properties": {
+                "sheetId": 0,
+                "title": "Leads",
+                "index": 0,
+                "sheetType": "GRID",
+                "gridProperties": {
+                  "rowCount": 1000,
+                  "columnCount": 26,
+                  "frozenRowCount": 1
+                }
+              }
+            },
+            {
+              "properties": {
+                "sheetId": 1820467340,
+                "title": "Q1 sales",
+                "index": 1,
+                "sheetType": "GRID",
+                "gridProperties": {
+                  "rowCount": 1000,
+                  "columnCount": 26
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

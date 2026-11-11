@@ -1,0 +1,90 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "/drive/v3/files/1DocNotes01234567890abcdefghijk?alt=media&supportsAllDrives=true"
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "error": {
+            "code": 403,
+            "message": "Only files with binary content can be downloaded. Use Export with Docs Editors files.",
+            "errors": [
+              {
+                "domain": "global",
+                "reason": "fileNotDownloadable",
+                "message": "Only files with binary content can be downloaded. Use Export with Docs Editors files.",
+                "locationType": "parameter",
+                "location": "alt"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/drive/v3/files/nope?fields=id%2C+name%2C+mimeType%2C+parents%2C+size%2C+modifiedTime%2C+webViewLink&supportsAllDrives=true"
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "error": {
+            "code": 404,
+            "message": "File not found: nope.",
+            "errors": [
+              {
+                "domain": "global",
+                "reason": "notFound",
+                "message": "File not found: nope.",
+                "locationType": "parameter",
+                "location": "fileId"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "url": "/drive/v3/files/1FileReport0123456789abcdefghij/permissions?supportsAllDrives=true",
+        "json": {
+          "type": "anyone",
+          "role": "writer",
+          "allowFileDiscovery": false
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "error": {
+            "code": 403,
+            "message": "Insufficient Permission: Request had insufficient authentication scopes.",
+            "errors": [
+              {
+                "domain": "global",
+                "reason": "insufficientPermissions",
+                "message": "Insufficient Permission: Request had insufficient authentication scopes."
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

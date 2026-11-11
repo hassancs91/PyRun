@@ -1,0 +1,45 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "/drive/v3/files/1FileReport0123456789abcdefghij/permissions?supportsAllDrives=true",
+        "json": {
+          "type": "anyone",
+          "role": "reader",
+          "allowFileDiscovery": false
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "kind": "drive#permission",
+          "id": "anyoneWithLink",
+          "type": "anyone",
+          "role": "reader",
+          "allowFileDiscovery": false
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/drive/v3/files/1FileReport0123456789abcdefghij?fields=webViewLink&supportsAllDrives=true"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "webViewLink": "https://drive.google.com/file/d/1FileReport0123456789abcdefghij/view?usp=drivesdk"
+        }
+      }
+    }
+  ]
+}

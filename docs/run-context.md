@@ -647,8 +647,9 @@ items = http.get("/v1/items", connection="crm")     # parsed JSON
 
 The modules and how they behave are in `docs/integrations/framework.md`; each
 has its own page there: `docs/integrations/http.md` (any HTTP API),
-`docs/integrations/airtable.md` (records) and `docs/integrations/notion.md`
-(databases, pages, blocks, search).
+`docs/integrations/airtable.md` (records), `docs/integrations/notion.md`
+(databases, pages, blocks, search), `docs/integrations/google_sheets.md` (rows
+and ranges) and `docs/integrations/google_drive.md` (files).
 
 ### OAuth connections
 

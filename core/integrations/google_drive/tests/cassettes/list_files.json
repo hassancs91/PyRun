@@ -1,0 +1,91 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "/drive/v3/files?pageSize=100&fields=nextPageToken%2C+files%28id%2C+name%2C+mimeType%2C+parents%2C+size%2C+modifiedTime%2C+webViewLink%29&includeItemsFromAllDrives=true&supportsAllDrives=true&q=%271FolderReports0123456789abcdefghi%27+in+parents+and+trashed+%3D+false&orderBy=modifiedTime+desc"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "nextPageToken": "~!!~AI9FV7Tpage2",
+          "files": [
+            {
+              "id": "1FileReport0123456789abcdefghij",
+              "name": "report.pdf",
+              "mimeType": "application/pdf",
+              "parents": [
+                "1FolderReports0123456789abcdefghi"
+              ],
+              "modifiedTime": "2026-11-10T09:30:00.000Z",
+              "webViewLink": "https://drive.google.com/file/d/1FileReport0123456789abcdefghij/view?usp=drivesdk",
+              "size": "48213"
+            },
+            {
+              "id": "1FileTotals0123456789abcdefghij",
+              "name": "totals.csv",
+              "mimeType": "text/csv",
+              "parents": [
+                "1FolderReports0123456789abcdefghi"
+              ],
+              "modifiedTime": "2026-11-09T18:00:00.000Z",
+              "webViewLink": "https://drive.google.com/file/d/1FileTotals0123456789abcdefghij/view?usp=drivesdk",
+              "size": "14"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/drive/v3/files?pageSize=100&fields=nextPageToken%2C+files%28id%2C+name%2C+mimeType%2C+parents%2C+size%2C+modifiedTime%2C+webViewLink%29&includeItemsFromAllDrives=true&supportsAllDrives=true&q=%271FolderReports0123456789abcdefghi%27+in+parents+and+trashed+%3D+false&orderBy=modifiedTime+desc&pageToken=~%21%21~AI9FV7Tpage2"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "files": [
+            {
+              "id": "1DocNotes01234567890abcdefghijk",
+              "name": "Notes",
+              "mimeType": "application/vnd.google-apps.document",
+              "parents": [
+                "1FolderReports0123456789abcdefghi"
+              ],
+              "modifiedTime": "2026-11-08T12:00:00.000Z",
+              "webViewLink": "https://docs.google.com/document/d/1DocNotes01234567890abcdefghijk/edit?usp=drivesdk"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/drive/v3/files?pageSize=2&fields=nextPageToken%2C+files%28id%2C+name%29&includeItemsFromAllDrives=true&supportsAllDrives=true&q=trashed+%3D+false+and+%28name+contains+%27report%27%29"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "files": [
+            {
+              "id": "1FileReport0123456789abcdefghij",
+              "name": "report.pdf"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

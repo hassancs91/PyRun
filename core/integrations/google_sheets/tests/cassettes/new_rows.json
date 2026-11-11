@@ -1,0 +1,159 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/1ExampleSheetId0123456789abcdefghijklmnopqrs/values/Leads?valueRenderOption=FORMATTED_VALUE"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "range": "Leads!A1:Z1000",
+          "majorDimension": "ROWS",
+          "values": [
+            [
+              "Name",
+              "Email",
+              "Score",
+              "Status"
+            ],
+            [
+              "Ada",
+              "ada@example.com",
+              "36",
+              "New"
+            ],
+            [
+              "Grace",
+              "grace@example.com",
+              "",
+              "Contacted"
+            ],
+            [],
+            [
+              "Alan",
+              "alan@example.com",
+              "41"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/1ExampleSheetId0123456789abcdefghijklmnopqrs/values/Leads?valueRenderOption=FORMATTED_VALUE"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "range": "Leads!A1:Z1000",
+          "majorDimension": "ROWS",
+          "values": [
+            [
+              "Name",
+              "Email",
+              "Score",
+              "Status"
+            ],
+            [
+              "Ada",
+              "ada@example.com",
+              "36",
+              "New"
+            ],
+            [
+              "Grace",
+              "grace@example.com",
+              "",
+              "Contacted"
+            ],
+            [],
+            [
+              "Alan",
+              "alan@example.com",
+              "41"
+            ],
+            [
+              "Linus",
+              "linus@example.com",
+              "7",
+              "New"
+            ],
+            [
+              "Margaret"
+            ],
+            [
+              "Ken",
+              "ken@example.com"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/1ExampleSheetId0123456789abcdefghijklmnopqrs/values/Leads?valueRenderOption=FORMATTED_VALUE"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "range": "Leads!A1:Z1000",
+          "majorDimension": "ROWS",
+          "values": [
+            [
+              "Name",
+              "Email",
+              "Score",
+              "Status"
+            ],
+            [
+              "Ada",
+              "ada@example.com",
+              "36",
+              "New"
+            ],
+            [
+              "Grace",
+              "grace@example.com",
+              "",
+              "Contacted"
+            ],
+            [],
+            [
+              "Alan",
+              "alan@example.com",
+              "41"
+            ],
+            [
+              "Linus",
+              "linus@example.com",
+              "7",
+              "New"
+            ],
+            [
+              "Margaret",
+              "margaret@example.com"
+            ],
+            [
+              "Ken",
+              "ken@example.com"
+            ]
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -84,8 +84,11 @@ def render(integration) -> str:
         "",
     ]
     if preset.is_http and SMTP not in preset.auth_kinds:
+        # A module on another API host of the service (BASE_URL, its client's base_url) sends them there.
+        host = getattr(module, "BASE_URL", None)
+        where = f"`{host}`" if host else "the connection's base URL"
         lines += [
-            "The credentials go only to the connection's base URL; a redirect elsewhere goes on without them.",
+            f"The credentials go only to {where}; a redirect elsewhere goes on without them.",
             "",
         ]
     if integration.example:

@@ -1,0 +1,71 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/1Missing?fields=sheets.properties"
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "error": {
+            "code": 404,
+            "message": "Requested entity was not found.",
+            "status": "NOT_FOUND"
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/1ExampleSheetId0123456789abcdefghijklmnopqrs/values/Nope%21A1?valueRenderOption=FORMATTED_VALUE"
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "error": {
+            "code": 400,
+            "message": "Unable to parse range: Nope!A1",
+            "status": "INVALID_ARGUMENT"
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/1ExampleSheetId0123456789abcdefghijklmnopqrs/values/Leads:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS",
+        "json": {
+          "majorDimension": "ROWS",
+          "values": [
+            [
+              "Ada"
+            ]
+          ]
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "content-type": "application/json; charset=UTF-8"
+        },
+        "json": {
+          "error": {
+            "code": 403,
+            "message": "The caller does not have permission",
+            "status": "PERMISSION_DENIED"
+          }
+        }
+      }
+    }
+  ]
+}
