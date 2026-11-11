@@ -35,6 +35,8 @@ What it gives:
   ``PYRUNNER_RECORD_CREDENTIALS`` names, it calls the real service and writes the
   file instead, every credential value scrubbed.
 - No request reaches the network otherwise: an unanswered request fails the test.
+  That holds for a ``pyrunner_connections.client()`` session too: its requests
+  are answered by ``fake_http()`` or the cassette like the integrations' own.
 - Waits (backoff, Retry-After) don't sleep: they are collected in ``self.sleeps``.
 - ``ConformanceSuite``: the checks every integration module must pass.
 """
@@ -364,6 +366,56 @@ def _no_network(method, url, headers, body, timeout):
     )
 
 
+def _transport_adapter(requests, client):
+    """A requests adapter that sends through ``client.TRANSPORT`` (the fake, a cassette or the guard).
+
+    Mounted on every ``pyrunner_connections.client()`` session a test makes, so
+    such a session gets its credentials, redirects and OAuth refreshes as in a
+    run, and its replies from the same place as ``pyrunner_integrations``.
+    """
+
+    class TransportAdapter(requests.adapters.HTTPAdapter):
+        def send(self, request, stream=False, timeout=None, verify=True, cert=None, proxies=None):
+            if client.TRANSPORT is None:  # a test that set it to None wants the real network
+                return super().send(request, stream=stream, timeout=timeout, verify=verify, cert=cert,
+                                    proxies=proxies)
+            body = request.body.encode("utf-8") if isinstance(request.body, str) else request.body
+            headers = dict(request.headers)
+            if headers.get("Accept-Encoding") == requests.utils.default_headers()["Accept-Encoding"]:
+                # requests' own default: a recording (urllib) would store a compressed body
+                # that nothing decodes. A header the code set itself is sent as is.
+                del headers["Accept-Encoding"]
+            try:
+                reply = client.TRANSPORT(request.method, request.url, headers, body, timeout)
+            except client.IntegrationError as e:  # a fake network failure, as requests raises it
+                error = requests.exceptions.Timeout if e.code == "TIMEOUT" else requests.exceptions.ConnectionError
+                raise error(str(e), request=request) from None
+            response = requests.Response()
+            response.status_code = reply.status_code
+            response.headers = requests.structures.CaseInsensitiveDict(reply.headers)
+            response._content = reply.content
+            response.url = request.url
+            response.request = request
+            response.encoding = requests.utils.get_encoding_from_headers(response.headers)
+            response.reason = ""
+            return response
+
+    return TransportAdapter()
+
+
+def _kit_session(build, client):
+    """``pyrunner_connections._requests_session`` with the kit's adapter mounted."""
+
+    def session(requests, material, timeout, name=None):
+        made = build(requests, material, timeout, name)
+        adapter = _transport_adapter(requests, client)
+        made.mount("https://", adapter)
+        made.mount("http://", adapter)
+        return made
+
+    return session
+
+
 # --------------------------------------------------------------------------- #
 # Cassettes
 # --------------------------------------------------------------------------- #
@@ -567,9 +619,14 @@ class IntegrationTestMixin:
         self.connections = Connections()
         self.sleeps = []
         self.integration_client.reset()
+        pc = self.pyrunner_connections
         patches = self.connections.patch() + [
             mock.patch.object(self.integration_client, "_sleep", self.sleeps.append),
             mock.patch.object(self.integration_client, "TRANSPORT", _no_network),
+            # pyrunner_connections.client(): the same transport (requests is a
+            # PyRun dependency, so client() always makes this session).
+            mock.patch.object(pc, "_requests_session", _kit_session(pc._requests_session,
+                                                                    self.integration_client)),
         ]
         for patcher in patches:
             patcher.start()

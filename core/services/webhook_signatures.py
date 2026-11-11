@@ -202,18 +202,27 @@ def _verify_custom(secret, headers, body, script, now) -> str | None:
     return _timestamp_error(timestamp, script.webhook_signature_tolerance, now)
 
 
-def restored_settings(data: dict) -> tuple[dict, bool]:
+def restored_settings(data: dict) -> tuple[dict, list[str]]:
     """A backup's webhook signature, rate and reply-mode fields, made safe to store.
 
-    Returns ``(fields, dropped)``: an older backup has none of them (no
+    Returns ``(fields, problems)``: an older backup has none of them (no
     signature, the default limits, async replies); a value that isn't valid
-    falls back to its default, and ``dropped`` is True when that cost the
-    script its signature (an unknown preset), so the restore can warn about it.
+    falls back to its default. ``problems`` (each to follow 'Script "<name>"' in
+    the restore's warnings) says what a hand-edited backup cost the script's
+    signature: an unknown preset
+    (restored as none), or a custom header name the console would refuse
+    (restored blank, so calls are refused until it is set again). With no
+    signature (none, or an unknown preset) the stored secret is dropped, as
+    the console does when the signature is switched off.
     """
+    problems = []
     signature = data.get("webhook_signature", Preset.NONE)
-    dropped = signature not in Preset.values
-    if dropped:
+    if signature not in Preset.values:
         signature = Preset.NONE
+        problems.append(
+            "was restored without its webhook signature: the backup names a signature PyRun "
+            "doesn't know. Set it again on the script's webhook settings."
+        )
     encoding = data.get("webhook_signature_encoding")
     secret = data.get("webhook_signature_secret_encrypted")
     mode = data.get("webhook_mode")
@@ -222,6 +231,18 @@ def restored_settings(data: dict) -> tuple[dict, bool]:
         value = data.get(key)
         return value[:max_length] if isinstance(value, str) else ""
 
+    def header(key, label):
+        value = text(key, 100)
+        if value and not HEADER_NAME_RE.match(value):
+            if signature == Preset.HMAC_SHA256:
+                problems.append(
+                    f"was restored with a blank webhook {label}: the backup's isn't a valid "
+                    "header name, so every call is refused until you set it on the script's "
+                    "webhook settings."
+                )
+            return ""
+        return value
+
     def number(key, default, high):
         value = data.get(key)
         ok = isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= high
@@ -229,11 +250,15 @@ def restored_settings(data: dict) -> tuple[dict, bool]:
 
     fields = {
         "webhook_signature": signature,
-        "webhook_signature_secret_encrypted": secret if isinstance(secret, str) else "",
-        "webhook_signature_header": text("webhook_signature_header", 100),
+        "webhook_signature_secret_encrypted": (
+            secret if isinstance(secret, str) and signature != Preset.NONE else ""
+        ),
+        "webhook_signature_header": header("webhook_signature_header", "signature header"),
         "webhook_signature_prefix": text("webhook_signature_prefix", 50),
         "webhook_signature_encoding": encoding if encoding in Encoding.values else Encoding.HEX,
-        "webhook_signature_timestamp_header": text("webhook_signature_timestamp_header", 100),
+        "webhook_signature_timestamp_header": header(
+            "webhook_signature_timestamp_header", "timestamp header"
+        ),
         "webhook_signature_tolerance": number(
             "webhook_signature_tolerance", 300, Script.MAX_WEBHOOK_SIGNATURE_TOLERANCE
         ),
@@ -243,4 +268,4 @@ def restored_settings(data: dict) -> tuple[dict, bool]:
         "webhook_rate_burst": number("webhook_rate_burst", 30, Script.MAX_WEBHOOK_RATE_PER_MINUTE),
         "webhook_mode": mode if mode in Script.WebhookMode.values else Script.WebhookMode.ASYNC,
     }
-    return fields, dropped
+    return fields, problems

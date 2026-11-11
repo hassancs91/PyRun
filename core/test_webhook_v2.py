@@ -728,6 +728,25 @@ class DeliveriesCardTests(_Fixture, TestCase):
         self.assertIn("Not recorded (a call from before PyRun 2.5)", card)
         self.assertIn("3.0s", card)
 
+    def test_compact_times_and_a_wrapping_chip_keep_the_table_narrow(self):
+        """Test pass 4's O2: the table was wider than its card at desktop width."""
+        script = self._webhook_script()
+        now = timezone.localtime()
+        today = self._webhook_run(script)
+        older = self._webhook_run(script, status=Run.Status.CANCELLED,
+                                  cancel_reason=Run.CancelReason.MAINTENANCE)
+        Run.objects.filter(pk=today.pk).update(created_at=now.replace(hour=0, minute=7, second=0))
+        Run.objects.filter(pk=older.pk).update(created_at=now - timedelta(days=40))
+        older_local = timezone.localtime(now - timedelta(days=40))
+        card = self._page(script).content.decode()
+        card = card[card.index('id="webhook-deliveries"'):card.index("</table>")]
+        self.assertIn(">00:07<", card)
+        self.assertIn(f">{older_local:%b} {older_local.day}<", card)
+        self.assertIn(f'title="{older_local:%b} {older_local.day}, {older_local:%Y %H:%M:%S}"', card)
+        # The skip chip wraps here (rounded-md, no nowrap); elsewhere it stays one pill.
+        self.assertIn("rounded-md text-left", card)
+        self.assertNotIn("whitespace-nowrap\" title=\"A maintenance window", card)
+
     def test_no_calls_yet(self):
         script = self._webhook_script()
         html = self._page(script).content.decode()

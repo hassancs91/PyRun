@@ -254,6 +254,36 @@ class SearchTests(SimpleTestCase):
             ("CHANGELOG.md", BASE + "CHANGELOG.md#retries"),
         ])
 
+    def test_a_query_naming_the_page_puts_its_intro_first(self):
+        guide = """# Scheduling scripts
+
+Every script has one schedule, set in its panel. """ + "Pick a run mode, then the times. " * 20 + """
+
+## Pausing
+
+Pause a script or every script. A script schedule pauses a script.
+
+## Inputs
+
+A script with inputs runs on its schedule with the inputs' defaults. A script.
+"""
+        index = fixture_index(**{"docs/scheduling.md": guide})
+        self.assertEqual(help_docs.roots("Scheduling scripts"), {"schedul", "script"})
+        self.assertEqual(
+            [s.title for s in index.sections if s.intro], ["Run context", "Scheduling scripts"]
+        )
+        # Unboosted, the subsections that say "script" more often win.
+        with mock.patch.object(help_docs, "INTRO_BOOST", 1):
+            plain = help_docs.search("how do I schedule a script?", index=index)["results"]
+        self.assertNotEqual(plain[0]["title"], "Scheduling scripts")
+        for query in ("how do I schedule a script?", "scheduling", "schedule scripts"):
+            with self.subTest(query=query):
+                best = help_docs.search(query, index=index)["results"][0]
+                self.assertEqual(best["link"], BASE + "docs/scheduling.md#scheduling-scripts")
+        # A query that only shares a word with the title gets no boost.
+        best = help_docs.search("pause a script", index=index)["results"][0]
+        self.assertEqual(best["title"], "Pausing")
+
     def test_plurals_and_limit(self):
         results = self.search("signatures webhooks", limit=2)["results"]
         self.assertEqual(len(results), 2)
@@ -305,6 +335,12 @@ class BundledDocsTests(SimpleTestCase):
         self.assertTrue(results)
         for result in results:
             self.assertTrue(result["link"].startswith(BASE + result["doc"]), result)
+
+    def test_schedule_a_script_opens_the_scheduling_guide(self):
+        """Test pass 4's O1: the intro used to rank 4th, after three subsections."""
+        for query in ("how do I schedule a script?", "schedule a script"):
+            best = help_docs.search(query, index=self.index)["results"][0]
+            self.assertEqual(best["link"], BASE + "docs/scheduling.md#scheduling-scripts", query)
 
     def test_acceptance_a_webhook_with_a_signature(self):
         """T19's acceptance question, over the real docs (T21 wrote the section)."""

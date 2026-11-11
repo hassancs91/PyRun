@@ -572,6 +572,9 @@ class ConsoleTests(_Fixture, TestCase):
         aside = html[html.index('<aside id="app-sidebar"'):html.index("</aside>")]
         self.assertIn(reverse("cpanel:connection_list"), aside)
         self.assertIn("No connections yet", html)
+        # The empty page names the OAuth providers too (O6).
+        for label in ("Google", "Microsoft 365", "GitHub", "Slack", "Notion", "Airtable", "SMTP"):
+            self.assertIn(label, html[html.index("No connections yet"):])
 
     def test_the_picker_lists_every_preset(self):
         html = self.client.get(reverse("cpanel:connection_create")).content.decode()
@@ -721,10 +724,16 @@ class ConsoleTests(_Fixture, TestCase):
         self.client.post(reverse("cpanel:connection_revoke", kwargs={"pk": c.pk}))
         c.refresh_from_db()
         self.assertEqual((c.status, c.credentials_encrypted), ("revoked", ""))
+        # Nothing is saved any more, so the page doesn't offer to keep it (O7).
+        edit = self.client.get(reverse("cpanel:connection_edit", kwargs={"pk": c.pk})).content.decode()
+        self.assertNotIn("Leave blank to keep the saved value", edit)
+        self.assertIn("Nothing is saved: the connection was revoked. Enter it to reconnect.", edit)
         self.client.post(reverse("cpanel:connection_edit", kwargs={"pk": c.pk}),
                          {"name": "airtable", "api_key": "pat-new"})
         c.refresh_from_db()
         self.assertEqual((c.status, c.get_credentials()), ("ok", {"api_key": "pat-new"}))
+        edit = self.client.get(reverse("cpanel:connection_edit", kwargs={"pk": c.pk})).content.decode()
+        self.assertIn("Leave blank to keep the saved value", edit)
 
     def test_delete(self):
         c = self._connection()

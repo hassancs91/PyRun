@@ -184,7 +184,9 @@ class BackupService:
     # ``webhook_rate_per_minute``, ``webhook_rate_burst``; older backups: no
     # signature and the default limits). A value that isn't valid falls back
     # to its default (core.services.webhook_signatures.restored_settings); an
-    # unknown preset restores as none and is named in the warnings.
+    # unknown preset restores as none and a custom header name the console
+    # would refuse restores blank, both named in the warnings; with no
+    # signature the stored secret is dropped.
     # ``webhook_mode`` on scripts (async | sync; older backups and anything
     # else: async).
     # ``connections`` and ``oauth_clients`` (credentials and client secrets
@@ -1949,12 +1951,10 @@ class BackupService:
                     "tool name is invalid or another restored script in its workspace uses it. "
                     "Set a tool name in its editor."
                 )
-            webhook_settings, signature_dropped = restored_webhook_settings(script_data)
-            if signature_dropped and warnings is not None:
-                warnings.append(
-                    f'Script "{script_data["name"]}" was restored without its webhook signature: '
-                    "the backup names a signature PyRun doesn't know. Set it again on the "
-                    "script's webhook settings."
+            webhook_settings, signature_problems = restored_webhook_settings(script_data)
+            if warnings is not None:
+                warnings.extend(
+                    f'Script "{script_data["name"]}" {problem}' for problem in signature_problems
                 )
             script = Script.objects.create(
                 id=old_id,  # Preserve UUID

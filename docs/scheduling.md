@@ -17,12 +17,13 @@ are seven run modes:
 In the daily, weekly and monthly modes you type the times separated by commas
 (`09:00, 18:00`). Each time can be listed once: `09:00, 9:00` is refused with
 "09:00 is listed twice.", since both mean 09:00. A schedule saved with a
-repeated time before PyRun refused one runs once at that time from its next
-sync: the daily resync does that for a time zone other than UTC; otherwise
-remove the repeat and save, switch the schedule off and on, or use Pause all
-and Resume all. Only the chosen mode's times are checked for a repeat: one
-left in the times of a mode the schedule no longer uses is dropped when you
-save.
+repeated time before PyRun refused one is cleaned up when you upgrade to 2.5:
+the repeat is dropped from its times (in every mode's list, the first entry
+kept) and so is the extra cron it made, so the script runs once at that time,
+whatever the time zone. A repeat that comes back later (a restored older
+backup) still makes one cron per distinct time, and only the chosen mode's
+times are checked for a repeat when you save: one left in the times of a mode
+the schedule no longer uses is dropped.
 
 Under the hood all non-manual modes compile to a
 [django-q2](https://django-q2.readthedocs.io/) schedule. The daily/weekly/monthly/yearly

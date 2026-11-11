@@ -54,6 +54,10 @@ INTEGRATIONS_DIR = "docs/integrations"
 REPO_URL = "https://github.com/hassancs91/PyRun"
 DOC_WEIGHT = {"CHANGELOG.md": 0.5}
 TITLE_WEIGHT = 3
+# A page's intro (the text under its "# Title") counts this many times more
+# when the query and the title are about the same thing: "how do I schedule a
+# script?" should open "Scheduling scripts", not one of its subsections.
+INTRO_BOOST = 2
 K1, B = 1.2, 0.75
 SNIPPET_CHARS = 1000
 DEFAULT_LIMIT = 5
@@ -78,6 +82,7 @@ class Section:
     trail: str  # the headings above it and its own: "Run context › The run event"
     anchor: str  # GitHub's anchor for the heading ("" for text above the first one)
     text: str  # the body, Markdown with link targets, images and HTML left out
+    intro: bool = False  # the text under the page's own "# Title"
 
 
 @dataclass
@@ -87,6 +92,7 @@ class Index:
     lengths: list = field(default_factory=list)
     files: list = field(default_factory=list)
     missing: list = field(default_factory=list)
+    intros: dict = field(default_factory=dict)  # intro section number → its title's roots
 
     def add(self, section, counts):
         number = len(self.sections)
@@ -94,6 +100,8 @@ class Index:
         self.lengths.append(sum(counts.values()))
         for term, count in counts.items():
             self.postings.setdefault(term, {})[number] = count
+        if section.intro and (title_roots := roots(section.title)):
+            self.intros[number] = title_roots
 
 
 def plain(markdown):
@@ -131,6 +139,22 @@ def terms(text):
     return out
 
 
+def roots(text):
+    """``text``'s terms with common endings off, to compare a query with a title.
+
+    Coarser than ``terms`` (only used for the intro boost): "schedule" and
+    "Scheduling" both give "schedul".
+    """
+    out = set()
+    for term in terms(text):
+        for ending in ("ing", "ed", "es", "e", "s"):
+            if term.endswith(ending) and len(term) - len(ending) >= 4:
+                term = term[: -len(ending)]
+                break
+        out.add(term)
+    return frozenset(out)
+
+
 def anchor_for(title):
     """GitHub's anchor for a heading: lowercase, punctuation out, spaces to hyphens."""
     return re.sub(r"[^\w\- ]", "", title.strip().lower()).replace(" ", "-")
@@ -140,13 +164,14 @@ def split_sections(doc, markdown):
     """``markdown``'s sections, one per heading outside fenced code; empty ones left out."""
     sections, parents, seen = [], [], Counter()
     title, anchor, body, fence = doc, "", [], None
+    intro, had_page_title = False, False
 
     def close():
         text = "\n".join(line.rstrip() for line in plain("\n".join(body)).splitlines())
         text = PARAGRAPH_BREAK.sub("\n\n", text).strip()
         if text:
             trail = " › ".join(t for _, t in parents) or title
-            sections.append(Section(doc, title, trail, anchor, text))
+            sections.append(Section(doc, title, trail, anchor, text, intro))
 
     for line in markdown.splitlines():
         marker = FENCE.match(line)
@@ -165,6 +190,8 @@ def split_sections(doc, markdown):
             continue
         close()
         level = len(heading.group(1))
+        intro = level == 1 and not had_page_title
+        had_page_title = had_page_title or level == 1
         title = plain(heading.group(2)).replace("**", "").strip()
         slug = anchor_for(title)
         anchor = f"{slug}-{seen[slug]}" if seen[slug] else slug
@@ -265,6 +292,7 @@ def search(query, limit=DEFAULT_LIMIT, index=None):
     """The best ``limit`` sections for ``query``, best first."""
     index = get_index() if index is None else index
     wanted = list(dict.fromkeys(terms(query)))
+    asked = roots(query)
     scores, matched = defaultdict(float), Counter()
     total = len(index.sections)
     if total:
@@ -279,6 +307,9 @@ def search(query, limit=DEFAULT_LIMIT, index=None):
 
     def final(number):
         weight = DOC_WEIGHT.get(index.sections[number].doc, 1)
+        title = index.intros.get(number)
+        if title and asked and (title <= asked or asked <= title):
+            weight *= INTRO_BOOST  # the query names the page, or the page's title is the query
         return scores[number] * matched[number] / len(wanted) * weight
 
     ranked = sorted(scores, key=lambda number: (-final(number), number))[:limit]

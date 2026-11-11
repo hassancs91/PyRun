@@ -40,8 +40,11 @@ logger = logging.getLogger(__name__)
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 
 
-def _form_field(field, editing):
-    """The Django form field for one preset field."""
+REVOKED_HELP = "Nothing is saved: the connection was revoked. Enter it to reconnect."
+
+
+def _form_field(field, editing, revoked=False):
+    """The Django form field for one preset field (``revoked``: nothing saved to keep)."""
     attrs = {"class": INPUT_CLASS}
     if field.placeholder:
         attrs["placeholder"] = field.placeholder
@@ -49,9 +52,8 @@ def _form_field(field, editing):
     if field.secret:
         if editing:
             common["required"] = False
-            common["help_text"] = " ".join(
-                p for p in (field.help, "Leave blank to keep the saved value.") if p
-            )
+            keep = REVOKED_HELP if revoked else "Leave blank to keep the saved value."
+            common["help_text"] = " ".join(p for p in (field.help, keep) if p)
         widget = forms.PasswordInput(attrs={**attrs, "autocomplete": "new-password"})
         return forms.CharField(widget=widget, max_length=4096, **common)
     if field.kind == "int":
@@ -100,8 +102,9 @@ class ConnectionForm(forms.Form):
         self.workspace = workspace
         self.instance = instance
         self.preset_fields = preset.fields_for(auth_kind)
+        revoked = instance is not None and instance.status == Connection.Status.REVOKED
         for field in self.preset_fields:
-            self.fields[field.name] = _form_field(field, editing=instance is not None)
+            self.fields[field.name] = _form_field(field, editing=instance is not None, revoked=revoked)
         if instance is not None and not self.is_bound:
             self.initial.update(instance.config or {})
             self.initial["name"] = instance.name

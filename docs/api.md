@@ -433,11 +433,11 @@ permission.
 
 | REST endpoint | Parameters | Permission |
 |---|---|---|
-| `providers.list` | None | `providers:read` |
+| `providers.list` | None | `providers:read`, on a token a superuser created |
 | `secrets.names` | Optional `script` (its id: only the secrets it gets) | `secrets:read_names` |
 | `channels.list` | None | `channels:read` |
 | `connections.list` | Optional `script` (its id: only the connections it may use) | `connections:read` |
-| `plugins.list` | None | `plugins:read` |
+| `plugins.list` | None | `plugins:read`, on a token a superuser created |
 | `environments.list` | Optional `environment` (a name or id: that one, with its installed packages) | `environments:read` |
 | `libraries.list` | None | `libraries:read` |
 | `schedules.list` | Optional `active` (only schedules that are on, or off) | `schedules:read` |
@@ -453,7 +453,12 @@ bot token, inbound token or signing secret, a connection's key, token or
 password, or a library's code. AI and
 embedding providers, plugins and environments belong to the instance, so every
 workspace lists the same ones; usage, scripts, channels, libraries, schedules
-and runs are the token's workspace's.
+and runs are the token's workspace's. As in the console, which shows providers
+and plugins to superusers only, `providers.list` and `plugins.list` answer only
+a token created by a superuser: any other token gets 403 `forbidden`, even with
+the permission, and a token stops answering when its creator is no longer a
+superuser. `environments.list` answers any token with `environments:read`. Py AI
+reads them by its tiers below.
 
 - `providers.list` returns `ai` (`enabled`: the AI switch in Services;
   `default`: the provider scripts, Py AI and Brains use; `providers`, each with
@@ -552,7 +557,10 @@ the paragraph that matches best; `…` marks a cut).
 The search goes by words: a section ranks higher the more of the query's words
 it has, in its heading most of all, and plurals and singulars match each other.
 A changelog entry counts half, so a guide comes before the entry that announced
-its feature. The index is built once per process (the web server builds it when
+its feature. When the query names a page (every word of the page's title is in the
+query, or every word of the query in the title, give or take endings: "how do I
+schedule a script?" and "Scheduling scripts"), the page's introduction counts double, so it comes before the page's
+own subsections. The index is built once per process (the web server builds it when
 it starts, a worker on its first search) and kept in memory; it reads no
 database and nothing of the token's workspace. Where the docs aren't there (a
 checkout without them), `docs_bundled` is false, `results` is empty and the

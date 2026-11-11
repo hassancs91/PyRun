@@ -1,5 +1,6 @@
 """Capture a source once; fetching and extraction never write a brain revision."""
 
+import hashlib
 import logging
 import time
 import urllib.error
@@ -24,7 +25,7 @@ from .service import BrainService
 log = logging.getLogger(__name__)
 MAX_PAYLOAD = 512 * 1024
 SOURCE_ID_MAX = BrainFeed._meta.get_field("source_id").max_length
-SLUG_WORDS = 6
+SLUG_HASH = 6
 SOURCE_KINDS = ("doc", "article", "video", "podcast", "thread", "thought", "conversation", "other")
 INTAKE_PROPERTIES = {
     "source_kind": {"type": "string", "enum": list(SOURCE_KINDS)},
@@ -157,12 +158,16 @@ def fetch_text(url, *, deadline=None):
 
 
 def source_slug(title, url, content):
-    """The readable part of a source id: title, URL path, opening words, then "source"."""
-    words = " ".join(content.split(maxsplit=SLUG_WORDS)[:SLUG_WORDS])
-    for text in (title, urllib.parse.urlsplit(url).path, words):
+    """The last part of a source id: the title, else the URL path, else a content hash.
+
+    An untitled source with no URL path is named by a short hash of its content
+    (``3f9a1c``), never by its words: a source id is cited by every note and
+    shown in approvals, and a thought's opening words can be private.
+    """
+    for text in (title, urllib.parse.urlsplit(url).path):
         if slug := slugify(text)[:60]:
             return slug
-    return "source"
+    return hashlib.sha256(content.encode("utf-8", "surrogatepass")).hexdigest()[:SLUG_HASH]
 
 
 def unique_source_id(brain, source_id, feed_id):

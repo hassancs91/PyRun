@@ -17,9 +17,11 @@ What this pins, roughly in order of how much it would hurt to get wrong:
   before that still gets one cron per time, so the script runs once.
 """
 
+import importlib
 import uuid
 from unittest import mock
 
+from django.apps import apps as django_apps
 from django.test import TestCase
 from django_q.models import Schedule as QSchedule
 
@@ -27,6 +29,8 @@ from core.forms import ScheduleForm
 from core.models import Environment, Script, ScriptSchedule, Workspace
 from core.plugins.api import ScheduleAPI, ScriptAPI
 from core.services.schedule_service import ScheduleService
+
+migration_0086 = importlib.import_module("core.migrations.0086_schedule_distinct_times")
 
 OWNER = "sched_lists"
 Mode = ScriptSchedule.RunMode
@@ -234,6 +238,101 @@ class StoredRepeatedTimeTests(_Fixture, TestCase):
                 self.assertEqual(crons[0], crons[1])
                 self.assertEqual(repeated.next_run, clean.next_run)
                 self.assertEqual(getattr(repeated, times_field), ["09:00", "18:00", "09:00"])
+
+
+class RepeatedTimesMigrationTests(_Fixture, TestCase):
+    """Migration 0086 drops a stored repeat and the extra cron it made, in any
+    zone (the daily resync never rebuilds a UTC schedule), and only that."""
+
+    def _old_row(self, tz, run_mode, times_field, times, **fields):
+        """A row as a pre-2.5 sync left it: one django-q2 cron per stored entry."""
+        script = Script.objects.create(
+            name=f"old-{uuid.uuid4().hex[:6]}", code="print(1)", environment=self.env
+        )
+        sched = ScriptSchedule.objects.create(
+            script=script, workspace=self.ws, timezone=tz, is_active=True,
+            run_mode=run_mode, **{times_field: times}, **fields,
+        )
+        ScheduleService.sync_schedule(sched)  # one cron per distinct time
+        sched.refresh_from_db()
+        q_ids = list(sched.q_schedule_ids)
+        distinct = list(dict.fromkeys(tuple(map(int, t.split(":"))) for t in times))
+        cron_of = dict(zip(distinct, sched.q_schedule_ids))
+        for time_str in times[len(distinct):]:
+            twin = QSchedule.objects.get(id=cron_of[tuple(map(int, time_str.split(":")))])
+            twin.pk = None
+            twin.save()
+            q_ids.append(twin.id)
+        ScriptSchedule.objects.filter(pk=sched.pk).update(q_schedule_ids=q_ids)
+        return ScriptSchedule.objects.get(pk=sched.pk)
+
+    def _crons(self, row):
+        return sorted(QSchedule.objects.filter(id__in=row.q_schedule_ids).values_list("cron", flat=True))
+
+    def test_a_repeat_and_its_extra_cron_go_in_every_zone_and_mode(self):
+        cases = {
+            "daily": {"run_mode": Mode.DAILY},
+            "weekly": {"run_mode": Mode.WEEKLY, "weekly_days": [0, 2]},
+            "monthly": {"run_mode": Mode.MONTHLY, "monthly_days": [1, 15]},
+        }
+        for tz in ("UTC", "Asia/Tokyo"):
+            for mode, fields in cases.items():
+                with self.subTest(tz=tz, mode=mode):
+                    times_field = f"{mode}_times"
+                    extra = {k: v for k, v in fields.items() if k != "run_mode"}
+                    row = self._old_row(
+                        tz, fields["run_mode"], times_field, ["09:00", "18:00", "09:00"], **extra
+                    )
+                    self.assertEqual(len(row.q_schedule_ids), 3)
+                    before = self._crons(row)
+                    next_run = row.next_run
+
+                    migration_0086.drop_repeated_times(django_apps, None)
+
+                    row.refresh_from_db()
+                    self.assertEqual(getattr(row, times_field), ["09:00", "18:00"])
+                    self.assertEqual(len(row.q_schedule_ids), 2)
+                    self.assertEqual(self._crons(row), sorted(set(before)))
+                    self.assertEqual(row.next_run, next_run)
+                    # What is left is what a sync of the cleaned row builds.
+                    ScheduleService.sync_schedule(row)
+                    row.refresh_from_db()
+                    self.assertEqual(self._crons(row), sorted(set(before)))
+
+    def test_a_repeat_in_an_unused_mode_is_dropped_and_the_crons_kept(self):
+        row = self._old_row("UTC", Mode.DAILY, "daily_times", ["08:00"], weekly_times=["10:00", "10:00"])
+        q_ids = list(row.q_schedule_ids)
+        migration_0086.drop_repeated_times(django_apps, None)
+        row.refresh_from_db()
+        self.assertEqual(row.weekly_times, ["10:00"])
+        self.assertEqual(row.daily_times, ["08:00"])
+        self.assertEqual(row.q_schedule_ids, q_ids)
+        self.assertEqual(QSchedule.objects.filter(id__in=q_ids).count(), 1)
+
+    def test_rows_without_a_repeat_are_untouched_and_a_second_run_is_a_no_op(self):
+        clean = self._old_row("UTC", Mode.DAILY, "daily_times", ["09:00", "18:00"])
+        odd = self._old_row("UTC", Mode.DAILY, "daily_times", ["07:00"])
+        ScriptSchedule.objects.filter(pk=odd.pk).update(monthly_times=["bad", "bad"])
+        repeated = self._old_row("UTC", Mode.DAILY, "daily_times", ["9:00", "09:00"])
+        total = QSchedule.objects.count()
+
+        migration_0086.drop_repeated_times(django_apps, None)
+        after_first = {
+            r.pk: (r.daily_times, r.monthly_times, r.q_schedule_ids)
+            for r in ScriptSchedule.objects.filter(pk__in=[clean.pk, odd.pk, repeated.pk])
+        }
+        migration_0086.drop_repeated_times(django_apps, None)
+        after_second = {
+            r.pk: (r.daily_times, r.monthly_times, r.q_schedule_ids)
+            for r in ScriptSchedule.objects.filter(pk__in=[clean.pk, odd.pk, repeated.pk])
+        }
+
+        self.assertEqual(after_first, after_second)
+        self.assertEqual(after_first[clean.pk], (["09:00", "18:00"], clean.monthly_times, clean.q_schedule_ids))
+        self.assertEqual(after_first[odd.pk][1], ["bad", "bad"])  # not an HH:MM list: left as it is
+        self.assertEqual(after_first[repeated.pk][0], ["9:00"])  # the first spelling is kept
+        self.assertEqual(len(after_first[repeated.pk][2]), 1)
+        self.assertEqual(QSchedule.objects.count(), total - 1)
 
 
 class SingleValueKwargsTests(_Fixture, TestCase):

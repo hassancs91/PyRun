@@ -1,6 +1,7 @@
 """Queue, validator and human-gated revision transactions across Brain doors."""
 
 import copy
+import hashlib
 import io
 import json
 import urllib.parse
@@ -561,31 +562,44 @@ class SourceIdTests(TestCase):
         with patch.object(intake.timezone, "localdate", return_value=date(2026, 11, 9)):
             first = registry.call("brain.propose-feed", ctx, params)
             second = registry.call("brain.propose-feed", ctx, params)
-        self.assertEqual(first["source_id"], "thought-2026-11-remember-this")
+        digest = hashlib.sha256(b"Remember this").hexdigest()[:6]
+        self.assertEqual(first["source_id"], f"thought-2026-11-{digest}")
         self.assertEqual(
-            second["source_id"], f"thought-2026-11-remember-this-{second['feed_id'][:4]}"
+            second["source_id"], f"thought-2026-11-{digest}-{second['feed_id'][:4]}"
         )
-        # Content with no ASCII words still falls back to "source", then gets a suffix.
+        # Content with no ASCII words is hashed the same way.
         ids = [
             self.capture(content=text, source_kind="thought").source_id
             for text in ("تذكر هذا", "!!!")
         ]
-        self.assertEqual(ids[0], "thought-2026-11-source")
-        self.assertRegex(ids[1], r"^thought-2026-11-source-[0-9a-f]{4}$")
-
-    def test_untitled_sources_fall_back_to_their_opening_words(self):
-        thought = self.capture(
-            content="  Why small teams ship faster than big ones.\nMore", source_kind="thought"
+        self.assertEqual(
+            ids[0], f"thought-2026-11-{hashlib.sha256('تذكر هذا'.encode()).hexdigest()[:6]}"
         )
-        self.assertEqual(thought.source_id, "thought-2026-11-why-small-teams-ship-faster-than")
-        # A URL whose path is "/" names nothing, so the words decide.
+        self.assertNotEqual(ids[0], ids[1])
+
+    def test_untitled_sources_are_named_by_a_content_hash_never_their_words(self):
+        content = "  Why small teams ship faster than big ones.\nMore"
+        thought = self.capture(content=content, source_kind="thought")
+        self.assertRegex(thought.source_id, r"^thought-2026-11-[0-9a-f]{6}$")
+        self.assertEqual(
+            thought.source_id, f"thought-2026-11-{hashlib.sha256(content.encode()).hexdigest()[:6]}"
+        )
+        self.assertNotIn("why", thought.source_id)
+        # A URL whose path is "/" names nothing, so the hash decides.
         page = self.capture(
             url="https://example.com/", content="Example Domain page text", source_kind="article"
         )
-        self.assertEqual(page.source_id, "article-2026-11-example-domain-page-text")
+        self.assertRegex(page.source_id, r"^article-2026-11-[0-9a-f]{6}$")
+        self.assertNotIn("example", page.source_id)
         # A title that slugifies to nothing names nothing either.
         untitled = self.capture(title="؟؟", content="Plain words here")
-        self.assertEqual(untitled.source_id, "doc-2026-11-plain-words-here")
+        self.assertRegex(untitled.source_id, r"^doc-2026-11-[0-9a-f]{6}$")
+        # An id stored before (words-based or "source") is never renamed.
+        self.existing("thought-2026-11-source")
+        kept = BrainFeed.objects.get(brain=self.brain, source_id="thought-2026-11-source")
+        self.capture(content="Something new", source_kind="thought")
+        kept.refresh_from_db()
+        self.assertEqual(kept.source_id, "thought-2026-11-source")
 
     def test_titled_and_url_sources_keep_the_previous_format(self):
         for title, url, kind in (

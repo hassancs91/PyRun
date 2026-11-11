@@ -900,9 +900,9 @@ class FetchTests(testing.IntegrationTestCase):
 
 `use_connection()` stands in for PyRun's loopback (made-up credentials unless
 you pass some), `fake_http()` for the service, and `cassette()` replays a
-recorded exchange; nothing sent through `pyrunner_integrations` reaches the
-network unless a test records (a `pyrunner_connections.client()` isn't served
-by them: its requests go out). Import
+recorded exchange; nothing sent through `pyrunner_integrations` or a
+`pyrunner_connections.client()` session reaches the network unless a test
+records (one nothing answers fails the test). Import
 `testing` before the code under test: it makes `pyrunner_integrations` and
 `pyrunner_connections` importable by the names a script uses. Use
 `testing.IntegrationTestMixin` with a `TestCase` when the test needs the

@@ -5,6 +5,15 @@ Paths are relative to the connection's base URL (a full URL works too; the
 credentials only go to the base URL). Each function returns the reply's body:
 the parsed JSON for a JSON reply, the text for any other, None when it is empty.
 A 4xx or 5xx reply raises ``IntegrationError``.
+
+An OAuth connection (Google, Microsoft 365, GitHub, Slack or Notion) works too
+when you pass its name, for an endpoint PyRun has no integration for. For example:
+
+    files = http.get("/drive/v3/files", connection="google")
+
+Its access token goes as a bearer token only to that provider's base URL
+(``https://www.googleapis.com`` for Google; another host, even another Google
+one, gets the request without it), and PyRun refreshes it when it expires.
 """
 
 from . import _client

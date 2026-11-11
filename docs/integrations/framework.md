@@ -93,6 +93,12 @@ pass the conformance suite as generated, so you start from green:
 manage.py test core.integrations.acme
 ```
 
+It refuses a key that is already an integration (`http`, or one with an
+`api.py` or a module), and a key that names an existing preset unless
+`--provider` is that preset (`new_integration airtable --provider airtable`):
+it exits with an error and writes nothing. Files left from an earlier try are
+kept, never overwritten.
+
 Then replace the placeholders one test at a time, add the key to
 `INTEGRATION_MODULES` (and a new preset to `PRESET_MODULES`), record the
 cassettes and write the page:
@@ -108,8 +114,9 @@ A test in PyRun's suite fails when a committed page doesn't match the code.
 
 `core.integrations.testing` tests code that calls a service with no
 credentials and no network: an integration module, or a plugin's code that
-uses `pyrunner_integrations` (see "Testing code that uses connections" in
-`docs/plugins.md`). Its test cases run in PyRun's test process.
+uses `pyrunner_integrations` or `pyrunner_connections.client()` (see "Testing
+code that uses connections" in `docs/plugins.md`). Its test cases run in
+PyRun's test process.
 
 ```python
 from core.integrations import testing
@@ -129,12 +136,12 @@ class ItemsTests(testing.IntegrationTestCase):
 
 - **`IntegrationTestCase`** is a `SimpleTestCase` (no database);
   `IntegrationTestMixin` adds the same to a `TestCase`. While a test runs, no
-  request made through `pyrunner_integrations` reaches the network (one
-  nothing answers fails the test), and waits don't sleep: they are listed in
-  `self.sleeps`. A client from `pyrunner_connections.client()` is not served
-  by `fake_http()` or cassettes: its requests go to the connection's base URL,
-  so give such code its replies with `unittest.mock`, or call the service
-  through `pyrunner_integrations`.
+  request made through `pyrunner_integrations` or a
+  `pyrunner_connections.client()` session reaches the network (one nothing
+  answers fails the test: "The code under test made a real request"), and
+  waits don't sleep: they are listed in `self.sleeps`. A `client()` session
+  is served by `fake_http()` and cassettes like the modules: it sends the
+  connection's credentials and follows redirects as in a run.
 - **`use_connection(name, provider, auth_kind=None, config=None,
   credentials=None)`** gives the code a connection, as
   `pyrunner_connections.credentials()`, `token()`, `info()` and `list()` see

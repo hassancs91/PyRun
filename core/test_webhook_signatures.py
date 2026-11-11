@@ -579,9 +579,53 @@ class BackupAndForkTests(_Fixture, TestCase):
         self.assertNotIn(older.name, warnings)
 
     def test_restored_settings_of_an_older_backup(self):
-        fields, dropped = restored_settings({})
-        self.assertFalse(dropped)
+        fields, problems = restored_settings({})
+        self.assertEqual(problems, [])
         self.assertEqual(fields["webhook_signature"], "none")
+
+    def test_a_hand_edited_header_restores_blank_and_no_signature_drops_the_secret(self):
+        """Test pass 4's O3: neither is reachable from the console."""
+        custom = self._webhook_script(webhook_signature=Preset.HMAC_SHA256,
+                                      webhook_signature_header="X-Sig")
+        unset = self._webhook_script()
+        unknown = self._webhook_script(webhook_signature=Preset.GITHUB)
+        stamped = self._webhook_script(webhook_signature=Preset.GITHUB)
+        for script in (custom, unset, unknown, stamped):
+            script.set_webhook_signature_secret("kept-or-dropped")
+            script.save()
+        data = BackupService.create_backup(include_runs=False)
+        rows = {row["id"]: row for row in data["scripts"]}
+        rows[str(custom.pk)].update({"webhook_signature_header": "Bad Header!",
+                                     "webhook_signature_timestamp_header": "X-Time:"})
+        rows[str(unset.pk)]["webhook_signature"] = "none"  # with a secret: hand-edited
+        rows[str(unknown.pk)]["webhook_signature"] = "sha512"
+        # A header a fixed preset doesn't read is cleared without a warning.
+        rows[str(stamped.pk)]["webhook_signature_header"] = "Bad Header!"
+        result = self._restore(data)
+        warnings = result.get("warnings", [])
+
+        custom = Script.objects.get(pk=custom.pk)
+        self.assertEqual((custom.webhook_signature, custom.webhook_signature_header,
+                          custom.webhook_signature_timestamp_header), ("hmac_sha256", "", ""))
+        self.assertEqual(custom.get_webhook_signature_secret(), "kept-or-dropped")
+        self.assertIn(f'Script "{custom.name}" was restored with a blank webhook signature header: '
+                      "the backup's isn't a valid header name", " ".join(warnings))
+        self.assertIn(f'Script "{custom.name}" was restored with a blank webhook timestamp header',
+                      " ".join(warnings))
+        # A blank header fails closed: the call is refused, no run.
+        response, run, _ = self._post(custom, data=b"{}", content_type="application/json",
+                                      expect=401, headers={"X-Sig": "abc"})
+        self.assertIsNone(run)
+
+        for script in (unset, unknown):
+            script = Script.objects.get(pk=script.pk)
+            self.assertEqual((script.webhook_signature, script.webhook_signature_secret_encrypted),
+                             ("none", ""))
+        self.assertEqual(sum(f'"{unknown.name}"' in w for w in warnings), 1)
+        self.assertFalse([w for w in warnings if f'"{unset.name}"' in w or f'"{stamped.name}"' in w])
+        stamped = Script.objects.get(pk=stamped.pk)
+        self.assertEqual((stamped.webhook_signature_header, stamped.get_webhook_signature_secret()),
+                         ("", "kept-or-dropped"))
 
     def test_a_fork_starts_unsigned(self):
         script = self._webhook_script(webhook_signature=Preset.GITHUB, webhook_rate_per_minute=5)

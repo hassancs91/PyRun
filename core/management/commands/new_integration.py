@@ -7,7 +7,10 @@ Scaffold a new integration: its preset, api.py, script-facing module, tests, a s
 The files work as they are: the generated module passes the conformance suite
 and its cassette test untouched (``manage.py test core.integrations.<key>``),
 so you start from green and change the placeholders (base URL, paths, the
-functions) one test at a time. Existing files are never overwritten. Then add
+functions) one test at a time. A key that is already an integration (shipped,
+or with an api.py or a script-facing module) is refused, and so is a key that
+names an existing preset unless ``--provider`` is that preset; files left from
+an earlier try are kept, never overwritten. Then add
 the key to INTEGRATION_MODULES (core/integrations/framework.py), and a new
 preset to PRESET_MODULES (core/integrations/presets.py), so PyRun ships them.
 """
@@ -19,7 +22,7 @@ from pathlib import Path
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
-from core.integrations import framework
+from core.integrations import framework, presets
 
 PRESET = '''\
 """{label}: an API key, sent as a bearer token. Check the base URL, header and whoami against {label}'s API docs."""
@@ -186,6 +189,7 @@ class Command(BaseCommand):
         if options["provider"] and not (Path(settings.BASE_DIR) / "core" / "integrations" / provider /
                                         "preset.py").is_file() and not (core / provider / "preset.py").is_file():
             raise CommandError(f"No preset {provider!r}: core/integrations/{provider}/preset.py doesn't exist.")
+        self._refuse_existing(key, options["provider"], root)
         values = {"key": key, "provider": provider, "label": label, "host": key.replace("_", "-"),
                   "camel": "".join(part.capitalize() for part in key.split("_"))}
         files = [
@@ -217,3 +221,25 @@ class Command(BaseCommand):
             f"manage.py integration_docs {key}   (writes docs/integrations/{key}.md)",
         ]
         self.stdout.write("Next:\n" + "\n".join(f"  {n}. {step}" for n, step in enumerate(steps, 1)))
+
+    @staticmethod
+    def _refuse_existing(key, provider, root):
+        """A CommandError (exit 1) when ``key`` is already an integration, or a preset not named by ``--provider``."""
+        roots = dict.fromkeys([Path(settings.BASE_DIR), root])
+        if key in framework.INTEGRATION_MODULES or any(
+            (r / "core" / "integrations" / key / "api.py").is_file()
+            or (r / "core" / "script_helpers" / "pyrunner_integrations" / f"{key}.py").is_file()
+            for r in roots
+        ):
+            raise CommandError(
+                f"{key!r} is already an integration: nothing was written. Pick another key, or edit "
+                f"core/integrations/{key}/ and pyrunner_integrations/{key}.py."
+            )
+        is_preset = key in presets.PRESET_MODULES or any(
+            (r / "core" / "integrations" / key / "preset.py").is_file() for r in roots
+        )
+        if is_preset and provider != key:
+            raise CommandError(
+                f"{key!r} is already a connection preset: nothing was written. To build its integration "
+                f"on it, run new_integration {key} --provider {key}."
+            )

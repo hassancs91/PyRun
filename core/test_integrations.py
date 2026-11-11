@@ -24,6 +24,7 @@ import http.server
 import io
 import json
 import socket
+import subprocess
 import sys
 import tempfile
 import threading
@@ -486,6 +487,46 @@ class KitTests(_Servers, testing.IntegrationTestMixin, SimpleTestCase):
             self.http.get("/v1/me")
         self.assertEqual(self.api.seen, [])
 
+    def test_a_connections_client_is_served_by_the_kit_too(self):
+        """Test pass 5's O10: client() requests used to go out to the network."""
+        pc = self.pyrunner_connections
+        self.use_connection("api", auth_kind="bearer", config={"base_url": self.base}, credentials={"token": TOKEN})
+        session = pc.client("api")
+        with self.assertRaisesRegex(AssertionError, r"made a real request \(GET .*/v1/me\)"):
+            session.get("/v1/me")
+
+        fake = self.fake_http()
+        fake.add("POST", "/v1/items", json={"id": 1}, status=201)
+        fake.add("GET", "/v1/moved", status=302, headers={"Location": "https://elsewhere.example.test/x"})
+        fake.add("GET", "https://elsewhere.example.test/x", body="there")
+        fake.add("GET", "/v1/down", error="UNREACHABLE")
+        reply = session.post("/v1/items", json={"name": "Ada"})
+        self.assertEqual((reply.status_code, reply.json()), (201, {"id": 1}))
+        self.assertEqual(fake.requests[0].json(), {"name": "Ada"})
+        self.assertEqual(fake.requests[0].headers["Authorization"], f"Bearer {TOKEN}")
+        # Redirects are followed as in a run: off the base URL without the credentials.
+        self.assertEqual(session.get("/v1/moved").text, "there")
+        self.assertNotIn("Authorization", fake.requests[2].headers)
+        import requests
+
+        with self.assertRaises(requests.exceptions.ConnectionError):
+            session.get("/v1/down")
+        self.assertEqual(self.api.seen, [])
+
+    def test_a_connections_client_replays_a_cassette(self):
+        pc = self.pyrunner_connections
+        self._record("client", lambda: pc.client("api").get("/v1/me"))
+        # requests' default Accept-Encoding stays out: urllib wouldn't decode a gzip reply.
+        self.assertNotIn("gzip", self.api.seen[-1][2].get("Accept-Encoding") or "")
+        text = (self.tmp / "client.json").read_text()
+        self.assertNotIn(KEY, text)
+        seen = len(self.api.seen)
+        self.use_connection("api", auth_kind="api_key", config={"base_url": "https://api.example.test",
+                                                                "location": "query", "param_name": "key"})
+        with self.cassette("client"):
+            self.assertEqual(pc.client("api").get("/v1/me").json(), {"id": 7, "name": "Ada"})
+        self.assertEqual(len(self.api.seen), seen)
+
     def test_the_fake_service_matches_paths_queries_and_full_urls(self):
         self.use_connection("api", auth_kind="bearer", config={"base_url": "https://api.example.test/v2"})
         fake = self.fake_http()
@@ -706,14 +747,48 @@ class ScaffoldTests(SimpleTestCase):
         result = self._run_generated(root, "tasks")
         self.assertEqual(result.failures + result.errors, [])
 
-    def test_existing_files_are_kept_and_bad_keys_refused(self):
+    def test_an_existing_key_is_refused_and_nothing_written(self):
+        """Test pass 5's O9: a second run (or a shipped key) added stray files."""
         root, _out = self._scaffold("acme")
         module = root / "core/script_helpers/pyrunner_integrations/acme.py"
         module.write_text("# mine\n")
-        out = io.StringIO()
-        call_command("new_integration", "acme", "--root", str(root), stdout=out)
-        self.assertIn("Kept (exists): core/script_helpers/pyrunner_integrations/acme.py", out.getvalue())
+        before = sorted(p.relative_to(root).as_posix() for p in root.rglob("*"))
+        for key, extra, message in (
+            ("acme", (), "'acme' is already an integration: nothing was written."),
+            ("http", (), "'http' is already an integration"),
+            ("http", ("--provider", "http"), "'http' is already an integration"),
+            ("smtp", (), "'smtp' is already a connection preset: nothing was written. To build its "
+                         "integration on it, run new_integration smtp --provider smtp."),
+            ("airtable", ("--provider", "http"), "'airtable' is already a connection preset"),
+        ):
+            with self.subTest(key=key, extra=extra), self.assertRaises(CommandError) as caught:
+                call_command("new_integration", key, "--root", str(root), *extra, stdout=io.StringIO())
+            self.assertIn(message, str(caught.exception))
+        self.assertEqual(sorted(p.relative_to(root).as_posix() for p in root.rglob("*")), before)
         self.assertEqual(module.read_text(), "# mine\n")
+        # Only the api.py or the module counts: files left from an earlier try are kept.
+        (root / "core/integrations/acme/api.py").unlink()
+        module.unlink()
+        (root / "core/integrations/acme/tests/test_api.py").write_text("# mine\n")
+        out = io.StringIO()
+        # (Its preset.py is there now, so --provider names it.)
+        call_command("new_integration", "acme", "--provider", "acme", "--root", str(root), stdout=out)
+        self.assertIn("Kept (exists): core/integrations/acme/tests/test_api.py", out.getvalue())
+        self.assertIn("Created: core/integrations/acme/api.py", out.getvalue())
+        # An integration on its own existing preset is what --provider is for.
+        _root, out = self._scaffold("smtp", "--provider", "smtp")
+        self.assertIn("Created: core/script_helpers/pyrunner_integrations/smtp.py", out)
+
+    def test_a_refusal_exits_non_zero(self):
+        result = subprocess.run(
+            [sys.executable, "manage.py", "new_integration", "http", "--root", tempfile.mkdtemp()],
+            cwd=settings.BASE_DIR, capture_output=True, text=True, timeout=120,
+        )
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("'http' is already an integration", result.stderr)
+
+    def test_bad_keys_are_refused(self):
+        root = Path(tempfile.mkdtemp())
         for bad in ("Acme", "class", "a", "_x", "acme-crm"):
             with self.subTest(bad), self.assertRaises(CommandError):
                 call_command("new_integration", bad, "--root", str(root), stdout=io.StringIO())

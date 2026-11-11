@@ -340,6 +340,7 @@ curl -X POST \
         <div class="mt-4 pt-4 border-t border-line-soft" id="webhook-deliveries">
             <div class="eyebrow text-faint mb-2">Recent deliveries</div>
             {% if webhook_deliveries %}
+            {% now "Ymd" as today_ymd %}
             <div class="overflow-x-auto">
             <table class="w-full text-xs">
                 <thead>
@@ -353,10 +354,10 @@ curl -X POST \
                 <tbody class="divide-y divide-line-soft">
                     {% for run in webhook_deliveries %}
                     <tr>
-                        <td class="py-1.5 pr-2"><a href="{% url 'cpanel:run_detail' pk=run.pk %}" class="inline-flex flex-wrap items-center gap-1 hover:opacity-80" title="View run">{% include "cpanel/runs/_status_badge.html" %}</a></td>
+                        <td class="py-1.5 pr-2"><a href="{% url 'cpanel:run_detail' pk=run.pk %}" class="inline-flex flex-wrap items-center gap-1 hover:opacity-80" title="View run">{% include "cpanel/runs/_status_badge.html" with wrap_chip=True %}</a></td>
                         <td class="py-1.5 px-2 text-right font-mono tnum text-muted whitespace-nowrap">{% if run.duration_display %}{{ run.duration_display }}{% else %}—{% endif %}</td>
                         <td class="py-1.5 px-2 text-right font-mono tnum {% if run.response_code and run.response_code >= 500 %}text-fail{% elif run.response_code and run.response_code >= 400 %}text-warn{% else %}text-muted{% endif %}">{% if run.response_code %}{{ run.response_code }}{% else %}<span class="text-faint" title="Not recorded (a call from before PyRun 2.5)">—</span>{% endif %}</td>
-                        <td class="py-1.5 pl-3 text-right text-faint whitespace-nowrap">{{ run.created_at|date:"M d, H:i" }}</td>
+                        <td class="py-1.5 pl-3 text-right text-faint whitespace-nowrap" title="{{ run.created_at|date:"M j, Y H:i:s" }}">{% if run.created_at|date:"Ymd" == today_ymd %}{{ run.created_at|date:"H:i" }}{% else %}{{ run.created_at|date:"M j" }}{% endif %}</td>
                     </tr>
                     {% endfor %}
                 </tbody>

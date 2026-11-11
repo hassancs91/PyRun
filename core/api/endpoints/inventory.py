@@ -15,7 +15,10 @@ Seven reads, each with its own permission:
 
 None returns a secret value, a provider key or base URL, a channel token or a
 library's code. Providers, plugins and environments belong to the instance, not
-a workspace, so every workspace lists the same ones; usage, scripts, channels,
+a workspace, so every workspace lists the same ones. Like the console, which
+shows providers and plugins to superusers only, ``providers.list`` and
+``plugins.list`` answer a token only when a superuser created it
+(``instance_wide``); ``environments.list`` stays open to any permitted token; usage, scripts, channels,
 libraries and schedules are the caller's workspace's (and, for a token bound to
 one script, that script's). Py AI on a chat channel gets plugins, environments,
 libraries and schedules; providers, secret names and channels stay on the
@@ -51,6 +54,10 @@ from .scripts import iso, parse_id, resolve_script, schedule_summary, scripts_fo
 logger = logging.getLogger(__name__)
 
 EMPTY = {"type": "object", "properties": {}}
+SUPERUSER_TOKENS_ONLY = (
+    "{what} lists the whole instance, so it answers only a token created by a "
+    "superuser, as the console shows it to superusers only."
+)
 # Scripts named per secret; script_count always has the total.
 MAX_SCRIPTS_PER_SECRET = 50
 
@@ -60,6 +67,22 @@ def script_ref(script):
 
 
 # --------------------------------------------------------------------------- providers
+
+
+def instance_wide(ctx, what):
+    """Refuse a token whose creator isn't a superuser (403 ``forbidden``).
+
+    Checked on every call, so a token stops answering once its creator is no
+    longer an active superuser (or was deleted). Py AI keeps its tiers (plan D9).
+    """
+    if ctx.principal != "token":
+        return
+    from core.models import APIToken
+
+    if not APIToken.objects.filter(
+        pk=ctx.principal_id, created_by__is_superuser=True, created_by__is_active=True
+    ).exists():
+        raise ApiError("forbidden", SUPERUSER_TOKENS_ONLY.format(what=what), status=403)
 
 
 def usage_today(workspace, settings):
@@ -104,12 +127,14 @@ def usage_today(workspace, settings):
     description=(
         "The instance's AI providers (used by scripts, Py AI and Brains) and embedding "
         "providers: names, types and models, which AI provider is the default, and the "
-        "AI calls this workspace's scripts and Brains made today. Never keys or URLs."
+        "AI calls this workspace's scripts and Brains made today. Never keys or URLs. "
+        "A token must have been created by a superuser."
     ),
     input=EMPTY,
     permission="providers:read",
 )
 def list_providers(ctx, params):
+    instance_wide(ctx, "providers.list")
     settings = GlobalSettings.get_settings()
     active = settings.active_ai_provider_id
     ai = [
@@ -304,13 +329,15 @@ def list_channels(ctx, params):
     title="List plugins",
     description=(
         "Plugins installed on this instance: name, version, status (active, installed, "
-        "disabled or errored), source, summary and author."
+        "disabled or errored), source, summary and author. A token must have been "
+        "created by a superuser."
     ),
     input=EMPTY,
     permission="plugins:read",
     pyai_tier="channel",
 )
 def list_plugins(ctx, params):
+    instance_wide(ctx, "plugins.list")
     plugins = list(Plugin.objects.order_by("name"))
     return {
         "plugins": [

@@ -260,16 +260,19 @@ begins tracking at the current release; earlier history is in the git log.
   everything OK?" and "does this script have a SERPER key?": the console's Py AI
   gets all of them, while Py AI on a chat channel gets plugins, environments,
   libraries, schedules and system health but never code, secret names,
-  providers or channels. Guide: "Workspace inventory and health" in
-  `docs/api.md`.
+  providers or channels. As in the console, `providers.list` and `plugins.list`
+  answer only a token a superuser created (403 otherwise); `environments.list`
+  answers any token with its permission. Guide: "Workspace inventory and
+  health" in `docs/api.md`.
 - **Py AI and the API search PyRun's own docs.** `help.search` (`help:read`)
   finds the sections of the running version's documentation (the README, the
   guides in `docs/`, the changelog) that answer a question, each with a snippet
   and a link to that section at the running version's tag on GitHub. These docs
   now ship in the Docker image, and the index is built in memory when the
   server starts, with no new dependency. Asked "how do I…?", Py AI searches them
-  and answers with the link, on the console and on chat channels. Guide:
-  "Documentation search" in `docs/api.md`.
+  and answers with the link, on the console and on chat channels. A question
+  that names a page ("how do I schedule a script?") gets that page's
+  introduction first. Guide: "Documentation search" in `docs/api.md`.
 - **Webhook calls hand the script the whole request, any size.** A webhook
   run's event now also has the request's `path`, `remote_ip`, `headers`
   (lower-case names; `Authorization`, `Cookie` and hop-by-hop headers left
@@ -282,7 +285,8 @@ begins tracking at the current release; earlier history is in the git log.
   `WEBHOOK_*` variables as before. A body over 2.5 MB is refused with 413
   instead of starting a run with an empty body. The script page's Webhook card
   lists the last 20 calls with their run's status, duration and the HTTP code
-  PyRun answered. Guide: "Webhook calls" in `docs/run-context.md`.
+  PyRun answered (a call's time is `14:32` today, else `Nov 9`; the full date
+  is in its tooltip). Guide: "Webhook calls" in `docs/run-context.md`.
 - **Webhooks can require a signature, and each script has its own rate limit.**
   A script's webhook can require every call to be signed the way Stripe,
   GitHub or Shopify sign theirs, or with an HMAC-SHA256 you describe (header,
@@ -294,9 +298,12 @@ begins tracking at the current release; earlier history is in the git log.
   run. The old limit of 30 calls a minute per address is now 300, a floor
   against scanning, while wrong URLs and bad signatures from one address are
   still cut off after 30 a minute. Set both under **Webhook → Signature and
-  limits** on the script page. Guide: "Webhook signatures" and "Webhook rate
-  limits" in `docs/run-context.md`, with recipes for Stripe, GitHub and
-  Shopify.
+  limits** on the script page. Backups carry the settings, the secret still
+  encrypted; restoring a hand-edited one, a header name the console would
+  refuse comes back blank (calls are refused until it is set again) and an
+  unknown signature comes back as none without its secret, each with a
+  warning. Guide: "Webhook signatures" and "Webhook rate limits" in
+  `docs/run-context.md`, with recipes for Stripe, GitHub and Shopify.
 - **A webhook call can wait for the script's reply.** Add `?sync=1` to the
   URL, or set the script's reply mode to Sync, and the call waits for the run
   and gets the reply the script sets with `pyrunner_run.respond(status, body,
@@ -339,8 +346,10 @@ begins tracking at the current release; earlier history is in the git log.
   and client secret never leave PyRun. Tokens are refreshed when a script needs
   them, a minute early and one refresh at a time; a refresh the provider refuses
   marks the connection **Expired** and emails its creator. Backups carry the
-  apps (secrets still encrypted). Setup guide for each provider, including
-  Google's consent screen: `docs/integrations/oauth-apps.md`.
+  apps (secrets still encrypted). A revoked connection's page asks for its
+  credentials again instead of offering to keep them. Setup guide for each
+  provider, including Google's consent screen:
+  `docs/integrations/oauth-apps.md`.
 - **Plugins sign in through Connections.** A plugin lists the accounts it needs
   in `plugin.json` (`requires_connections`: provider, scopes, a label), and its
   page in **Settings → Plugins** shows each one with its status (not connected,
@@ -360,7 +369,9 @@ begins tracking at the current release; earlier history is in the git log.
   calls per service on top of a connection. The first module, `http`, calls any
   HTTP API with an HTTP API connection: `http.get("/v1/me")`,
   `post`/`put`/`patch`/`delete` and `paginate` (cursor, Link header or page
-  numbers), returning parsed JSON. Every module shares one client: credentials
+  numbers), returning parsed JSON; named with `connection=`, an OAuth
+  connection works too (its token only to that provider's base URL). Every
+  module shares one client: credentials
   only to the connection's base URL (also across redirects), retries with
   backoff on 429 and 5xx (Retry-After honoured), one re-auth after a 401 (PyRun
   refreshes an OAuth token the service refused) and one exception,
@@ -370,8 +381,10 @@ begins tracking at the current release; earlier history is in the git log.
   `core.integrations.testing`: stand-in connections, a fake service, cassettes
   recorded from the real service with `PYRUNNER_RECORD_CASSETTES=1` (every
   credential scrubbed) and replayed offline, and a conformance suite every
-  module passes. `manage.py new_integration <key>` scaffolds a module that
-  passes it as generated, `manage.py integration_smoke <key>` runs live checks
+  module passes; no request leaves a test, a `pyrunner_connections.client()`
+  session's included. `manage.py new_integration <key>` scaffolds a module that
+  passes it as generated (and refuses a key that is already an integration or,
+  without `--provider`, a preset), `manage.py integration_smoke <key>` runs live checks
   with a real connection, and `manage.py integration_docs` writes each module's
   page in `docs/integrations/` from its docstrings (searched by `help.search`).
   Guide: `docs/integrations/framework.md`; plugin tests: "Testing code that uses
@@ -383,18 +396,19 @@ begins tracking at the current release; earlier history is in the git log.
   modes (`09:00, 9:00`), and each one became its own cron, so the script ran
   twice at 09:00. The form now refuses it ("09:00 is listed twice."), as
   `ScheduleAPI.sync` already did, and a schedule saved with a repeat before
-  this gets one cron per time from its next sync (the daily resync for a time
-  zone other than UTC; for UTC, edit the schedule, switch it off and on, or
-  Pause all and Resume all).
+  this is cleaned up by the upgrade (migration 0086): the repeat leaves its
+  times and the extra cron it made is deleted, in every time zone, UTC
+  included.
 - **Brain sources without a title no longer share one source id.** A source's
   id came from its title or URL path only, so two untitled thoughts sent in
   one month (from `brain.propose-feed`, the console or a script) were both
   `thought-2026-11-source`: notes from different sources cited the same
   `source`, and both approvals read "Feed: thought-2026-11-source". An untitled
-  source is now named by its first few words, and when the Brain already has
-  the id, the start of the new feed's id is appended
-  (`thought-2026-11-source-3f9a`). A source named by its title or URL path
-  keeps the id it got before unless the Brain already has it.
+  source is now named by a short hash of its content, never by its words
+  (`thought-2026-11-3f9a1c`), and when the Brain already has the id, the start
+  of the new feed's id is appended (`thought-2026-11-3f9a1c-7b2e`). A source
+  named by its title or URL path keeps the id it got before unless the Brain
+  already has it, and ids already given are not changed.
 
 ## [2.0.0] — October 23, 2026
 

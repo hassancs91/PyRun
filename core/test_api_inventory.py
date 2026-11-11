@@ -21,6 +21,9 @@ What this pins, roughly in order of how much it would hurt to get wrong:
 - Each list is the caller's workspace's where the thing belongs to one
   (channels, libraries, schedules, usage), the instance's otherwise.
 - The two acceptance questions through the console bridge.
+- ``providers.list`` and ``plugins.list`` list the whole instance, so (like the
+  console) they answer only a token a superuser created; ``environments.list``
+  answers any permitted token (Hasan's decision 4 after run 4).
 
 No test calls a model; tools are called through their handlers.
 """
@@ -30,6 +33,7 @@ import json
 import uuid
 from unittest import mock
 
+from django.contrib.auth import get_user_model
 from django.test import SimpleTestCase, TestCase
 from django.utils import timezone
 
@@ -132,6 +136,10 @@ class _Fixture:
         self._secret("LEGACY_KEY", LEGACY_VALUE, workspace=None)
         self._secret("FOREIGN_KEY", FOREIGN_VALUE, workspace=self.other)
         SecretGrant.objects.create(script=self.beta, secret=self.serper)
+        self.admin = get_user_model().objects.create_superuser(
+            username=f"t18-{uuid.uuid4().hex[:6]}", email=f"{uuid.uuid4().hex[:6]}@t18.test",
+            password="x",
+        )
 
     def _script(self, name, **kwargs):
         kwargs.setdefault("workspace", self.ws)
@@ -144,6 +152,7 @@ class _Fixture:
             encrypted_value=EncryptionService.encrypt(value), **kwargs)
 
     def api_token(self, permissions, **kwargs):
+        kwargs.setdefault("created_by", self.admin)
         raw = APIToken.generate_token(scope="api")
         APIToken.objects.create(name=f"t{uuid.uuid4().hex[:6]}", scope="api", token=raw,
                                 workspace=self.ws, permissions=permissions, **kwargs)
@@ -274,6 +283,52 @@ class ScriptCodeTests(_Fixture, TestCase):
 
 
 # --------------------------------------------------------------------------- the inventory
+
+
+class InstanceWideListTests(_Fixture, TestCase):
+    """Providers and plugins answer only a token a superuser created."""
+
+    def setUp(self):
+        super().setUp()
+        Plugin.objects.create(slug="acme", name="Acme", version="1.0.0", status="active", manifest={})
+        self.member = get_user_model().objects.create_user(
+            username=f"m-{uuid.uuid4().hex[:6]}", email=f"{uuid.uuid4().hex[:6]}@t18.test", password="x"
+        )
+
+    def test_a_token_made_by_a_non_superuser_or_nobody_is_refused(self):
+        for created_by in (self.member, None):
+            raw = self.api_token(ALL, created_by=created_by)
+            for slug in ("providers.list", "plugins.list"):
+                with self.subTest(slug=slug, created_by=created_by):
+                    response = self.rest(slug, raw=raw)
+                    self.assertEqual(response.status_code, 403)
+                    error = response.json()["error"]
+                    self.assertEqual(error["code"], "forbidden")
+                    self.assertIn("created by a superuser", error["message"])
+                    self.assertIn(slug, error["message"])
+            # environments.list stays open to any permitted token.
+            self.assertTrue(self.data("environments.list", raw=raw)["environments"])
+
+    def test_a_superusers_token_answers_until_its_creator_is_demoted(self):
+        raw = self.api_token(ALL)
+        self.assertEqual([p["slug"] for p in self.data("plugins.list", raw=raw)["plugins"]], ["acme"])
+        self.assertIn("ai", self.data("providers.list", raw=raw))
+        get_user_model().objects.filter(pk=self.admin.pk).update(is_superuser=False)
+        self.assertEqual(self.error("plugins.list", raw=raw), (403, "forbidden"))
+
+    def test_over_mcp_too(self):
+        raw = self.api_token(ALL, created_by=self.member)
+        response = self.rpc("tools/call", {"name": "plugins-list", "arguments": {}}, raw=raw)
+        self.assertEqual(response.status_code, 200)
+        body = response.json()["result"]
+        self.assertTrue(body["isError"])
+        self.assertIn("created by a superuser", json.dumps(body))
+
+    def test_py_ai_keeps_its_tiers(self):
+        for tools in (build_tools(self.ws), build_tools(self.ws, agent=CHANNEL)):
+            error, data = call(tools, "plugins-list")
+            self.assertFalse(error, data)
+            self.assertEqual([p["slug"] for p in data["plugins"]], ["acme"])
 
 
 class InventoryTests(_Fixture, TestCase):
