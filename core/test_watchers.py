@@ -1003,6 +1003,17 @@ class BackupTests(_Fixture):
         self.assertEqual((w.enabled, w.connection), (False, None))
         self.assertTrue(any('"Needs conn"' in m and "connection is gone" in m for m in result["warnings"]))
 
+    def test_the_restore_preview_counts_the_watchers(self):
+        # Test pass 6: a restore replaces every watcher, but its preview didn't say how many come back.
+        from core.services.backup_service import BackupService
+
+        self._watcher(name="One")
+        self._watcher(name="Two", enabled=False)
+        data = BackupService.create_backup(include_runs=False)
+        self.assertEqual(BackupService.get_backup_preview(data)["counts"]["watchers"], 2)
+        data.pop("watchers")
+        self.assertEqual(BackupService.get_backup_preview(data)["counts"]["watchers"], 0)
+
     def test_an_older_backup_has_no_watchers(self):
         from core.services.backup_service import BackupService
 

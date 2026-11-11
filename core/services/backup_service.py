@@ -1343,6 +1343,9 @@ class BackupService:
             "databases": len(backup_data.get("databases", [])),
             "connections": len(backup_data.get("connections", [])),
             "oauth_clients": len(backup_data.get("oauth_clients", [])),
+            # A restore replaces the watchers (an older backup without the
+            # section restores none), so the preview names how many come back.
+            "watchers": len(backup_data.get("watchers", [])),
         }
 
         return {
