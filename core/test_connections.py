@@ -132,7 +132,7 @@ class PresetTests(SimpleTestCase):
     def test_the_batch_one_presets_are_valid(self):
         self.assertEqual(
             list(presets()),
-            ["airtable", "google", "microsoft", "github", "slack", "notion", "http", "smtp"],
+            ["airtable", "google", "microsoft", "github", "slack", "notion", "http", "smtp", "imap"],
         )
         for preset in presets().values():
             with self.subTest(preset=preset.key):

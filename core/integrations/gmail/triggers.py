@@ -2,8 +2,8 @@
 Watcher adapters of the gmail integration (see ``framework.Trigger``).
 
 ``gmail_new_message``: a run per email that comes in (with a label, or
-matching a search), through ``gmail.new_messages``. Triggers (2.5 Stage 7)
-runs it; until then nothing does.
+matching a search), through ``gmail.new_messages``. Watchers use it as an
+adapter (``core.triggers.adapters.integration``).
 """
 
 from core.integrations.framework import Trigger

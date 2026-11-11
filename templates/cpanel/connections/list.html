@@ -85,7 +85,7 @@
         {% icon "link" class="w-7 h-7 text-info" %}
     </div>
     <h3 class="text-base font-semibold mb-1">No connections yet</h3>
-    <p class="text-sm text-muted mb-6">Connect Google, Microsoft 365, GitHub, Slack or Notion with OAuth, or add an Airtable token, an HTTP API's key or login, or an SMTP server, then grant it to the scripts that need it.</p>
+    <p class="text-sm text-muted mb-6">Connect Google, Microsoft 365, GitHub, Slack or Notion with OAuth, or add an Airtable token, an HTTP API's key or login, an SMTP server or an IMAP mailbox, then grant it to the scripts that need it.</p>
     {% if encryption_configured %}
     <a href="{% url 'cpanel:connection_create' %}" class="inline-flex items-center gap-2 text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">Add connection</a>
     {% endif %}

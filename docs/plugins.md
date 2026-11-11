@@ -776,7 +776,7 @@ Declare them in `plugin.json`:
 
 | Field | Notes |
 |---|---|
-| `provider` | Required. A preset key: `google`, `microsoft`, `github`, `slack`, `notion`, `airtable`, `http`, `smtp`. |
+| `provider` | Required. A preset key: `google`, `microsoft`, `github`, `slack`, `notion`, `airtable`, `http`, `smtp`, `imap`. |
 | `key` | How your code names this connection. Lowercase letters, digits, `_`, `-`; defaults to the provider. Two connections of one provider need their own keys. |
 | `scopes` | OAuth providers only. The preset's scope-set keys (the boxes on the connection form, e.g. `sheets`, `gmail_read`, `gmail_modify`, `drive_file`, `calendar` for Google) or raw provider scopes. Connect asks for them plus what the account lookup needs. |
 | `label` | What the account is for, shown on the plugin page. |

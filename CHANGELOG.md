@@ -473,6 +473,18 @@ begins tracking at the current release; earlier history is in the git log.
   workspace's watchers, each with Check now, a Test button on its form and an
   event log of the last 50 events linking to their runs. `watchers.list`
   (`watchers:read`) lists them over the API and MCP, and backups include them.
+- **Watchers for email, Google Sheets, Gmail, GitHub and database rows.**
+  Five more sources: a new email in an IMAP mailbox (`imap_new_message`, on
+  the new **IMAP mailbox** connection: read-only, headers only, optional IMAP
+  search keys), a new row from a query over one of the workspace's databases
+  (`db_poll`: a read-only SELECT and a cursor column such as an id or a
+  created_at, optional id column), and the integrations' triggers: a new row
+  in a Google Sheet (`sheets_new_row`, optional key column), a new email in
+  Gmail (`gmail_new_message`, label or search) and a new GitHub issue
+  (`github_new_issue`). The last three sign in with a Google or GitHub
+  connection and call the same `pyrunner_integrations` functions a script
+  would. Each has a Test on the watcher form and starts exactly one run per new
+  item, across restarts.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

@@ -11,7 +11,8 @@ An integration is one service's typed functions for scripts. Its files:
   the live smoke checks.
 - ``core/integrations/<key>/triggers.py`` (optional): ``TRIGGERS = (Trigger(...),)``,
   the watcher adapters the integration offers to Triggers (2.5 Stage 7;
-  ``load_triggers()`` reads them, nothing runs them yet).
+  ``load_triggers()`` reads them; ``core.triggers.registry`` offers each one
+  as a watcher adapter that needs a connection of the integration's provider).
 - ``core/integrations/<key>/tests/``: ``test_api.py`` (the conformance suite and
   cassette tests) and ``cassettes/`` (recorded exchanges, replayed offline).
 - ``core/script_helpers/pyrunner_integrations/<key>.py``: the module scripts

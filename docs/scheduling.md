@@ -305,7 +305,8 @@ they existed leaves the instance's windows as they are.
 ## Watchers
 
 A watcher starts a script when something new shows up somewhere else: an
-entry in a JSON list behind a URL, an item in an RSS or Atom feed. It checks
+entry in a JSON list behind a URL, an item in an RSS or Atom feed, an email,
+a row in a Google Sheet or a database, a GitHub issue. It checks
 the source on an interval and starts **one run per new item**, with the item
 in the run's [event](run-context.md#the-run-event) (kind `watcher`).
 
@@ -320,9 +321,39 @@ run.
 |---|---|---|
 | New entry in a JSON list (HTTP) | URL, list path (dotted, empty = the whole response), id path, newest first, optional since parameter | an entry whose id it hasn't seen |
 | New item in an RSS or Atom feed | feed URL | an item whose id (its `guid` or Atom `id`, else its link) it hasn't seen |
+| New email in an IMAP mailbox | an **IMAP mailbox** connection; mailbox (default `INBOX`), optional IMAP search keys (`FROM "billing@example.com"`, `UNSEEN`) | a message past the last UID it reported (that matches the search when it arrives) |
+| New row from a database query | a database of the workspace (Databases), one SELECT, a cursor column, optional id column | a row whose cursor value is past the last one reported |
+| New row in a Google Sheet | a **Google** connection; spreadsheet id, sheet or range, optional key column | a row added after the last one (with a key column: once its key cell is filled in) |
+| New email in Gmail | a **Google** connection; optional label, optional Gmail search | a message that comes in (or gets the label later) |
+| New issue on GitHub | a **GitHub** connection; `owner/name`, optional labels | an issue opened after the first check (pull requests aren't issues) |
 
-The URL must answer without signing in. For a source that needs a key, a
-schedule plus `pyrunner_integrations.http` and a Connection is the way for now.
+The JSON list and feed URLs must answer without signing in. For another
+source that needs a key, a schedule plus `pyrunner_integrations.http` and a
+Connection is the way for now.
+
+The connection-backed sources sign in with a connection of the watcher's
+workspace (the form lists only the right kind). The Google, Gmail and GitHub
+watchers call the same `pyrunner_integrations` functions a script would
+(`google_sheets.new_rows`, `gmail.new_messages`, `github.new_issues`), as that
+connection. Details per source:
+
+- **IMAP**: add the mailbox under Connections as an **IMAP mailbox** (host,
+  port, security, username, password or app password); its Test logs in and
+  out. The watcher opens the mailbox read-only and reads headers only, so
+  nothing is marked as read; the run's item has `uid`, `mailbox`, `subject`,
+  `from`, `to`, `cc`, `date`, `message_id`, `flags`, `size` and
+  `internal_date`, and the script reads the body itself. If the server
+  rebuilds the mailbox (a new UIDVALIDITY), the watcher marks again from
+  there. Mail that only matches the search later (flagged an hour after it
+  arrived) isn't reported.
+- **Database query**: needs a data server (Databases). The query runs as the
+  database's own role in a read-only transaction, wrapped as
+  `SELECT * FROM (<query>) AS pyrun_poll WHERE <cursor> > <last> ORDER BY <cursor>`,
+  so pick a cursor column that only grows (a serial `id`, a `created_at`) and
+  write it as a plain column name. The item is the row (dates as ISO text).
+  When rows can share a cursor value (two signups in the same second), name an
+  id column too: each row is its own event, and rows sharing a value are always
+  reported together. Rows whose cursor is empty are never reported.
 
 **The first check only marks where the source is**: what is already there
 never starts runs. After that, each check starts a run per new item, oldest

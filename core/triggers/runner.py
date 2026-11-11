@@ -273,8 +273,8 @@ def _check_claimed(watcher, claim) -> CheckResult:
             raise LookupError(f'The adapter "{watcher.adapter}" isn\'t available (a plugin removed?).')
         if adapter.requires_connection and watcher.connection_id is None:
             raise LookupError("This watcher needs a connection and has none (it was deleted?).")
-        ctx = CheckContext(watcher=watcher, connection=watcher.connection, limit=remaining,
-                           timeout=ADAPTER_TIMEOUT_SECONDS)
+        ctx = CheckContext(watcher=watcher, connection=watcher.connection, workspace=watcher.workspace,
+                           limit=remaining, timeout=ADAPTER_TIMEOUT_SECONDS)
         config = with_defaults(adapter.config_schema, watcher.config)
         events, new_cursor = _checked(_call_adapter(adapter, ctx, config, watcher.cursor))
     except Exception as e:
@@ -431,17 +431,18 @@ def tick(budget: float = TICK_BUDGET_SECONDS) -> dict:
     return {"paused": False, "checked": sum(outcomes.values()), "outcomes": outcomes}
 
 
-def test_adapter(adapter, config, connection=None) -> tuple[bool, str, list]:
+def test_adapter(adapter, config, connection=None, workspace=None) -> tuple[bool, str, list]:
     """The console's Test button: ``adapter.test`` on unsaved settings.
 
     Returns ``(ok, message, items)`` with the connection's secret values
     masked out of both. It reads the source only: no state, no runs.
+    ``workspace`` is the watcher's (what a workspace resource is looked up in).
     """
     from core.executor import mask_secrets_in_value
     from core.models import Watcher
 
     probe = Watcher(adapter=adapter.key, connection=connection)
-    ctx = CheckContext(watcher=None, connection=connection, timeout=ADAPTER_TIMEOUT_SECONDS)
+    ctx = CheckContext(watcher=None, connection=connection, workspace=workspace, timeout=ADAPTER_TIMEOUT_SECONDS)
     try:
         message, items = adapter.test(ctx, with_defaults(adapter.config_schema, config))
     except Exception as e:

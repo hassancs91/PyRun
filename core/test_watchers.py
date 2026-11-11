@@ -653,7 +653,8 @@ class ConfigTests(TestCase):
         self.assertIn("repo", validate_config(schema, {"repo": "not a repo"})[1])
 
     def test_registry_lists_the_built_ins(self):
-        self.assertEqual(list(registry.adapters()), ["http_poll", "rss_new_item"])
+        # T32 added the connection-backed ones after them (core.test_watcher_adapters).
+        self.assertEqual(list(registry.adapters())[:2], ["http_poll", "rss_new_item"])
         self.assertIsNone(registry.get("nope"))
         self.assertEqual(registry.title("nope"), "nope")
 

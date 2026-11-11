@@ -155,11 +155,12 @@ class ConnectionForm(forms.Form):
             if not ok:
                 self.add_error(field.name, why)
         host = data.get("host")
-        if self.auth_kind == SMTP and host:
+        mail = "imap" if self.preset.protocol == "imap" else "smtp" if self.auth_kind == SMTP else None
+        if mail and host:
             if any(c in host for c in "/:@ "):
-                self.add_error("host", "Enter a host name only, e.g. smtp.example.com.")
+                self.add_error("host", f"Enter a host name only, e.g. {mail}.example.com.")
             else:
-                ok, why = netguard.is_safe_endpoint_url(f"smtp://{host}")
+                ok, why = netguard.is_safe_endpoint_url(f"{mail}://{host}")
                 if not ok:
                     self.add_error("host", why)
         return data

@@ -268,7 +268,7 @@ class DatabaseExplorerService:
 
     @classmethod
     def query(
-        cls, database, text, *, row_cap=QUERY_ROW_CAP, timeout_ms=QUERY_TIMEOUT_MS
+        cls, database, text, *, row_cap=QUERY_ROW_CAP, timeout_ms=QUERY_TIMEOUT_MS, params=None
     ) -> QueryResult:
         """Run a caller-written SELECT as the database's OWN role (``databases.query``).
 
@@ -279,6 +279,9 @@ class DatabaseExplorerService:
         ``row_cap + 1``), so a query over a huge table never transfers more,
         and the cursor's ``DECLARE`` goes over the extended protocol, which
         takes a single statement. ``statement_timeout`` bounds each statement.
+
+        ``params`` (the ``db_poll`` watcher's cursor value) are bound to ``%s``
+        placeholders; with params, a literal ``%`` in ``text`` is written ``%%``.
 
         Raises ``QueryRefused``, ``DatabaseUnavailable`` (no connection),
         ``QueryTimeout`` or ``DatabaseExplorerError`` (the server's message).
@@ -299,7 +302,7 @@ class DatabaseExplorerService:
                         (str(int(timeout_ms)),),
                     )
                 with conn.cursor(name="pyrun_query") as cur:
-                    cur.execute(statement)
+                    cur.execute(statement, params)
                     if cur.description is None:
                         return QueryResult()
                     columns = [d.name for d in cur.description]

@@ -166,6 +166,7 @@ def watcher_edit_view(request: HttpRequest, watcher_id=None) -> HttpResponse:
             else:
                 ok, message, items = runner.test_adapter(
                     adapter, form.cleaned_data["config"], form.cleaned_data.get("connection"),
+                    workspace=request.workspace,
                 )
                 test_result = {
                     "ok": ok, "message": message,

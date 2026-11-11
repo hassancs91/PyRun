@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 
 # Every provider with a preset. Explicit (not a directory scan) so the set is
 # the same on every instance and a stray folder can't add a provider.
-PRESET_MODULES = ("airtable", "google", "microsoft", "github", "slack", "notion", "http", "smtp")
+PRESET_MODULES = ("airtable", "google", "microsoft", "github", "slack", "notion", "http", "smtp", "imap")
 
 OAUTH2 = "oauth2"
 API_KEY = "api_key"
@@ -183,6 +183,10 @@ class Preset:
     # Headers every request to the base URL needs that aren't secret, as
     # (name, value) pairs (Notion's API version). Never masked.
     default_headers: tuple = ()
+    # What the connection talks: "http" (a base URL; also SMTP presets, told
+    # apart by their auth kind) or "imap" (a mail server's IMAP login, for
+    # the imap_new_message watcher; no base URL, no client()).
+    protocol: str = "http"
 
     @property
     def auth_kinds(self) -> tuple:
@@ -199,7 +203,7 @@ class Preset:
 
     @property
     def is_http(self) -> bool:
-        return SMTP not in self.fields
+        return self.protocol == "http" and SMTP not in self.fields
 
 
 @functools.lru_cache(maxsize=1)
@@ -228,6 +232,7 @@ def auth_material(preset, auth_kind, config, credentials) -> dict:
     ``headers`` and ``params`` go on every request to the base URL; ``token``
     is the bare key or token (API key and bearer kinds), ``basic`` the username
     and password, ``smtp`` the server and login. Keys that don't apply are None.
+    An IMAP preset's material also has ``imap``: the server and login.
     """
     config = config or {}
     credentials = credentials or {}
@@ -264,6 +269,14 @@ def auth_material(preset, auth_kind, config, credentials) -> dict:
             "username": config.get("username", ""),
             "password": credentials.get("password", ""),
             "from_address": config.get("from_address", ""),
+        }
+    if preset.protocol == "imap":
+        out["imap"] = {
+            "host": config.get("host", ""),
+            "port": int(config.get("port") or 993),
+            "security": config.get("security") or "ssl",
+            "username": config.get("username", ""),
+            "password": credentials.get("password", ""),
         }
     if auth_kind != SMTP:
         for name, value in preset.default_headers:

@@ -110,7 +110,9 @@ A `triggers.py` declares `TRIGGERS = (framework.Trigger(key, title,
 config_schema, check),)`: `check(module, connection, config, state,
 limit=None)` returns `(events, new_state)`, each event `{"id", "item"}`, and
 reports nothing on its first call (`state` None). `framework.load_triggers(key)`
-reads them (the Triggers feature runs them). `google_sheets`' `sheets_new_row` is built on
+reads them, and each one is a watcher adapter (needing a connection of the
+integration's provider; see [Watchers](../scheduling.md#watchers)). `google_sheets`'
+`sheets_new_row` is built on
 `google_sheets.new_rows`, `gmail`'s `gmail_new_message` (a label, a search) on
 `gmail.new_messages`, `github`'s `github_new_issue` (a repository, labels) on
 `github.new_issues`.

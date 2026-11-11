@@ -58,6 +58,9 @@ class CheckContext:
     watcher: object = None
     # The Connection the watcher uses (adapters with requires_connection).
     connection: object = None
+    # The workspace the watcher (or the Test) belongs to: an adapter that
+    # reads a workspace resource (db_poll's database) looks it up here.
+    workspace: object = None
     # At most this many events (None = no limit).
     limit: int | None = None
     # Seconds the adapter's network calls may take.

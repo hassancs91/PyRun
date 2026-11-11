@@ -2,8 +2,8 @@
 Watcher adapters of the google_sheets integration (see ``framework.Trigger``).
 
 ``sheets_new_row``: a run per row added to a sheet, through
-``google_sheets.new_rows``. Triggers (2.5 Stage 7) runs it; until then
-nothing does.
+``google_sheets.new_rows``. Watchers use it as an adapter
+(``core.triggers.adapters.integration``).
 """
 
 import hashlib

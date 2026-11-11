@@ -17,9 +17,10 @@ and the executor all go through here:
 - ``connection_masks(run)`` is the spawn-time half: the secret values of every
   connection the run's script is granted, for the masking dict.
 - ``check_connection(connection)`` calls the provider's whoami (or the test
-  path, or an SMTP login) from the server, through the SSRF guard.
+  path, an SMTP or an IMAP login) from the server, through the SSRF guard.
 """
 
+import imaplib
 import json
 import logging
 import re
@@ -262,6 +263,14 @@ def info(connection) -> dict:
         "account_label": connection.account_label,
         "base_url": base_url(preset, connection.config) if preset and preset.is_http else None,
     }
+    if preset and preset.protocol == "imap":
+        config = connection.config or {}
+        out["imap"] = {
+            "host": config.get("host", ""),
+            "port": config.get("port"),
+            "security": config.get("security", ""),
+            "username": config.get("username", ""),
+        }
     if connection.auth_kind == SMTP:
         config = connection.config or {}
         out["smtp"] = {
@@ -406,6 +415,65 @@ def _test_smtp(smtp) -> str:
     return smtp["username"] or smtp["from_address"] or smtp["host"]
 
 
+class _GuardedIMAP(imaplib.IMAP4):
+    def _create_socket(self, timeout):
+        from core.netguard import guarded_create_connection
+
+        return guarded_create_connection((self.host, self.port), timeout)
+
+
+class _GuardedIMAPSSL(imaplib.IMAP4_SSL):
+    def _create_socket(self, timeout):
+        from core.netguard import guarded_create_connection
+
+        sock = guarded_create_connection((self.host, self.port), timeout)
+        return self.ssl_context.wrap_socket(sock, server_hostname=self.host)
+
+
+def imap_reason(exc) -> str:
+    """An imaplib error's text (imaplib passes the server's reply as bytes)."""
+    reason = exc.args[0] if exc.args else ""
+    if isinstance(reason, bytes):
+        reason = reason.decode("utf-8", "replace")
+    return str(reason).strip() or exc.__class__.__name__
+
+
+def open_imap(imap, timeout=TEST_TIMEOUT):
+    """An IMAP session logged in as ``imap`` (an IMAP preset's material), through the SSRF guard.
+
+    The caller logs out. Raises ``imaplib.IMAP4.error`` (refused) or OSError
+    (unreachable, refused address).
+    """
+    context = ssl.create_default_context()
+    if imap["security"] == "ssl":
+        server = _GuardedIMAPSSL(imap["host"], imap["port"], ssl_context=context, timeout=timeout)
+    else:
+        server = _GuardedIMAP(imap["host"], imap["port"], timeout=timeout)
+    try:
+        if imap["security"] == "starttls":
+            server.starttls(ssl_context=context)
+        server.login(imap["username"], imap["password"])
+    except BaseException as e:
+        try:
+            server.shutdown()
+        except Exception:  # closing a link that already failed; the login error is what counts
+            pass
+        if isinstance(e, imaplib.IMAP4.error):
+            raise imaplib.IMAP4.error(imap_reason(e)) from None
+        raise
+    return server
+
+
+def _test_imap(imap) -> str:
+    """Log in and out; returns the account label. Raises on failure."""
+    server = open_imap(imap)
+    try:
+        server.logout()
+    except Exception:  # the login worked, which is the test; a failed LOGOUT only drops the link
+        pass
+    return imap["username"] or imap["host"]
+
+
 def _label(data, keys) -> str:
     """The first non-empty value among ``keys`` (dotted = nested) in a JSON object."""
     for key in keys:
@@ -498,6 +566,8 @@ def check_connection(connection) -> tuple[bool, str]:
         material = auth_material(preset, connection.auth_kind, connection.config, credentials)
         if connection.auth_kind == SMTP:
             label = _test_smtp(material["smtp"])
+        elif preset.protocol == "imap":
+            label = _test_imap(material["imap"])
         else:
             label = http_check(preset, connection.config, material)
     except Exception as e:

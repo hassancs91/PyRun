@@ -2,8 +2,8 @@
 Watcher adapters of the github integration (see ``framework.Trigger``).
 
 ``github_new_issue``: a run per issue opened in a repository (optionally only
-those with some labels), through ``github.new_issues``. Triggers (2.5 Stage 7)
-runs it; until then nothing does.
+those with some labels), through ``github.new_issues``. Watchers use it as an
+adapter (``core.triggers.adapters.integration``).
 """
 
 from core.integrations.framework import Trigger
