@@ -30,7 +30,7 @@ from pathlib import Path
 
 # Every integration with a module. Explicit (not a directory scan), like
 # presets.PRESET_MODULES.
-INTEGRATION_MODULES = ("http",)
+INTEGRATION_MODULES = ("http", "airtable", "notion")
 
 KEY_RE = re.compile(r"^[a-z][a-z0-9_]{1,39}$")
 HELPERS_DIR = Path(__file__).resolve().parent.parent / "script_helpers"

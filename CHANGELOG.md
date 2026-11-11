@@ -389,6 +389,20 @@ begins tracking at the current release; earlier history is in the git log.
   page in `docs/integrations/` from its docstrings (searched by `help.search`).
   Guide: `docs/integrations/framework.md`; plugin tests: "Testing code that uses
   connections" in `docs/plugins.md`.
+- **Airtable and Notion integrations.** `pyrunner_integrations.airtable`
+  lists, finds, creates, updates and deletes records (`list_records` with view,
+  fields, sort and formula, page by page; `find_records(base, table,
+  {"Email": "ada@example.com"})`; `create_record(s)`, `update_record(s)` with
+  merge, replace or upsert, `delete_records`, in batches of 10; `list_bases`,
+  `list_tables`), and waits out Airtable's 30-second pause after a 429.
+  `pyrunner_integrations.notion` queries databases, gets, creates, updates and
+  archives pages, appends and lists blocks (a plain string is a paragraph, more
+  than 100 go in several requests) and searches. Both use a connection of their
+  kind, return the service's own objects, and have a generated page with an
+  example script in `docs/integrations/` and `manage.py integration_smoke`
+  checks. Their tests replay exchanges written from each service's API
+  reference. For module authors, the shared client takes `rate_limit_wait`
+  for a service that pauses for a fixed time after a 429.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

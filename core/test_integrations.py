@@ -759,7 +759,9 @@ class ScaffoldTests(SimpleTestCase):
             ("http", ("--provider", "http"), "'http' is already an integration"),
             ("smtp", (), "'smtp' is already a connection preset: nothing was written. To build its "
                          "integration on it, run new_integration smtp --provider smtp."),
-            ("airtable", ("--provider", "http"), "'airtable' is already a connection preset"),
+            ("airtable", ("--provider", "airtable"), "'airtable' is already an integration"),
+            # microsoft: a preset with no integration of its own (not in 2.5's batch 1).
+            ("microsoft", ("--provider", "http"), "'microsoft' is already a connection preset"),
         ):
             with self.subTest(key=key, extra=extra), self.assertRaises(CommandError) as caught:
                 call_command("new_integration", key, "--root", str(root), *extra, stdout=io.StringIO())

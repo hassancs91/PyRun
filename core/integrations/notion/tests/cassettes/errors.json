@@ -1,0 +1,109 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "/v1/pages/0000000000000000000000000000dead"
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "object": "error",
+          "status": 404,
+          "code": "object_not_found",
+          "message": "Could not find page with ID: 00000000-0000-0000-0000-00000000dead. Make sure the relevant pages and databases are shared with your integration."
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "url": "/v1/pages",
+        "json": {
+          "parent": {
+            "database_id": "8a3c1e2f4b5d4c6e9f0a1b2c3d4e5f60"
+          },
+          "properties": {
+            "Stage": {
+              "select": {
+                "name": "Open"
+              }
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "object": "error",
+          "status": 400,
+          "code": "validation_error",
+          "message": "Stage is not a property that exists."
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/v1/databases/8a3c1e2f4b5d4c6e9f0a1b2c3d4e5f60"
+      },
+      "response": {
+        "status": 429,
+        "headers": {
+          "content-type": "application/json; charset=utf-8",
+          "retry-after": "1"
+        },
+        "json": {
+          "object": "error",
+          "status": 429,
+          "code": "rate_limited",
+          "message": "You have been rate limited. Please try again in a few minutes."
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/v1/databases/8a3c1e2f4b5d4c6e9f0a1b2c3d4e5f60"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "object": "database",
+          "id": "8a3c1e2f-4b5d-4c6e-9f0a-1b2c3d4e5f60",
+          "title": [
+            {
+              "type": "text",
+              "text": {
+                "content": "Tasks",
+                "link": null
+              },
+              "annotations": {
+                "bold": false,
+                "italic": false,
+                "strikethrough": false,
+                "underline": false,
+                "code": false,
+                "color": "default"
+              },
+              "plain_text": "Tasks",
+              "href": null
+            }
+          ],
+          "properties": {}
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,250 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "/v0/appExampleBase01/Contacts",
+        "json": {
+          "records": [
+            {
+              "fields": {
+                "Name": "Lead 1",
+                "Status": "New"
+              }
+            },
+            {
+              "fields": {
+                "Name": "Lead 2",
+                "Status": "New"
+              }
+            },
+            {
+              "fields": {
+                "Name": "Lead 3",
+                "Status": "New"
+              }
+            },
+            {
+              "fields": {
+                "Name": "Lead 4",
+                "Status": "New"
+              }
+            },
+            {
+              "fields": {
+                "Name": "Lead 5",
+                "Status": "New"
+              }
+            },
+            {
+              "fields": {
+                "Name": "Lead 6",
+                "Status": "New"
+              }
+            },
+            {
+              "fields": {
+                "Name": "Lead 7",
+                "Status": "New"
+              }
+            },
+            {
+              "fields": {
+                "Name": "Lead 8",
+                "Status": "New"
+              }
+            },
+            {
+              "fields": {
+                "Name": "Lead 9",
+                "Status": "New"
+              }
+            },
+            {
+              "fields": {
+                "Name": "Lead 10",
+                "Status": "New"
+              }
+            }
+          ],
+          "typecast": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "records": [
+            {
+              "id": "recLead000000001",
+              "createdTime": "2026-11-02T09:00:00.000Z",
+              "fields": {
+                "Name": "Lead 1",
+                "Status": "New"
+              }
+            },
+            {
+              "id": "recLead000000002",
+              "createdTime": "2026-11-02T09:00:00.000Z",
+              "fields": {
+                "Name": "Lead 2",
+                "Status": "New"
+              }
+            },
+            {
+              "id": "recLead000000003",
+              "createdTime": "2026-11-02T09:00:00.000Z",
+              "fields": {
+                "Name": "Lead 3",
+                "Status": "New"
+              }
+            },
+            {
+              "id": "recLead000000004",
+              "createdTime": "2026-11-02T09:00:00.000Z",
+              "fields": {
+                "Name": "Lead 4",
+                "Status": "New"
+              }
+            },
+            {
+              "id": "recLead000000005",
+              "createdTime": "2026-11-02T09:00:00.000Z",
+              "fields": {
+                "Name": "Lead 5",
+                "Status": "New"
+              }
+            },
+            {
+              "id": "recLead000000006",
+              "createdTime": "2026-11-02T09:00:00.000Z",
+              "fields": {
+                "Name": "Lead 6",
+                "Status": "New"
+              }
+            },
+            {
+              "id": "recLead000000007",
+              "createdTime": "2026-11-02T09:00:00.000Z",
+              "fields": {
+                "Name": "Lead 7",
+                "Status": "New"
+              }
+            },
+            {
+              "id": "recLead000000008",
+              "createdTime": "2026-11-02T09:00:00.000Z",
+              "fields": {
+                "Name": "Lead 8",
+                "Status": "New"
+              }
+            },
+            {
+              "id": "recLead000000009",
+              "createdTime": "2026-11-02T09:00:00.000Z",
+              "fields": {
+                "Name": "Lead 9",
+                "Status": "New"
+              }
+            },
+            {
+              "id": "recLead000000010",
+              "createdTime": "2026-11-02T09:00:00.000Z",
+              "fields": {
+                "Name": "Lead 10",
+                "Status": "New"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "url": "/v0/appExampleBase01/Contacts",
+        "json": {
+          "records": [
+            {
+              "fields": {
+                "Name": "Lead 11",
+                "Status": "New"
+              }
+            },
+            {
+              "fields": {
+                "Name": "Lead 12",
+                "Status": "New"
+              }
+            }
+          ],
+          "typecast": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "records": [
+            {
+              "id": "recLead000000011",
+              "createdTime": "2026-11-02T09:00:00.000Z",
+              "fields": {
+                "Name": "Lead 11",
+                "Status": "New"
+              }
+            },
+            {
+              "id": "recLead000000012",
+              "createdTime": "2026-11-02T09:00:00.000Z",
+              "fields": {
+                "Name": "Lead 12",
+                "Status": "New"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "url": "/v0/appExampleBase01/Contacts",
+        "json": {
+          "records": [
+            {
+              "fields": {
+                "Name": "Ada",
+                "Email": "ada@example.com"
+              }
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "records": [
+            {
+              "id": "recAda0000000001",
+              "createdTime": "2026-11-02T09:00:00.000Z",
+              "fields": {
+                "Name": "Ada",
+                "Email": "ada@example.com"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

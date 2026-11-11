@@ -1,0 +1,137 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "PATCH",
+        "url": "/v0/appExampleBase01/Contacts",
+        "json": {
+          "records": [
+            {
+              "id": "recAda0000000001",
+              "fields": {
+                "Status": "Done"
+              }
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "records": [
+            {
+              "id": "recAda0000000001",
+              "createdTime": "2026-11-02T09:00:00.000Z",
+              "fields": {
+                "Name": "Ada",
+                "Email": "ada@example.com",
+                "Active": true,
+                "Status": "Done"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "PUT",
+        "url": "/v0/appExampleBase01/Contacts",
+        "json": {
+          "records": [
+            {
+              "id": "recAda0000000001",
+              "fields": {
+                "Name": "Ada L."
+              }
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "records": [
+            {
+              "id": "recAda0000000001",
+              "createdTime": "2026-11-02T09:00:00.000Z",
+              "fields": {
+                "Name": "Ada L."
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "PATCH",
+        "url": "/v0/appExampleBase01/Contacts",
+        "json": {
+          "records": [
+            {
+              "fields": {
+                "Email": "ada@example.com",
+                "Score": 9
+              }
+            },
+            {
+              "fields": {
+                "Email": "new@example.com",
+                "Score": 1
+              }
+            }
+          ],
+          "typecast": true,
+          "performUpsert": {
+            "fieldsToMergeOn": [
+              "Email"
+            ]
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "records": [
+            {
+              "id": "recAda0000000001",
+              "createdTime": "2026-11-02T09:00:00.000Z",
+              "fields": {
+                "Name": "Ada",
+                "Email": "ada@example.com",
+                "Active": true,
+                "Score": 9
+              }
+            },
+            {
+              "id": "recNew0000000009",
+              "createdTime": "2026-11-02T09:00:00.000Z",
+              "fields": {
+                "Email": "new@example.com",
+                "Score": 1
+              }
+            }
+          ],
+          "createdRecords": [
+            "recNew0000000009"
+          ],
+          "updatedRecords": [
+            "recAda0000000001"
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -11,9 +11,11 @@ me = http.get("/v1/me")                                  # the script's one HTTP
 http.post("/v1/items", json={"name": "Ada"}, connection="crm")
 ```
 
-Each module has its own page here, generated from its code: `http.md` (any
-HTTP API with an API key, bearer token or basic auth). More services build on
-the same framework.
+Each module has its own page here, generated from its code, with an example
+script: `http.md` (any HTTP API with an API key, bearer token or basic auth),
+`airtable.md` (list, find, create, update and delete records) and `notion.md`
+(query databases, create and update pages, append blocks, search). More
+services build on the same framework.
 
 ## What every integration does
 
@@ -34,7 +36,7 @@ the same framework.
   status) and `retry_after`. Its message never holds a credential.
 - **Retries built in.** A 429, or a 503 with Retry-After, is retried up to 3
   times, waiting what the service asks (up to 60 seconds) or 1, 2 and 4
-  seconds. Other 5xx replies and lost connections are retried only for calls
+  seconds (Airtable: 30 seconds, the pause it documents after a 429). Other 5xx replies and lost connections are retried only for calls
   that are safe to repeat (GET, PUT, DELETE). Each retry logs a warning, which
   shows in the run's stderr.
 - **One re-auth after a 401.** The client tells PyRun the token was refused
@@ -76,7 +78,12 @@ The script-facing module:
   docstring on every public function, with examples after a line of text
   ("For example:"), indented;
 - gives every public function a `connection=None` keyword, and declares each
-  one in `api.py`'s `functions` (anything else is private: `_name`).
+  one in `api.py`'s `functions` (anything else is private: `_name`);
+- for a service that refuses for a fixed time after a 429 and sends no
+  Retry-After, sets `RATE_LIMIT_WAIT` (seconds) and passes it to its client,
+  `_client.shared(connection, PROVIDER, rate_limit_wait=RATE_LIMIT_WAIT)` (and
+  in `client()`): the client waits that long instead of 1, 2 and 4 seconds,
+  and the generated page says so.
 
 ## Starting one
 
@@ -93,9 +100,9 @@ pass the conformance suite as generated, so you start from green:
 manage.py test core.integrations.acme
 ```
 
-It refuses a key that is already an integration (`http`, or one with an
-`api.py` or a module), and a key that names an existing preset unless
-`--provider` is that preset (`new_integration airtable --provider airtable`):
+It refuses a key that is already an integration (`http`, `airtable`, `notion`,
+or one with an `api.py` or a module), and a key that names an existing preset
+unless `--provider` is that preset (`new_integration slack --provider slack`):
 it exits with an error and writes nothing. Files left from an earlier try are
 kept, never overwritten.
 
@@ -177,6 +184,11 @@ written as `{base_url:<name>}`, which replay turns back into the test's own.
 Look through a cassette before you commit it: names, emails and other
 personal data in the replies are kept as they came (pass `scrub=("value",
 ...)` to mask more).
+
+A cassette is plain JSON, so it can also be written by hand from the
+service's API reference when there is no account to record with: Airtable's
+and Notion's were, and their `note` says so. Re-record them with real
+credentials when you have them; replay checks the same things either way.
 
 ### The conformance suite
 

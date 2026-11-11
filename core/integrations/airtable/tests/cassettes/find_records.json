@@ -1,0 +1,31 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "/v0/appExampleBase01/Contacts?pageSize=1&filterByFormula=AND%28%7BEmail%7D%3D%22ada%40example.com%22%2C%7BActive%7D%3DTRUE%28%29%29"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "records": [
+            {
+              "id": "recAda0000000001",
+              "createdTime": "2026-11-02T09:00:00.000Z",
+              "fields": {
+                "Name": "Ada",
+                "Email": "ada@example.com",
+                "Active": true
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

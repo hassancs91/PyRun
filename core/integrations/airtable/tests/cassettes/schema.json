@@ -1,0 +1,98 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "/v0/meta/bases"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "bases": [
+            {
+              "id": "appExampleBase01",
+              "name": "CRM",
+              "permissionLevel": "create"
+            }
+          ],
+          "offset": "itrBases2"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/v0/meta/bases?offset=itrBases2"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "bases": [
+            {
+              "id": "appExampleBase02",
+              "name": "Content",
+              "permissionLevel": "read"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/v0/meta/bases/appExampleBase01/tables"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "tables": [
+            {
+              "id": "tblContacts00001",
+              "name": "Contacts",
+              "primaryFieldId": "fldName000000001",
+              "fields": [
+                {
+                  "id": "fldName000000001",
+                  "name": "Name",
+                  "type": "singleLineText"
+                },
+                {
+                  "id": "fldEmail00000002",
+                  "name": "Email",
+                  "type": "email"
+                },
+                {
+                  "id": "fldActive0000003",
+                  "name": "Active",
+                  "type": "checkbox",
+                  "options": {
+                    "color": "greenBright",
+                    "icon": "check"
+                  }
+                }
+              ],
+              "views": [
+                {
+                  "id": "viwGrid000000001",
+                  "name": "Grid view",
+                  "type": "grid"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

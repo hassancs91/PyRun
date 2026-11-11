@@ -60,6 +60,11 @@ def render(integration) -> str:
     _pc, client = framework.script_helpers()
     waits = [min(client.MAX_BACKOFF, client.BACKOFF * 2 ** i) for i in range(client.MAX_RETRIES)]
     module = framework.script_module(integration)
+    # A module whose service pauses for a fixed time after a 429 declares it (and passes it to its client).
+    pause = getattr(module, "RATE_LIMIT_WAIT", None)
+    otherwise = (f"{pause:g} seconds after a 429 that doesn't say (the service's documented pause), "
+                 f"{_or([f'{w:g}' for w in waits])} seconds after a 5xx" if pause is not None
+                 else f"{_or([f'{w:g}' for w in waits])} seconds")
     preset = framework.load_preset(integration.provider)
     kinds = [AUTH_LABELS.get(k, k) for k in preset.auth_kinds]
     lines = [
@@ -97,7 +102,7 @@ def render(integration) -> str:
         "status, or None) and `retry_after` (seconds, or None). Its message never holds the connection's "
         "credentials. Before raising, the client retries a 429 (or a 503 with Retry-After) up to "
         f"{client.MAX_RETRIES} times, waiting what the service asks (up to {client.MAX_WAIT:g} s; longer, and "
-        f"the error says it in `retry_after`) or else {_or([f'{w:g}' for w in waits])} seconds; other 5xx "
+        f"the error says it in `retry_after`) or else {otherwise}; other 5xx "
         "replies and lost connections only for GET, PUT, DELETE and other calls that are safe to repeat. After "
         "a 401 it asks PyRun once for new credentials (an OAuth token is refreshed then) and tries again.",
         "",

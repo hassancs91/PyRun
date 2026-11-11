@@ -1,0 +1,253 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "PATCH",
+        "url": "/v1/blocks/1f0e0d0c-0b0a-4908-8706-050403020101/children",
+        "json": {
+          "children": [
+            {
+              "type": "heading_2",
+              "heading_2": {
+                "rich_text": [
+                  {
+                    "text": {
+                      "content": "Summary"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "object": "block",
+              "type": "paragraph",
+              "paragraph": {
+                "rich_text": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "content": "Everything went fine."
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "object": "list",
+          "results": [
+            {
+              "object": "block",
+              "id": "2a0e0d0c-0b0a-4908-8706-0504030201a1",
+              "type": "heading_2",
+              "has_children": false,
+              "archived": false,
+              "heading_2": {
+                "rich_text": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "content": "Summary",
+                      "link": null
+                    },
+                    "annotations": {
+                      "bold": false,
+                      "italic": false,
+                      "strikethrough": false,
+                      "underline": false,
+                      "code": false,
+                      "color": "default"
+                    },
+                    "plain_text": "Summary",
+                    "href": null
+                  }
+                ],
+                "is_toggleable": false,
+                "color": "default"
+              }
+            },
+            {
+              "object": "block",
+              "id": "2a0e0d0c-0b0a-4908-8706-0504030201a2",
+              "type": "paragraph",
+              "has_children": false,
+              "archived": false,
+              "created_time": "2026-11-02T09:05:00.000Z",
+              "last_edited_time": "2026-11-02T09:05:00.000Z",
+              "paragraph": {
+                "rich_text": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "content": "Everything went fine.",
+                      "link": null
+                    },
+                    "annotations": {
+                      "bold": false,
+                      "italic": false,
+                      "strikethrough": false,
+                      "underline": false,
+                      "code": false,
+                      "color": "default"
+                    },
+                    "plain_text": "Everything went fine.",
+                    "href": null
+                  }
+                ],
+                "color": "default"
+              }
+            }
+          ],
+          "next_cursor": null,
+          "has_more": false,
+          "type": "block",
+          "block": {}
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/v1/blocks/1f0e0d0c-0b0a-4908-8706-050403020101/children?page_size=100"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "object": "list",
+          "results": [
+            {
+              "object": "block",
+              "id": "2a0e0d0c-0b0a-4908-8706-0504030201a2",
+              "type": "paragraph",
+              "has_children": false,
+              "archived": false,
+              "created_time": "2026-11-02T09:05:00.000Z",
+              "last_edited_time": "2026-11-02T09:05:00.000Z",
+              "paragraph": {
+                "rich_text": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "content": "Everything went fine.",
+                      "link": null
+                    },
+                    "annotations": {
+                      "bold": false,
+                      "italic": false,
+                      "strikethrough": false,
+                      "underline": false,
+                      "code": false,
+                      "color": "default"
+                    },
+                    "plain_text": "Everything went fine.",
+                    "href": null
+                  }
+                ],
+                "color": "default"
+              }
+            },
+            {
+              "object": "block",
+              "id": "2a0e0d0c-0b0a-4908-8706-0504030201a3",
+              "type": "paragraph",
+              "has_children": false,
+              "archived": false,
+              "created_time": "2026-11-02T09:05:00.000Z",
+              "last_edited_time": "2026-11-02T09:05:00.000Z",
+              "paragraph": {
+                "rich_text": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "content": "Second line.",
+                      "link": null
+                    },
+                    "annotations": {
+                      "bold": false,
+                      "italic": false,
+                      "strikethrough": false,
+                      "underline": false,
+                      "code": false,
+                      "color": "default"
+                    },
+                    "plain_text": "Second line.",
+                    "href": null
+                  }
+                ],
+                "color": "default"
+              }
+            }
+          ],
+          "next_cursor": "cursorBlocks2",
+          "has_more": true,
+          "type": "block",
+          "block": {}
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/v1/blocks/1f0e0d0c-0b0a-4908-8706-050403020101/children?page_size=100&start_cursor=cursorBlocks2"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "object": "list",
+          "results": [
+            {
+              "object": "block",
+              "id": "2a0e0d0c-0b0a-4908-8706-0504030201a4",
+              "type": "paragraph",
+              "has_children": false,
+              "archived": false,
+              "created_time": "2026-11-02T09:05:00.000Z",
+              "last_edited_time": "2026-11-02T09:05:00.000Z",
+              "paragraph": {
+                "rich_text": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "content": "Third line.",
+                      "link": null
+                    },
+                    "annotations": {
+                      "bold": false,
+                      "italic": false,
+                      "strikethrough": false,
+                      "underline": false,
+                      "code": false,
+                      "color": "default"
+                    },
+                    "plain_text": "Third line.",
+                    "href": null
+                  }
+                ],
+                "color": "default"
+              }
+            }
+          ],
+          "next_cursor": null,
+          "has_more": false,
+          "type": "block",
+          "block": {}
+        }
+      }
+    }
+  ]
+}

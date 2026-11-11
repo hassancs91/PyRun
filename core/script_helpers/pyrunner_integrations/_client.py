@@ -388,16 +388,20 @@ class Client:
     ``connection`` is a connection name, or None for the script's one connection
     of ``provider``. ``check(response, body)`` may raise an IntegrationError for a
     2xx reply that is really a failure (Slack's ``"ok": false``).
+    ``rate_limit_wait`` is the seconds to wait after a 429 without Retry-After,
+    for a service that documents a fixed pause (Airtable's 30 s); otherwise
+    the usual backoff applies.
     """
 
     def __init__(self, connection=None, *, provider="http", timeout=30, max_retries=MAX_RETRIES,
-                 max_wait=MAX_WAIT, check=None):
+                 max_wait=MAX_WAIT, check=None, rate_limit_wait=None):
         self.connection = connection or provider
         self.provider = provider
         self.timeout = timeout
         self.max_retries = max_retries
         self.max_wait = max_wait
         self.check = check
+        self.rate_limit_wait = rate_limit_wait
         self._session = None
 
     def __repr__(self):
@@ -506,6 +510,8 @@ class Client:
                     continue
             if status in (429, 500, 502, 503, 504) and attempt < self.max_retries:
                 retry_after = _retry_after(response.headers)
+                if status == 429 and retry_after is None:
+                    retry_after = self.rate_limit_wait
                 if status == 429 or (status == 503 and retry_after is not None) or repeatable:
                     if retry_after is None or retry_after <= self.max_wait:
                         attempt += 1
@@ -593,12 +599,16 @@ class Client:
         return paginate(fetch, limit=limit, max_pages=max_pages)
 
 
-def shared(connection=None, provider="http") -> Client:
-    """The module-wide Client for ``connection`` (one session reused across calls)."""
+def shared(connection=None, provider="http", **options) -> Client:
+    """The module-wide Client for ``connection`` (one session reused across calls).
+
+    ``options`` are Client keyword arguments, used when the client is made: a
+    module passes the same ones on every call.
+    """
     key = (connection or provider, provider)
     client = _clients.get(key)
     if client is None:
-        client = _clients[key] = Client(connection, provider=provider)
+        client = _clients[key] = Client(connection, provider=provider, **options)
     return client
 
 

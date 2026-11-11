@@ -1,0 +1,66 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "/v0/appExampleBase01/Contacts/recMissing000000"
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "error": "NOT_FOUND"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "url": "/v0/appExampleBase01/Contacts",
+        "json": {
+          "records": [
+            {
+              "fields": {
+                "Score": "nine"
+              }
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 422,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "error": {
+            "type": "INVALID_VALUE_FOR_COLUMN",
+            "message": "Field \"Score\" cannot accept the provided value"
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/v0/meta/bases/appExampleBase01/tables"
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "error": {
+            "type": "INVALID_PERMISSIONS_OR_MODEL_NOT_FOUND",
+            "message": "Invalid permissions, or the requested model was not found. Check that both your user and your token have the required permissions, and that the model names and/or ids are correct."
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,65 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "/v0/appExampleBase01/Contacts?pageSize=100&view=Grid+view&fields%5B%5D=Name&fields%5B%5D=Email&sort%5B0%5D%5Bfield%5D=Created&sort%5B0%5D%5Bdirection%5D=desc"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "records": [
+            {
+              "id": "recAda0000000001",
+              "createdTime": "2026-11-02T09:00:00.000Z",
+              "fields": {
+                "Name": "Ada",
+                "Email": "ada@example.com",
+                "Active": true
+              }
+            },
+            {
+              "id": "recGrace00000002",
+              "createdTime": "2026-11-02T09:00:00.000Z",
+              "fields": {
+                "Name": "Grace",
+                "Email": "grace@example.com"
+              }
+            }
+          ],
+          "offset": "itrPage2/recGrace00000002"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/v0/appExampleBase01/Contacts?pageSize=100&view=Grid+view&fields%5B%5D=Name&fields%5B%5D=Email&sort%5B0%5D%5Bfield%5D=Created&sort%5B0%5D%5Bdirection%5D=desc&offset=itrPage2%2FrecGrace00000002"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "records": [
+            {
+              "id": "recAlan000000003",
+              "createdTime": "2026-11-02T09:00:00.000Z",
+              "fields": {
+                "Name": "Alan",
+                "Email": "alan@example.com",
+                "Score": 7
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "DELETE",
+        "url": "/v0/appExampleBase01/Contacts?records%5B%5D=recAda0000000001"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "records": [
+            {
+              "id": "recAda0000000001",
+              "deleted": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "DELETE",
+        "url": "/v0/appExampleBase01/Contacts?records%5B%5D=recGrace00000002&records%5B%5D=recAlan000000003"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "records": [
+            {
+              "id": "recGrace00000002",
+              "deleted": true
+            },
+            {
+              "id": "recAlan000000003",
+              "deleted": true
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

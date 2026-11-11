@@ -1,0 +1,75 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "/v1/databases/8a3c1e2f4b5d4c6e9f0a1b2c3d4e5f60"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "object": "database",
+          "id": "8a3c1e2f-4b5d-4c6e-9f0a-1b2c3d4e5f60",
+          "title": [
+            {
+              "type": "text",
+              "text": {
+                "content": "Tasks",
+                "link": null
+              },
+              "annotations": {
+                "bold": false,
+                "italic": false,
+                "strikethrough": false,
+                "underline": false,
+                "code": false,
+                "color": "default"
+              },
+              "plain_text": "Tasks",
+              "href": null
+            }
+          ],
+          "properties": {
+            "Name": {
+              "id": "title",
+              "name": "Name",
+              "type": "title",
+              "title": {}
+            },
+            "Status": {
+              "id": "Xk%3Ab",
+              "name": "Status",
+              "type": "select",
+              "select": {
+                "options": [
+                  {
+                    "id": "s1",
+                    "name": "Open",
+                    "color": "green"
+                  },
+                  {
+                    "id": "s2",
+                    "name": "Done",
+                    "color": "gray"
+                  }
+                ]
+              }
+            },
+            "Due": {
+              "id": "d%3Ae",
+              "name": "Due",
+              "type": "date",
+              "date": {}
+            }
+          },
+          "url": "https://www.notion.so/8a3c1e2f4b5d4c6e9f0a1b2c3d4e5f60"
+        }
+      }
+    }
+  ]
+}

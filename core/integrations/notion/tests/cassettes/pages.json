@@ -1,0 +1,288 @@
+{
+  "pyrunner_cassette": 1,
+  "note": "Hand-built from the provider's public API reference (no live recording: no credentials); the replies follow its documented shapes. Record a real one with PYRUNNER_RECORD_CASSETTES=1.",
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "/v1/pages/1f0e0d0c-0b0a-4908-8706-050403020101"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "object": "page",
+          "id": "1f0e0d0c-0b0a-4908-8706-050403020101",
+          "created_time": "2026-11-02T09:00:00.000Z",
+          "last_edited_time": "2026-11-02T09:05:00.000Z",
+          "archived": false,
+          "parent": {
+            "type": "database_id",
+            "database_id": "8a3c1e2f-4b5d-4c6e-9f0a-1b2c3d4e5f60"
+          },
+          "properties": {
+            "Name": {
+              "id": "title",
+              "type": "title",
+              "title": [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Call Ada",
+                    "link": null
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  },
+                  "plain_text": "Call Ada",
+                  "href": null
+                }
+              ]
+            },
+            "Status": {
+              "id": "Xk%3Ab",
+              "type": "select",
+              "select": {
+                "id": "s1",
+                "name": "Open",
+                "color": "green"
+              }
+            }
+          },
+          "url": "https://www.notion.so/Call-Ada-1f0e0d0c0b0a49088706050403020101"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "url": "/v1/pages",
+        "json": {
+          "parent": {
+            "database_id": "8a3c1e2f4b5d4c6e9f0a1b2c3d4e5f60"
+          },
+          "properties": {
+            "Status": {
+              "select": {
+                "name": "Open"
+              }
+            },
+            "title": {
+              "title": [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Call Ada"
+                  }
+                }
+              ]
+            }
+          },
+          "children": [
+            {
+              "object": "block",
+              "type": "paragraph",
+              "paragraph": {
+                "rich_text": [
+                  {
+                    "type": "text",
+                    "text": {
+                      "content": "Ask about the invoice."
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "object": "page",
+          "id": "1f0e0d0c-0b0a-4908-8706-050403020101",
+          "created_time": "2026-11-02T09:00:00.000Z",
+          "last_edited_time": "2026-11-02T09:05:00.000Z",
+          "archived": false,
+          "parent": {
+            "type": "database_id",
+            "database_id": "8a3c1e2f-4b5d-4c6e-9f0a-1b2c3d4e5f60"
+          },
+          "properties": {
+            "Name": {
+              "id": "title",
+              "type": "title",
+              "title": [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Call Ada",
+                    "link": null
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  },
+                  "plain_text": "Call Ada",
+                  "href": null
+                }
+              ]
+            },
+            "Status": {
+              "id": "Xk%3Ab",
+              "type": "select",
+              "select": {
+                "id": "s1",
+                "name": "Open",
+                "color": "green"
+              }
+            }
+          },
+          "url": "https://www.notion.so/Call-Ada-1f0e0d0c0b0a49088706050403020101"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "PATCH",
+        "url": "/v1/pages/1f0e0d0c-0b0a-4908-8706-050403020101",
+        "json": {
+          "properties": {
+            "Status": {
+              "select": {
+                "name": "Done"
+              }
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "object": "page",
+          "id": "1f0e0d0c-0b0a-4908-8706-050403020101",
+          "created_time": "2026-11-02T09:00:00.000Z",
+          "last_edited_time": "2026-11-02T09:05:00.000Z",
+          "archived": false,
+          "parent": {
+            "type": "database_id",
+            "database_id": "8a3c1e2f-4b5d-4c6e-9f0a-1b2c3d4e5f60"
+          },
+          "properties": {
+            "Name": {
+              "id": "title",
+              "type": "title",
+              "title": [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Call Ada",
+                    "link": null
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  },
+                  "plain_text": "Call Ada",
+                  "href": null
+                }
+              ]
+            },
+            "Status": {
+              "id": "Xk%3Ab",
+              "type": "select",
+              "select": {
+                "id": "s1",
+                "name": "Done",
+                "color": "green"
+              }
+            }
+          },
+          "url": "https://www.notion.so/Call-Ada-1f0e0d0c0b0a49088706050403020101"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "PATCH",
+        "url": "/v1/pages/1f0e0d0c-0b0a-4908-8706-050403020101",
+        "json": {
+          "archived": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "json": {
+          "object": "page",
+          "id": "1f0e0d0c-0b0a-4908-8706-050403020101",
+          "created_time": "2026-11-02T09:00:00.000Z",
+          "last_edited_time": "2026-11-02T09:05:00.000Z",
+          "archived": true,
+          "parent": {
+            "type": "database_id",
+            "database_id": "8a3c1e2f-4b5d-4c6e-9f0a-1b2c3d4e5f60"
+          },
+          "properties": {
+            "Name": {
+              "id": "title",
+              "type": "title",
+              "title": [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Call Ada",
+                    "link": null
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  },
+                  "plain_text": "Call Ada",
+                  "href": null
+                }
+              ]
+            },
+            "Status": {
+              "id": "Xk%3Ab",
+              "type": "select",
+              "select": {
+                "id": "s1",
+                "name": "Done",
+                "color": "green"
+              }
+            }
+          },
+          "url": "https://www.notion.so/Call-Ada-1f0e0d0c0b0a49088706050403020101"
+        }
+      }
+    }
+  ]
+}
