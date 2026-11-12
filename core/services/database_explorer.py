@@ -410,8 +410,11 @@ class DatabaseExplorerService:
         Postgres itself — not by PyRun inspecting SQL. ``row_cap`` bounds
         the result (``truncated`` reports whether more rows existed);
         ``timeout_ms`` bounds the runtime via ``set_config`` inside the
-        session. Raises ``DatabaseExplorerError`` on any server-side failure.
+        session. Raises ``QueryTimeout`` past the timeout and
+        ``DatabaseExplorerError`` on any other server-side failure.
         """
+        from psycopg.errors import QueryCanceled
+
         try:
             with cls._scoped_connect(database) as conn:
                 conn.read_only = bool(read_only)
@@ -436,6 +439,13 @@ class DatabaseExplorerService:
                     return QueryResult(columns, list(rows), truncated)
         except DatabaseExplorerError:
             raise
+        except QueryCanceled as e:
+            # Postgres' own "canceling statement due to statement timeout"
+            # isn't for the page (2.5 test pass 8).
+            raise QueryTimeout(
+                f"Reading the database took longer than {int(timeout_ms) / 1000:g} seconds and was "
+                "stopped. Try again in a moment."
+            ) from e
         except Exception as e:
             raise DatabaseExplorerError(str(e)) from e
 
@@ -533,7 +543,7 @@ class DatabaseExplorerService:
                 try:
                     counted = cls.execute(
                         database,
-                        sql.SQL("SELECT count(*) FROM {}").format(sql.Identifier(name)),
+                        sql.SQL(GRID_MARKER + " SELECT count(*) FROM {}").format(sql.Identifier(name)),
                         row_cap=None,
                     )
                     entry["row_estimate"] = counted.rows[0][0]

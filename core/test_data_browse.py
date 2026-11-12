@@ -223,6 +223,37 @@ class GridPageTests(TestCase):
                 self.assertRaisesRegex(DatabaseExplorerError, "^server gone$"):
             SVC.grid_page(self.db, "items", COLUMNS[:1])
 
+    def test_the_exact_count_of_a_small_table_is_left_out_of_slow_queries(self):
+        # 2.5 test pass 8: the table list's exact count (never-analysed small
+        # tables) showed up in Monitor's slow queries as if a script ran it.
+        from core.services.database_explorer import QueryResult
+
+        calls = []
+
+        def fake_execute(database, query, params=None, **kwargs):
+            calls.append(query)
+            if len(calls) == 1:
+                return QueryResult(["relname", "rows", "size"], [("items", 0, 8192)], False)
+            return QueryResult(["count"], [(3,)], False)
+
+        with mock.patch.object(SVC, "execute", side_effect=fake_execute):
+            tables = SVC.tables(self.db)
+        self.assertEqual((tables[0]["row_estimate"], tables[0]["row_exact"]), (3, True))
+        self.assertTrue(is_viewer_statement(_sql(calls[1])))
+
+    def test_a_timeout_reading_the_catalog_is_typed_and_worded_for_people(self):
+        # 2.5 test pass 8: a locked table timed out in tables()/columns() (execute),
+        # and the page showed Postgres' "canceling statement due to statement timeout".
+        from psycopg.errors import QueryCanceled
+
+        conn = _FakeScopedConn([])
+        conn.cur.execute = mock.Mock(side_effect=[None, QueryCanceled("canceling statement due to statement timeout")])
+        with mock.patch.object(SVC, "_scoped_connect", return_value=conn), \
+                self.assertRaises(QueryTimeout) as caught:
+            SVC.columns(self.db, "items")
+        self.assertIn("longer than 15 seconds", str(caught.exception))
+        self.assertNotIn("canceling statement", str(caught.exception))
+
 
 # --------------------------------------------------------------------------- view
 
