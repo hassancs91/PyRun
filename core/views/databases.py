@@ -10,6 +10,7 @@ the detail page, then connect from code via the ``pyrunner_db`` helper.
 
 import csv
 import json
+import logging
 import re
 
 from django.contrib import messages
@@ -29,6 +30,7 @@ from core.services import (
     DatabaseProvisionError,
     DatabaseService,
 )
+from core.views.decorators import DATA_SERVER_MISSING_MESSAGE, operator_message
 from core.views.ownership import owned_block_message, owned_delete_blocked
 from core.services.database_explorer import (
     CSV_ROW_CAP,
@@ -39,6 +41,8 @@ from core.services.database_explorer import (
     grid_sortable,
     json_value,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _require_manage(request: HttpRequest) -> None:
@@ -182,7 +186,11 @@ def database_server_test_view(request: HttpRequest) -> HttpResponse:
     if not DatabaseService.is_configured():
         messages.error(
             request,
-            "No data server is configured. Set PYRUNNER_DATA_DB_URL and restart.",
+            operator_message(
+                request.user,
+                "No data server is configured. Set PYRUNNER_DATA_DB_URL and restart.",
+                DATA_SERVER_MISSING_MESSAGE,
+            ),
         )
         return redirect("cpanel:database_list")
 
@@ -201,8 +209,12 @@ def database_create_view(request: HttpRequest) -> HttpResponse:
     if not DatabaseService.is_configured():
         messages.error(
             request,
-            "No data server is configured. Set PYRUNNER_DATA_DB_URL to enable "
-            "the Databases feature.",
+            operator_message(
+                request.user,
+                "No data server is configured. Set PYRUNNER_DATA_DB_URL to enable "
+                "the Databases feature.",
+                DATA_SERVER_MISSING_MESSAGE,
+            ),
         )
         return redirect("cpanel:database_list")
 
@@ -319,8 +331,9 @@ def database_reveal_view(request: HttpRequest, pk) -> HttpResponse:
         return redirect("cpanel:database_detail", pk=database.pk)
     try:
         revealed_dsn = DatabaseService.scoped_dsn(database)
-    except Exception as e:
-        messages.error(request, f"Could not build the connection string: {e}")
+    except Exception:
+        logger.exception("Database %s: the connection string couldn't be built", database.pk)
+        messages.error(request, "Could not build the connection string. The server log has the details.")
         return redirect("cpanel:database_detail", pk=database.pk)
     return render(
         request,

@@ -20,6 +20,7 @@ from core.forms import ChannelForm, ChannelInboundForm
 from core.models import Channel, ChannelMember
 from core.services import ChannelService, ChannelServiceError, EncryptionService
 from core.services.channels import ChannelError, ledger
+from core.views.decorators import ENCRYPTION_MISSING_MESSAGE, operator_message
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,11 @@ def channel_create_view(request: HttpRequest) -> HttpResponse:
     if not EncryptionService.is_configured():
         messages.error(
             request,
-            "Encryption is not configured. Set ENCRYPTION_KEY in your environment.",
+            operator_message(
+                request.user,
+                "Encryption is not configured. Set ENCRYPTION_KEY in your environment.",
+                ENCRYPTION_MISSING_MESSAGE,
+            ),
         )
         return redirect("cpanel:channel_list")
 

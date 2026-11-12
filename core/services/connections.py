@@ -320,7 +320,7 @@ def _usable(connection, refused=None):
         logger.error("Connection %s: credentials could not be decrypted", connection.pk)
         raise ConnectionLookupError(
             "CONNECTION_UNREADABLE",
-            f"Connection '{connection.name}' couldn't be decrypted (was ENCRYPTION_KEY changed?).",
+            f"Connection '{connection.name}' couldn't be decrypted (the server's encryption key may have changed).",
             503,
         ) from None
     return connection, preset, credentials

@@ -19,7 +19,11 @@
 {% if not encryption_configured %}
 <div class="rounded-2xl border border-warn/30 bg-warn/10 p-5">
     <h3 class="font-medium text-warn">Encryption not configured</h3>
+    {% if user.is_superuser %}
     <p class="text-sm text-muted mt-1">Set the <span class="font-mono text-text">ENCRYPTION_KEY</span> environment variable to add connections: their credentials are stored encrypted, like secrets.</p>
+    {% else %}
+    <p class="text-sm text-muted mt-1">Connection credentials are stored encrypted. Ask an administrator to set up encryption on this server.</p>
+    {% endif %}
 </div>
 {% endif %}
 

@@ -15,6 +15,7 @@ from core.forms import SecretCreateForm, SecretEditForm
 from core.models import Secret, SecretProvider
 from core.services import EncryptionService
 from core.services.secret_backends import SecretResolutionError, resolve_secret_ref
+from core.views.decorators import ENCRYPTION_MISSING_MESSAGE, operator_message
 from core.views.ownership import owned_block_message, owned_delete_blocked
 
 logger = logging.getLogger(__name__)
@@ -112,7 +113,11 @@ def secret_create_view(request: HttpRequest) -> HttpResponse:
     if not EncryptionService.is_configured():
         messages.error(
             request,
-            "Encryption is not configured. Set ENCRYPTION_KEY in your environment.",
+            operator_message(
+                request.user,
+                "Encryption is not configured. Set ENCRYPTION_KEY in your environment.",
+                ENCRYPTION_MISSING_MESSAGE,
+            ),
         )
         return redirect("cpanel:secret_list")
 

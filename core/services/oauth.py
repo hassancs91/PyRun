@@ -151,7 +151,7 @@ def _token_request(preset, client, data) -> dict:
         logger.error("OAuth app %s: client secret could not be decrypted", client.pk)
         raise OAuthError(
             f"The {preset.label} OAuth app's client secret couldn't be decrypted "
-            "(was ENCRYPTION_KEY changed?): enter it again."
+            "(the server's encryption key may have changed): enter it again."
         ) from None
     body = dict(data)
     headers = {"Accept": "application/json"}
@@ -603,7 +603,7 @@ def ensure_fresh(connection, refused=None):
     if outcome == "unreadable":
         raise ConnectionLookupError(
             "CONNECTION_UNREADABLE",
-            f"Connection '{row.name}' couldn't be decrypted (was ENCRYPTION_KEY changed?).",
+            f"Connection '{row.name}' couldn't be decrypted (the server's encryption key may have changed).",
             503,
         )
     return Connection.objects.get(pk=row.pk)

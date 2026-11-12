@@ -100,7 +100,7 @@ class DbPollAdapter(Adapter):
         from core.services.database_service import DatabaseService
 
         if not DatabaseService.is_configured():
-            raise AdapterError("This instance has no data server (PYRUNNER_DATA_DB_URL), so no database to read.")
+            raise AdapterError("This server has no data server attached, so there is no database to read.")
         if ctx.workspace is None:
             raise AdapterError("No workspace to find the database in.")
         database = Database.objects.filter(workspace=ctx.workspace, name=name).first()

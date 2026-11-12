@@ -3665,7 +3665,7 @@ class ChannelForm(forms.Form):
         help_text = spec.help
         if spec.secret and editing and unreadable:
             help_text = (
-                f"The stored {spec.label.lower()} can't be decrypted (was ENCRYPTION_KEY changed?); "
+                f"The stored {spec.label.lower()} can't be decrypted (the server's encryption key may have changed); "
                 "enter it again."
             )
         field = forms.CharField(required=False, widget=widget, label=spec.label, help_text=help_text)
@@ -3708,7 +3708,7 @@ class ChannelForm(forms.Form):
                     self.add_error(
                         spec.name,
                         f"The stored {spec.label.lower()} can't be decrypted "
-                        "(was ENCRYPTION_KEY changed?); enter it again.",
+                        "(the server's encryption key may have changed); enter it again.",
                     )
                 continue
             if not value and spec.required:

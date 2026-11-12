@@ -631,12 +631,14 @@ def _validate_environment(run: Run) -> str:
 
     if not environment.exists():
         raise EnvironmentNotFoundError(
-            f"Environment directory not found: {environment.get_full_path()}"
+            f'Environment directory not found (environment "{environment.name}"). An administrator can recreate it.'
         )
 
     python_path = environment.get_python_executable()
     if not os.path.isfile(python_path):
-        raise PythonNotFoundError(f"Python executable not found: {python_path}")
+        raise PythonNotFoundError(
+            f'Python executable not found (environment "{environment.name}"). An administrator can recreate it.'
+        )
 
     return python_path
 
@@ -1445,11 +1447,13 @@ def run_in_environment(
 
     if not environment.exists():
         raise EnvironmentNotFoundError(
-            f"Environment directory not found: {environment.get_full_path()}"
+            f'Environment directory not found (environment "{environment.name}"). An administrator can recreate it.'
         )
     python_path = environment.get_python_executable()
     if not os.path.isfile(python_path):
-        raise PythonNotFoundError(f"Python executable not found: {python_path}")
+        raise PythonNotFoundError(
+            f'Python executable not found (environment "{environment.name}"). An administrator can recreate it.'
+        )
 
     workdir = Path(settings.SCRIPTS_WORKDIR)
     workdir.mkdir(parents=True, exist_ok=True)

@@ -18,6 +18,20 @@ from django.core.exceptions import PermissionDenied
 
 ADMIN_ONLY_MESSAGE = "Only instance admins can open this page."
 
+# Server set-up hints (env var names, management commands) are for the people
+# who run the server. Everyone else is told to ask them (2.5 test pass 8, F4).
+ENCRYPTION_MISSING_MESSAGE = (
+    "Encryption isn't set up on this server yet. Ask an administrator to set up encryption."
+)
+DATA_SERVER_MISSING_MESSAGE = (
+    "No data server is attached to this server. Ask an administrator to attach one."
+)
+
+
+def operator_message(user, for_operators: str, for_others: str) -> str:
+    """The set-up hint for a superuser, the neutral text for anyone else."""
+    return for_operators if getattr(user, "is_superuser", False) else for_others
+
 
 def superuser_required(view_func):
     """Require an authenticated superuser.

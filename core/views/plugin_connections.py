@@ -23,6 +23,7 @@ from core.models import Connection, Plugin
 from core.services import EncryptionService, oauth
 from core.services import plugin_connections as pc
 from core.views.connections import local_url
+from core.views.decorators import ENCRYPTION_MISSING_MESSAGE, operator_message
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +68,11 @@ def plugin_connection_connect_view(request: HttpRequest, slug, key) -> HttpRespo
         messages.error(request, "Join a workspace first: connections belong to one.")
         return _back(request)
     if not EncryptionService.is_configured():
-        messages.error(request, "Set ENCRYPTION_KEY before adding connections: their credentials are encrypted.")
+        messages.error(request, operator_message(
+            request.user,
+            "Set ENCRYPTION_KEY before adding connections: their credentials are encrypted.",
+            ENCRYPTION_MISSING_MESSAGE,
+        ))
         return _back(request)
     preset = requirement.preset
     if not requirement.is_oauth:

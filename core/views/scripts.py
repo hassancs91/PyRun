@@ -1,6 +1,7 @@
 """
 Script views for the control panel.
 """
+import logging
 import re
 
 from django.shortcuts import render, redirect, get_object_or_404
@@ -27,6 +28,8 @@ from core.services.schedule_service import ScheduleService
 from core.services.script_env import editor_secret_names, env_var_collisions
 from core.services.script_inputs import ScriptInputsError, prepare_inputs, schedule_conflict
 from core.views.ownership import owned_block_message, owned_delete_blocked
+
+logger = logging.getLogger(__name__)
 
 # Matches os.environ['X'] / os.environ.get('X') / os.getenv('X') (single/double quotes).
 _ENV_REF_RE = re.compile(
@@ -545,11 +548,12 @@ def _start_manual_run(request: HttpRequest, script, inputs, rerun_of=None) -> Ht
         # row, so there is no run to show (and none to save back as failed).
         messages.error(request, f"Not run. {e.message}")
         return redirect("cpanel:script_detail", pk=script.pk)
-    except Exception as e:
+    except Exception:
+        logger.exception("Script %s: the run couldn't be queued", script.pk)
         run.status = Run.Status.FAILED
-        run.stderr = f"Failed to queue task: {str(e)}"
+        run.stderr = "Failed to queue task. The server log has the details."
         run.save()
-        messages.error(request, f"Failed to queue script: {str(e)}")
+        messages.error(request, "Failed to queue script. The server log has the details.")
 
     return redirect("cpanel:run_detail", pk=run.pk)
 

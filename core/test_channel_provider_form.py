@@ -430,7 +430,7 @@ class TelegramRegressionTests(_Base):
         # and the channel isn't "configured" (channels.list) until it is entered again.
         html = page.content.decode()
         self.assertNotIn("Leave blank to keep", html)
-        self.assertIn("The stored bot token can&#x27;t be decrypted (was ENCRYPTION_KEY changed?); enter it again.",
+        self.assertIn("The stored bot token can&#x27;t be decrypted (the server&#x27;s encryption key may have changed); enter it again.",
                       html)
         ch.refresh_from_db()
         self.assertFalse(ch.is_configured)

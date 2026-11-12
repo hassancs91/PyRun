@@ -41,9 +41,11 @@
         <span class="text-muted"> — scheduled scripts and queued tasks will not run. </span>
         {% if in_container %}
         <span class="text-muted">{% if user.is_superuser %}Restart them under <a href="{% url 'cpanel:settings' %}#workers" class="text-info hover:underline">Settings → Workers</a>, or restart the container.{% else %}Ask an administrator to restart the workers or the container.{% endif %}</span>
-        {% else %}
+        {% elif user.is_superuser %}
         <span class="text-muted">Start the worker with </span>
         <code class="font-mono text-text bg-panel-hi px-1.5 py-0.5 rounded">python manage.py qcluster</code>
+        {% else %}
+        <span class="text-muted">Ask an administrator to start the workers.</span>
         {% endif %}
     </div>
 </div>

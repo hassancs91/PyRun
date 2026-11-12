@@ -34,6 +34,7 @@ from core.models import Connection, ConnectionGrant, OAuthClient, Script, Worksp
 from core.services import EncryptionService
 from core.services import connections as svc
 from core.services import oauth
+from core.views.decorators import ENCRYPTION_MISSING_MESSAGE, operator_message
 
 logger = logging.getLogger(__name__)
 
@@ -331,7 +332,11 @@ def connection_list_view(request: HttpRequest) -> HttpResponse:
 @login_required
 def connection_create_view(request: HttpRequest) -> HttpResponse:
     if not EncryptionService.is_configured():
-        messages.error(request, "Set ENCRYPTION_KEY before adding connections: their credentials are encrypted.")
+        messages.error(request, operator_message(
+            request.user,
+            "Set ENCRYPTION_KEY before adding connections: their credentials are encrypted.",
+            ENCRYPTION_MISSING_MESSAGE,
+        ))
         return redirect("cpanel:connection_list")
     params = request.POST if request.method == "POST" else request.GET
     preset = get_preset(params.get("provider", ""))
@@ -601,7 +606,11 @@ def oauth_app_list_view(request: HttpRequest) -> HttpResponse:
 @login_required
 def oauth_app_form_view(request: HttpRequest, pk=None) -> HttpResponse:
     if not EncryptionService.is_configured():
-        messages.error(request, "Set ENCRYPTION_KEY before adding OAuth apps: their secrets are encrypted.")
+        messages.error(request, operator_message(
+            request.user,
+            "Set ENCRYPTION_KEY before adding OAuth apps: their secrets are encrypted.",
+            ENCRYPTION_MISSING_MESSAGE,
+        ))
         return redirect("cpanel:oauth_app_list")
     client = _oauth_client(request, pk) if pk is not None else None
     params = request.POST if request.method == "POST" else request.GET
