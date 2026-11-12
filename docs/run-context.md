@@ -807,6 +807,39 @@ API's `connections.list` and the console's Py AI list them without credentials
 
 ---
 
+## Data Stores
+
+A **data store** (the **Data Stores** page) keeps JSON values under string
+keys. Scripts use it like a dict:
+
+```python
+from pyrunner_datastore import DataStore
+
+store = DataStore("results")
+store["last_run"] = {"count": 12, "ok": True}
+seen = store.get("seen_ids", default=[])
+```
+
+A store's page is its explorer: the entries in the same grid as Tables, with a
+key search, filters on the key, size and update time, sorting (by key, size or
+**updated**) and pages of 50. Each entry shows its value's type (object, array,
+string, number, boolean, null). Click a value up to 16 KB to edit it in a JSON
+editor with **Format**; click a key to open the entry page, which shows values
+up to 256 KB in full (pretty-printed, with Format, Compact and a live JSON
+check) and bigger ones as a preview of their first characters with a
+**Download value** link. Format only re-indents the text: no number is
+rounded or rewritten.
+
+**Export JSON** downloads every entry as one JSON object, `{"key": value, ...}`.
+**Import JSON** takes the same shape (UTF-8, up to 20 MB) as an upsert: new
+keys are added, keys already stored get the file's value, keys the file doesn't
+name are left alone, and nothing is deleted. **Preview** counts what would be
+new, replaced and unchanged and writes nothing; **Import** then writes every
+change in one transaction (all or nothing). A file with an empty, too long
+(over 255 characters) or repeated key is refused whole. An exported file
+imports again unchanged. Values are exported as stored, like the console and
+the REST API show them: they are your data, not masked.
+
 ## Tables
 
 A **table** (the **Tables** page) is a list of rows with typed columns: leads,

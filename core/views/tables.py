@@ -20,7 +20,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
-from core.grid import Grid, GridColumn, display_value
+from core.grid import Grid, GridColumn, display_value, json_cell_value, next_querystring
 from core.models import Table
 from core.tables import csv_io
 from core.tables.columns import TYPE_LABELS, TYPES
@@ -169,11 +169,8 @@ def table_detail_view(request: HttpRequest, pk) -> HttpResponse:
 
 
 def _back(request, table, next_qs=None) -> HttpResponse:
-    url = reverse("cpanel:table_detail", kwargs={"pk": table.pk})
     next_qs = next_qs if next_qs is not None else request.POST.get("next", "")
-    if next_qs.startswith("?") and "\n" not in next_qs and "\r" not in next_qs:
-        url += next_qs
-    return redirect(url)
+    return redirect(reverse("cpanel:table_detail", kwargs={"pk": table.pk}) + next_querystring(next_qs))
 
 
 @login_required
@@ -217,7 +214,11 @@ def table_row_cell_view(request: HttpRequest, pk, row_id) -> JsonResponse:
     if column is None:
         return JsonResponse({"error": "Unknown column."}, status=400)
     try:
-        row = TableService.update_row(table, row_id, {column["key"]: body.get("value")})
+        value = json_cell_value(body) if column["type"] == "json" else body.get("value")
+    except ValueError as exc:
+        return JsonResponse({"error": f"Not valid JSON: {exc}"}, status=400)
+    try:
+        row = TableService.update_row(table, row_id, {column["key"]: value})
     except TableError as exc:
         return JsonResponse({"error": exc.message}, status=404 if exc.code == "row_not_found" else 400)
     value = row.data.get(column["key"])

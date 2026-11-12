@@ -24,12 +24,7 @@
             {% include "cpanel/_field_errors.html" with field=form.key %}
         </div>
 
-        <div>
-            <label for="id_value" class="block text-[13px] font-medium text-text mb-1.5">{{ form.value.label }}</label>
-            {{ form.value }}
-            {% if form.value.help_text %}<p class="mt-1.5 text-xs text-faint">{{ form.value.help_text }}</p>{% endif %}
-            {% include "cpanel/_field_errors.html" with field=form.value %}
-        </div><div class="flex items-center justify-end gap-2.5 pt-4 border-t border-line-soft">
+        {% include "cpanel/datastores/_value_editor.html" %}<div class="flex items-center justify-end gap-2.5 pt-4 border-t border-line-soft">
             <a href="{% url 'cpanel:datastore_detail' pk=datastore.pk %}" class="text-[13px] px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Cancel</a>
             <button type="submit" class="text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">Add entry</button>
         </div>

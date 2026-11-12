@@ -149,6 +149,10 @@ from core.views.datastores import (
     datastore_entry_create_view,
     datastore_entry_edit_view,
     datastore_entry_delete_view,
+    datastore_entry_cell_view,
+    datastore_entry_download_view,
+    datastore_export_view,
+    datastore_import_view,
 )
 from core.views.tables import (
     table_create_view,
@@ -445,6 +449,11 @@ urlpatterns = [
     path("datastores/<uuid:pk>/entries/create/", datastore_entry_create_view, name="datastore_entry_create"),
     path("datastores/<uuid:pk>/entries/<uuid:entry_pk>/edit/", datastore_entry_edit_view, name="datastore_entry_edit"),
     path("datastores/<uuid:pk>/entries/<uuid:entry_pk>/delete/", datastore_entry_delete_view, name="datastore_entry_delete"),
+    path("datastores/<uuid:pk>/entries/<uuid:entry_pk>/cell/", datastore_entry_cell_view, name="datastore_entry_cell"),
+    path("datastores/<uuid:pk>/entries/<uuid:entry_pk>/download/", datastore_entry_download_view,
+         name="datastore_entry_download"),
+    path("datastores/<uuid:pk>/export/", datastore_export_view, name="datastore_export"),
+    path("datastores/<uuid:pk>/import/", datastore_import_view, name="datastore_import"),
     # Tables (2.5): typed columns, JSON rows, the shared grid
     path("tables/", table_list_view, name="table_list"),
     path("tables/create/", table_create_view, name="table_create"),

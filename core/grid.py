@@ -18,7 +18,11 @@ back with ``grid.set_rows(rows, total)``, and renders
 - **Editing** is opt-in per grid: pass ``editable=True`` plus each row's
   ``cell_url`` (POST JSON ``{"column", "value"}`` → ``{"html", "raw"}``, the
   re-rendered ``cpanel/_grid_cell.html`` and the value as JSON, or ``{"error"}``) and ``delete_url``; a read-only grid (Databases) leaves
-  them out and renders no editors.
+  them out and renders no editors. The JSON dialog also sends ``text`` (the
+  JSON as typed): read a JSON cell's value with ``json_cell_value(body)``.
+  A cell can opt out of editing (``cell.editable = False``) or link somewhere
+  (``make_row(..., links={key: url})``); ``delete_confirm`` names the row in
+  the delete prompt.
 """
 
 import json
@@ -41,6 +45,8 @@ TYPE_BADGES = {
     "link": "url",
     "id": "id",
     "timestamp": "time",
+    # A per-row type pill (the DataStore explorer's value types); no header badge.
+    "kind": "",
 }
 JSON_PREVIEW_CHARS = 120
 
@@ -85,6 +91,10 @@ class GridCell:
     value: object
     display: str
     raw: str  # JSON of the value, for the inline editor
+    # False keeps this one cell read-only in an editable column (e.g. a value
+    # too big to carry in the page); ``href`` renders the cell as a link.
+    editable: bool = True
+    href: str = ""
 
 
 @dataclass
@@ -93,6 +103,7 @@ class GridRow:
     cells: list
     cell_url: str = ""
     delete_url: str = ""
+    delete_confirm: str = "Delete this row? This cannot be undone."
 
 
 def display_value(kind: str, value) -> str:
@@ -107,6 +118,26 @@ def display_value(kind: str, value) -> str:
     if kind == "datetime" and isinstance(value, str) and value.endswith("Z"):
         return value[:-1].replace("T", " ") + " UTC"
     return str(value)
+
+
+def next_querystring(value: str) -> str:
+    """A row form's ``next`` (the grid's ``?query``) when it is safe to append to the page URL, else ""."""
+    if value.startswith("?") and "\n" not in value and "\r" not in value:
+        return value
+    return ""
+
+
+def json_cell_value(body: dict):
+    """The value a JSON cell's save sends: its ``text`` (the JSON as typed) when present, else ``value``.
+
+    The grid's JSON dialog sends both; ``text`` is read here, in Python, so a
+    number JavaScript would round (a long integer) or reprint (``1.0``) keeps
+    its exact value. Empty text is null. Raises ValueError for invalid JSON.
+    """
+    text = body.get("text")
+    if isinstance(text, str):
+        return json.loads(text) if text.strip() else None
+    return body.get("value")
 
 
 @dataclass
@@ -179,15 +210,20 @@ class Grid:
         self.page_obj = paginator.get_page(self.page_number)
         self.page_range = paginator.get_elided_page_range(self.page_obj.number, on_each_side=2, on_ends=1)
 
-    def make_row(self, row_id, values: dict, *, cell_url="", delete_url="") -> GridRow:
+    def make_row(self, row_id, values: dict, *, cell_url="", delete_url="", links=None,
+                 delete_confirm="") -> GridRow:
+        """``links`` maps a column key to the URL its cell links to; ``delete_confirm`` names the row in the prompt."""
         cells = []
         for column in self.columns:
             value = values.get(column.key)
             cells.append(GridCell(
                 column=column, value=value, display=display_value(column.type, value),
-                raw=json.dumps(value, ensure_ascii=False),
+                raw=json.dumps(value, ensure_ascii=False), href=(links or {}).get(column.key, ""),
             ))
-        return GridRow(id=row_id, cells=cells, cell_url=cell_url, delete_url=delete_url)
+        row = GridRow(id=row_id, cells=cells, cell_url=cell_url, delete_url=delete_url)
+        if delete_confirm:
+            row.delete_confirm = delete_confirm
+        return row
 
     # ---------------------------------------------------------- for the template
 

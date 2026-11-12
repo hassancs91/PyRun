@@ -1,0 +1,23 @@
+{# The JSON import's preview (or why the file can't be imported). Rendered by datastore_import_view, also for fetch. #}
+{% if error %}
+<div class="rounded-xl border border-fail/30 bg-fail/10 p-4 space-y-2" role="alert">
+    <p class="text-sm text-text">{{ error }}</p>
+    {% if errors %}<ul class="text-xs text-text list-disc pl-5 space-y-0.5">{% for problem in errors %}<li>{{ problem }}</li>{% endfor %}</ul>{% endif %}
+</div>
+{% elif report %}
+<div class="rounded-xl border border-line-soft bg-ink p-4 space-y-3" data-import-preview>
+    <p class="text-sm text-text">The file holds <span class="font-mono tnum">{{ report.total }}</span> entr{{ report.total|pluralize:"y,ies" }}:
+        <span class="font-mono tnum text-ok">{{ report.new }}</span> new,
+        <span class="font-mono tnum text-warn">{{ report.updated }}</span> would replace a stored value,
+        <span class="font-mono tnum text-muted">{{ report.unchanged }}</span> unchanged. Nothing has been written yet.</p>
+    {% if report.new_keys %}
+    <div><p class="eyebrow text-faint mb-1">New keys{% if report.new > report.new_keys|length %} (first {{ report.new_keys|length }}){% endif %}</p>
+        <p class="text-xs font-mono text-text break-words">{% for key in report.new_keys %}{{ key }}{% if not forloop.last %}, {% endif %}{% endfor %}</p></div>
+    {% endif %}
+    {% if report.updated_keys %}
+    <div><p class="eyebrow text-faint mb-1">Values replaced{% if report.updated > report.updated_keys|length %} (first {{ report.updated_keys|length }}){% endif %}</p>
+        <p class="text-xs font-mono text-text break-words">{% for key in report.updated_keys %}{{ key }}{% if not forloop.last %}, {% endif %}{% endfor %}</p></div>
+    {% endif %}
+    {% if not report.new and not report.updated %}<p class="text-sm text-muted">Nothing to import: every value in the file is already stored.</p>{% endif %}
+</div>
+{% endif %}

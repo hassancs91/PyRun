@@ -565,6 +565,17 @@ begins tracking at the current release; earlier history is in the git log.
   written) and **Export CSV** (the grid's filters and sort, every page), and
   `pyrunner_tables` gets `import_csv` and `export_csv`. docs/api.md,
   docs/plugins.md and docs/run-context.md have the details.
+- **DataStore explorer.** A data store's page now shows its entries in the
+  same grid as Tables: search keys, filter by key, size or update time, sort by
+  key, size or last update, page through 50 at a time, and see each value's
+  type. Values up to 16 KB are edited in place in a JSON editor with Format;
+  the entry page shows values up to 256 KB in full (with Format, Compact and a
+  live JSON check) and bigger ones as a preview with a **Download value** link.
+  **Export JSON** downloads the whole store as one `{"key": value}` object, and
+  **Import JSON** upserts such a file after a preview of what is new, replaced
+  and unchanged (all or nothing; keys the file doesn't name are kept). Format
+  re-indents JSON without rounding long numbers, in Tables' JSON cells too.
+  docs/run-context.md has the details.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

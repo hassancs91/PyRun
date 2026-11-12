@@ -3,6 +3,7 @@ The shared data grid (core/grid.py builds ``grid``; static/js/data_grid.js
 adds the inline editors). Include with:
     {% include "cpanel/_grid.html" with grid=grid empty_text="No rows yet." %}
 Read-only when ``grid.editable`` is false: no editors, no add/delete.
+``json_hint`` replaces the JSON editor's hint line (default: empty clears the cell).
 {% endcomment %}
 <section class="rounded-2xl border border-line bg-panel overflow-hidden" data-grid data-csrf="{{ grid.csrf_token }}">
     {# Toolbar: add a filter, the active filter chips #}
@@ -52,7 +53,7 @@ Read-only when ``grid.editable`` is false: no editors, no add/delete.
                 <th class="px-3 sm:px-4 py-2.5 font-normal whitespace-nowrap {% if h.column.numeric %}text-right{% endif %}" {% if h.sorted %}aria-sort="{% if h.sorted == 'asc' %}ascending{% else %}descending{% endif %}"{% endif %}>
                     {% if h.sort_qs %}<a href="?{{ h.sort_qs }}" class="inline-flex items-center gap-1.5 text-muted hover:text-text">{% else %}<span class="inline-flex items-center gap-1.5 text-muted">{% endif %}
                         <span class="font-medium text-text">{{ h.column.label }}</span>{% if h.column.required %}<span class="text-fail" title="Required">*</span>{% endif %}
-                        <span class="px-1.5 py-px rounded border border-line-soft bg-ink text-[10px] font-mono text-faint" title="{{ h.column.type }}">{{ h.column.badge }}</span>
+                        {% if h.column.badge %}<span class="px-1.5 py-px rounded border border-line-soft bg-ink text-[10px] font-mono text-faint" title="{{ h.column.type }}">{{ h.column.badge }}</span>{% endif %}
                         {% if h.sorted == "asc" %}<span aria-hidden="true">↑</span>{% elif h.sorted == "desc" %}<span aria-hidden="true">↓</span>{% endif %}
                     {% if h.sort_qs %}</a>{% else %}</span>{% endif %}
                 </th>
@@ -64,16 +65,16 @@ Read-only when ``grid.editable`` is false: no editors, no add/delete.
             {% for row in grid.rows %}
             <tr class="hover:bg-panel-hi/50 transition-colors" {% if row.cell_url %}data-cell-url="{{ row.cell_url }}"{% endif %}>
                 {% for cell in row.cells %}
-                <td class="px-3 sm:px-4 py-2 align-top max-w-xs {% if cell.column.numeric %}text-right font-mono tnum{% endif %}{% if cell.column.type == 'json' or cell.column.type == 'datetime' or cell.column.type == 'date' %} font-mono text-xs{% endif %}{% if grid.editable and cell.column.editable %} cursor-text focus:outline-none focus:ring-2 focus:ring-ok/40{% endif %}"
+                <td class="px-3 sm:px-4 py-2 align-top max-w-xs {% if cell.column.numeric %}text-right font-mono tnum{% endif %}{% if cell.column.type == 'json' or cell.column.type == 'datetime' or cell.column.type == 'date' %} font-mono text-xs{% endif %}{% if grid.editable and cell.column.editable and cell.editable %} cursor-text focus:outline-none focus:ring-2 focus:ring-ok/40{% endif %}"
                     data-col="{{ cell.column.key }}" data-type="{{ cell.column.type }}"
-                    {% if grid.editable and cell.column.editable %}data-edit tabindex="0" data-raw="{{ cell.raw }}" title="Click to edit"{% endif %}>
+                    {% if grid.editable and cell.column.editable and cell.editable %}data-edit tabindex="0" data-raw="{{ cell.raw }}" title="Click to edit"{% endif %}>
                     {% include "cpanel/_grid_cell.html" with cell=cell %}
                 </td>
                 {% endfor %}
                 {% if grid.editable %}
                 <td class="px-3 sm:px-4 py-2 text-right whitespace-nowrap">
                     {% if row.delete_url %}
-                    <form method="post" action="{{ row.delete_url }}" onsubmit="return confirm('Delete this row? This cannot be undone.');" class="inline">
+                    <form method="post" action="{{ row.delete_url }}" onsubmit="return confirm('{{ row.delete_confirm|escapejs }}');" class="inline">
                         <input type="hidden" name="csrfmiddlewaretoken" value="{{ grid.csrf_token }}">
                         <input type="hidden" name="next" value="?{{ grid.querystring }}{% if grid.page_number > 1 %}&page={{ grid.page_number }}{% endif %}">
                         <button type="submit" class="text-xs px-2 py-1 rounded-md border border-fail/30 bg-fail/10 text-fail hover:bg-fail/20 transition-colors" aria-label="Delete row {{ row.id }}">Delete</button>
@@ -111,7 +112,7 @@ Read-only when ``grid.editable`` is false: no editors, no add/delete.
         </div>
         <textarea rows="14" spellcheck="false" data-grid-json-text class="w-full px-3 py-2 bg-ink border border-line rounded-lg text-text text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ok/30"></textarea>
         <p class="text-xs text-fail empty:hidden" data-grid-json-error></p>
-        <p class="text-xs text-faint">Any JSON value. Leave it empty to clear the cell.</p>
+        <p class="text-xs text-faint">{{ json_hint|default:"Any JSON value. Leave it empty to clear the cell." }}</p>
         <div class="flex justify-end gap-2">
             <button type="button" data-grid-json-cancel class="text-[13px] px-3 py-1.5 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Cancel</button>
             <button type="button" data-grid-json-save class="text-[13px] font-medium px-3 py-1.5 rounded-lg bg-ok text-ink hover:opacity-90 transition">Save</button>
@@ -119,4 +120,5 @@ Read-only when ``grid.editable`` is false: no editors, no add/delete.
     </form>
 </dialog>
 {% endif %}
+<script src="{% static 'js/json_editor.js' %}"></script>
 <script src="{% static 'js/data_grid.js' %}"></script>

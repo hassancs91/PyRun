@@ -14,6 +14,8 @@
     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
     Add entry
 </a>
+<a href="{% url 'cpanel:datastore_export' pk=datastore.pk %}" title="Every entry as one JSON object" class="text-[13px] px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Export JSON</a>
+<a href="{% url 'cpanel:datastore_import' pk=datastore.pk %}" class="text-[13px] px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Import JSON</a>
 <a href="{% url 'cpanel:datastore_edit' pk=datastore.pk %}" class="text-[13px] px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Edit</a>
 {% endblock %}
 
@@ -29,7 +31,7 @@
 <div class="rounded-2xl border border-line bg-panel grid grid-cols-3 divide-x divide-line-soft">
     <div class="px-4 sm:px-5 py-3 min-w-0">
         <p class="eyebrow text-faint truncate">Entries</p>
-        <p class="text-lg sm:text-2xl font-semibold font-mono tnum text-text mt-1">{{ entries.count }}</p>
+        <p class="text-lg sm:text-2xl font-semibold font-mono tnum text-text mt-1">{{ entry_count }}<span class="text-xs sm:text-sm font-normal text-faint"> · {{ size_display }}</span></p>
     </div>
     <div class="px-4 sm:px-5 py-3 min-w-0">
         <p class="eyebrow text-faint truncate">Created</p>
@@ -41,57 +43,31 @@
     </div>
 </div>
 
-{# Entries table #}
-{% if entries %}
-<section class="rounded-2xl border border-line bg-panel overflow-hidden">
-    <div class="px-6 py-3 border-b border-line-soft flex items-center justify-between">
-        <h2 class="text-sm font-semibold text-text">Entries</h2>
-        <form method="post" action="{% url 'cpanel:datastore_clear' pk=datastore.pk %}" onsubmit="return confirm('Are you sure you want to delete all {{ entries.count }} entries? This cannot be undone.');" class="inline">
-            {% csrf_token %}
-            <button type="submit" class="text-[13px] px-3 py-1.5 rounded-lg border border-fail/30 bg-fail/10 text-fail hover:bg-fail/20 transition-colors">Clear all</button>
-        </form>
-    </div>
-    <div class="overflow-x-auto">
-    <table class="w-full min-w-[640px]">
-        <thead>
-            <tr class="border-b border-line-soft text-left">
-                <th class="px-6 py-3 eyebrow text-faint font-normal w-1/4">Key</th>
-                <th class="px-6 py-3 eyebrow text-faint font-normal">Value</th>
-                <th class="px-6 py-3 eyebrow text-faint font-normal text-right w-32">Updated</th>
-                <th class="px-6 py-3 eyebrow text-faint font-normal text-right w-40">Actions</th>
-            </tr>
-        </thead>
-        <tbody class="divide-y divide-line-soft">
-            {% for entry in entries %}
-            <tr class="group hover:bg-panel-hi/50 transition-colors">
-                <td class="px-6 py-3.5 align-top"><span class="font-mono text-sm text-info">{{ entry.key }}</span></td>
-                <td class="px-6 py-3.5">
-                    {# get_display_value is already cut to 100 chars; the edit page shows the whole value #}
-                    <pre class="text-sm text-text bg-ink border border-line-soft px-2.5 py-1.5 rounded-lg font-mono whitespace-pre-wrap break-words line-clamp-3">{{ entry.get_display_value }}</pre>
-                </td>
-                <td class="px-6 py-3.5 text-right text-xs text-faint whitespace-nowrap align-top">{{ entry.updated_at|timesince }} ago</td>
-                <td class="px-6 py-3.5 align-top">
-                    <div class="flex items-center justify-end gap-2">
-                        <a href="{% url 'cpanel:datastore_entry_edit' pk=datastore.pk entry_pk=entry.pk %}" class="text-[13px] px-3 py-1.5 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Edit</a>
-                        <form method="post" action="{% url 'cpanel:datastore_entry_delete' pk=datastore.pk entry_pk=entry.pk %}" onsubmit="return confirm('Delete entry &quot;{{ entry.key|escapejs }}&quot;?');" class="inline">
-                            {% csrf_token %}
-                            <button type="submit" class="text-[13px] px-3 py-1.5 rounded-lg border border-fail/30 bg-fail/10 text-fail hover:bg-fail/20 transition-colors">Delete</button>
-                        </form>
-                    </div>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    </div>
-</section>
+{# Entries: the shared grid (key search, filters, sort, pages; small values edited in place) #}
+{% if entry_count %}
+<div class="flex flex-wrap items-center gap-2">
+    <form method="get" role="search" class="flex flex-wrap items-center gap-2 min-w-0 flex-1">
+        {% for name, value in search_params %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+        <label for="ds-search" class="sr-only">Search keys</label>
+        <input type="search" id="ds-search" name="q" value="{{ search }}" placeholder="Search keys…" class="w-full sm:w-72 px-3 py-2 bg-ink border border-line rounded-lg text-text text-sm placeholder-faint/60 focus:outline-none focus:ring-2 focus:ring-ok/30">
+        <button type="submit" class="text-[13px] px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Search</button>
+        {% if search %}<a href="?{{ clear_search_qs }}" class="text-xs text-muted hover:text-text hover:underline underline-offset-2">Clear search</a>{% endif %}
+    </form>
+    <form method="post" action="{% url 'cpanel:datastore_clear' pk=datastore.pk %}" onsubmit="return confirm('Are you sure you want to delete all {{ entry_count|escapejs }} entries? This cannot be undone.');" class="inline">
+        {% csrf_token %}
+        <button type="submit" class="text-[13px] px-3 py-1.5 rounded-lg border border-fail/30 bg-fail/10 text-fail hover:bg-fail/20 transition-colors">Clear all</button>
+    </form>
+</div>
+{% if search %}<p class="text-xs text-muted">Keys containing <span class="font-mono text-text">{{ search }}</span>.</p>{% endif %}
+{% include "cpanel/_grid.html" with grid=grid empty_text=grid_empty_text json_hint=json_hint %}
+<p class="text-xs text-faint">Click a value to edit it (values up to {{ grid_edit_kb }} KB; open bigger ones from their key). Type and size refresh when the page reloads.</p>
 {% else %}
 <section class="rounded-2xl border border-line bg-panel px-6 py-16 text-center">
     <div class="w-14 h-14 rounded-full bg-info/10 grid place-items-center mx-auto mb-4">
         <svg class="w-7 h-7 text-info" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/></svg>
     </div>
     <h3 class="text-base font-semibold mb-1">No entries yet</h3>
-    <p class="text-sm text-muted mb-6">Add entries manually or let your scripts populate this data store.</p>
+    <p class="text-sm text-muted mb-6">Add entries here, import a JSON file, or let your scripts populate this data store.</p>
     <a href="{% url 'cpanel:datastore_entry_create' pk=datastore.pk %}" class="inline-flex items-center gap-2 text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
         Add entry
@@ -162,7 +138,7 @@ X-API-Key: YOUR_API_TOKEN</code>
                 <code class="block mt-1 p-2 bg-ink border border-line-soft rounded-lg text-xs font-mono text-muted overflow-x-auto whitespace-pre">{
   "name": "{{ datastore.name }}",
   "description": "{{ datastore.description|default:"" }}",
-  "entry_count": {{ entries.count }},
+  "entry_count": {{ entry_count }},
   "created_at": "{{ datastore.created_at|date:"c" }}",
   "updated_at": "{{ datastore.updated_at|date:"c" }}"
 }</code>
@@ -188,7 +164,7 @@ X-API-Key: YOUR_API_TOKEN</code>
       "updated_at": "2026-02-01T12:00:00Z"
     }
   ],
-  "count": {{ entries.count }},
+  "count": {{ entry_count }},
   "page": 1,
   "page_size": 50,
   "total_pages": 1
@@ -230,7 +206,7 @@ X-API-Key: YOUR_API_TOKEN</code>
     {
       "name": "{{ datastore.name }}",
       "description": "{{ datastore.description|default:"" }}",
-      "entry_count": {{ entries.count }}
+      "entry_count": {{ entry_count }}
     }
   ],
   "count": 1

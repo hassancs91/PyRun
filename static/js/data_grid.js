@@ -5,8 +5,11 @@
 // - An editable cell (td[data-edit]) opens an inline editor on click or Enter:
 //   a text/number/date/link input, a Yes/No select for booleans, a dialog with
 //   Format for JSON. Saving POSTs {"column", "value"} as JSON to the row's
-//   data-cell-url; the server checks and converts the value against the column
-//   and answers {"html", "raw"} (the re-rendered cell) or {"error"}.
+//   data-cell-url (the JSON dialog adds "text", the JSON as typed, so the server
+//   can read numbers JavaScript would round); the server checks and converts
+//   the value against the column and answers {"html", "raw"} (the re-rendered
+//   cell) or {"error"}. The dialog shows and formats the JSON text with
+//   window.JsonText.reindent (static/js/json_editor.js), which keeps literals.
 // Without JavaScript the grid still sorts, filters, pages, adds and deletes.
 (function () {
     'use strict';
@@ -67,15 +70,17 @@
     var dialog = document.querySelector('[data-grid-json]');
     var editing = null;
 
-    function save(td, value) {
+    function save(td, value, text) {
         var row = td.closest('tr');
         var grid = td.closest('[data-grid]');
+        var payload = { column: td.dataset.col, value: value };
+        if (text !== undefined) payload.text = text;
         td.classList.add('opacity-60');
         return fetch(row.dataset.cellUrl, {
             method: 'POST',
             credentials: 'same-origin',
             headers: { 'X-CSRFToken': grid.dataset.csrf, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ column: td.dataset.col, value: value }),
+            body: JSON.stringify(payload),
         }).then(function (response) {
             return response.json().catch(function () { return { error: 'The server answered ' + response.status + '.' }; })
                 .then(function (body) {
@@ -167,11 +172,16 @@
         var error = dialog.querySelector('[data-grid-json-error]');
         var value = current(td);
         dialog.querySelector('[data-grid-json-title]').textContent = 'Edit ' + td.dataset.col;
-        text.value = value === null || value === undefined ? '' : JSON.stringify(value, null, 2);
+        text.value = value === null || value === undefined ? '' : pretty(td.dataset.raw, value);
         error.textContent = '';
         dialog._td = td;
         dialog.showModal();
         text.focus();
+    }
+
+    // The JSON text re-indented as typed (no number rounded); JSON.stringify without json_editor.js.
+    function pretty(raw, value) {
+        return window.JsonText ? window.JsonText.reindent(raw, '  ') : JSON.stringify(value, null, 2);
     }
 
     if (dialog) {
@@ -186,14 +196,14 @@
 
         dialog.querySelector('[data-grid-json-format]').addEventListener('click', function () {
             var result = parsed();
-            if (result && result.value !== null) { text.value = JSON.stringify(result.value, null, 2); error.textContent = ''; }
+            if (result && result.value !== null) { text.value = pretty(text.value, result.value); error.textContent = ''; }
         });
         dialog.querySelector('[data-grid-json-cancel]').addEventListener('click', function () { dialog.close(); });
         dialog.querySelector('[data-grid-json-save]').addEventListener('click', function () {
             var result = parsed();
             if (!result) return;
             var td = dialog._td;
-            save(td, result.value).then(function () { dialog.close(); }, function (err) {
+            save(td, result.value, text.value.trim()).then(function () { dialog.close(); }, function (err) {
                 error.textContent = err.message;
             });
         });

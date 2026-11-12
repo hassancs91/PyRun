@@ -1,0 +1,15 @@
+{% load static %}{# The entry value's JSON editor: Format / Compact and a live check (static/js/json_editor.js). #}
+<div data-json-editor>
+    <div class="flex items-center justify-between gap-3 mb-1.5">
+        <label for="id_value" class="block text-[13px] font-medium text-text">{{ form.value.label }}</label>
+        <div class="flex items-center gap-2">
+            <button type="button" data-json-format hidden class="text-xs px-2.5 py-1 rounded-md border border-line text-muted hover:text-text hover:border-faint transition-colors">Format</button>
+            <button type="button" data-json-compact hidden class="text-xs px-2.5 py-1 rounded-md border border-line text-muted hover:text-text hover:border-faint transition-colors">Compact</button>
+        </div>
+    </div>
+    {{ form.value }}
+    <p class="mt-1.5 text-xs text-faint empty:hidden" data-json-status aria-live="polite"></p>
+    {% if form.value.help_text %}<p class="mt-1.5 text-xs text-faint">{{ form.value.help_text }}. Saved as typed; Format re-indents without changing any value.</p>{% endif %}
+    {% include "cpanel/_field_errors.html" with field=form.value %}
+</div>
+<script src="{% static 'js/json_editor.js' %}"></script>

@@ -1,0 +1,92 @@
+{% extends "cpanel/layout.html" %}
+
+{% block title %}Import JSON - {{ datastore.name }} - Data Stores - {{ instance_name }}{% endblock %}
+
+{% block breadcrumbs %}
+<a href="{% url 'cpanel:datastore_list' %}">Data Stores</a>
+<a href="{% url 'cpanel:datastore_detail' pk=datastore.pk %}" class="hover:text-text transition-colors truncate max-w-[12rem]">{{ datastore.name }}</a>
+<span>Import JSON</span>
+{% endblock %}
+{% block heading %}Import JSON{% endblock %}
+{% block subtitle %}Add or replace entries in <span class="font-mono text-info">{{ datastore.name }}</span> from a JSON file{% endblock %}
+
+{% block page %}
+{% if datastore.owner_plugin %}
+<div class="rounded-xl border border-warn/30 bg-warn/10 p-4">
+    <p class="text-sm text-text">Managed by the “{{ datastore.owner_plugin }}” plugin: the plugin reads and writes these entries, so values imported here may be overwritten.</p>
+</div>
+{% endif %}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+    <form method="post" enctype="multipart/form-data" id="ds-import" class="lg:col-span-2 max-w-3xl w-full rounded-2xl border border-line bg-panel p-6 space-y-5">
+        {% csrf_token %}
+        <div id="ds-report">{% include "cpanel/datastores/_import_report.html" %}</div>
+
+        <div>
+            <label for="id_file" class="block text-[13px] font-medium text-text mb-1.5">JSON file</label>
+            <input type="file" name="file" id="id_file" accept=".json,application/json" required
+                   class="block w-full text-sm text-muted file:mr-3 file:px-3.5 file:py-2 file:rounded-lg file:border file:border-line file:bg-ink file:text-text">
+            <p class="mt-1.5 text-xs text-faint">One JSON object of key: value pairs, UTF-8, at most {{ max_mb }} MB.</p>
+        </div>
+
+        {# Without JavaScript: preview first (unticked), then choose the file again and tick this. #}
+        <label class="flex items-center gap-2 text-sm text-muted" data-nojs-confirm>
+            <input type="checkbox" name="confirm" value="1" id="id_confirm">
+            Import it: I've checked the preview
+        </label>
+
+        <div class="flex flex-wrap items-center justify-end gap-3">
+            <a href="{% url 'cpanel:datastore_detail' pk=datastore.pk %}" class="text-[13px] px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Cancel</a>
+            <button type="submit" id="ds-preview" class="text-[13px] px-3.5 py-2 rounded-lg border border-line text-text hover:border-faint transition-colors">Preview</button>
+            <button type="button" id="ds-confirm" hidden class="text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">Import</button>
+        </div>
+    </form>
+
+    <div class="rounded-2xl border border-line bg-panel p-5 space-y-2">
+        <h3 class="text-sm font-medium text-text">How it works</h3>
+        <p class="text-sm text-muted">The file is one JSON object: each key becomes an entry and its value is stored as is, e.g. <code class="font-mono text-text">{"plan": "pro", "limits": {"runs": 100}}</code>. A file from <span class="text-text">Export JSON</span> imports again unchanged.</p>
+        <p class="text-sm text-muted">It is an upsert: new keys are added, keys already in the store get the file's value, and keys the file doesn't name stay as they are. Nothing is deleted.</p>
+        <p class="text-sm text-muted">Preview counts what would change, and writes nothing. Import writes every change at once: if anything fails, nothing is written.</p>
+    </div>
+</div>
+
+<script>
+(function () {
+    var form = document.getElementById("ds-import");
+    var file = document.getElementById("id_file");
+    var report = document.getElementById("ds-report");
+    var confirmBox = document.getElementById("id_confirm");
+    var confirmButton = document.getElementById("ds-confirm");
+    if (!window.fetch || !window.FormData) { return; }
+    // With JavaScript the preview answers in place (the chosen file stays) and Import confirms it.
+    form.querySelector("[data-nojs-confirm]").hidden = true;
+    confirmBox.checked = false;
+
+    file.addEventListener("change", function () {
+        report.textContent = "";
+        confirmButton.hidden = true;
+    });
+
+    form.addEventListener("submit", function (event) {
+        if (confirmBox.checked) { return; }
+        event.preventDefault();
+        confirmButton.hidden = true;
+        report.textContent = "Checking…";
+        fetch(form.action || window.location.href, {
+            method: "POST", body: new FormData(form), headers: {"Accept": "application/json"}, credentials: "same-origin"
+        }).then(function (resp) { return resp.json(); }).then(function (data) {
+            report.innerHTML = data.html || "";
+            if (!data.error && data.changes > 0) {
+                confirmButton.textContent = "Import " + data.changes + " change" + (data.changes === 1 ? "" : "s");
+                confirmButton.hidden = false;
+            }
+        }).catch(function () { report.textContent = "The preview failed. Try again."; });
+    });
+
+    confirmButton.addEventListener("click", function () {
+        confirmBox.checked = true;
+        confirmButton.disabled = true;
+        form.submit();
+    });
+})();
+</script>
+{% endblock %}
