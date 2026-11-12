@@ -3,7 +3,13 @@
 All notable changes to the Brand Tracker plugin are documented here. This
 project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.1.3] - 2026-11-12
+
+### Added
+- `lifecycle.py` with the update steps PyRun 2.5 runs after an in-place update:
+  `reprovision()` re-applies the saved settings, so the tracker script picks up
+  the new version's code while its secrets, config and weekly schedule stay as
+  they are.
 
 ### Changed
 - The tracker script uses PyRun's **Skip** concurrency policy (PyRun 2.5)

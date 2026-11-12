@@ -9,6 +9,7 @@ into the running process (see the guarded loader in ``pyrunner/settings.py``).
 
 import uuid
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 
@@ -110,6 +111,13 @@ class Plugin(models.Model):
         default="",
         help_text="Checksum of the unpacked folder (integrity check).",
     )
+
+    # In-place update (2.5 T42): the version this one replaced, and its folder's
+    # checksum. Rollback moves that folder back from ``plugins/.previous/`` and
+    # checks it against this checksum first. Blank when there is nothing to roll
+    # back to (a fresh install, or right after a rollback).
+    previous_version = models.CharField(max_length=50, blank=True, default="")
+    previous_checksum = models.CharField(max_length=64, blank=True, default="")
 
     installed_at = models.DateTimeField(auto_now_add=True)
     activated_at = models.DateTimeField(null=True, blank=True)
@@ -222,3 +230,63 @@ class Plugin(models.Model):
         self.status = self.Status.ERRORED
         self.error_message = message or "Plugin failed preflight."
         self.save(update_fields=["status", "error_message", "updated_at"])
+
+
+class PluginUpdate(models.Model):
+    """One in-place update or rollback of a plugin (2.5 T42), newest first.
+
+    ``outcome`` follows the update through: ``refused`` (nothing changed), or the
+    folder was swapped and the update steps (the plugin's ``lifecycle.py``:
+    ``reprovision()`` then ``on_update(from_version)``) wait for the next restart
+    while the plugin is active (``pending`` -> ``running`` -> ``ok`` /
+    ``steps_failed``). A rollback before they ran ``cancelled`` them.
+    """
+
+    class Source(models.TextChoices):
+        UPLOAD = "upload", "Upload"
+        STORE = "store", "Store"
+        URL = "url", "URL"
+        ROLLBACK = "rollback", "Rollback"
+
+    class InitiatedBy(models.TextChoices):
+        USER = "user", "User"
+        AUTO = "auto", "Automatic"
+
+    class Outcome(models.TextChoices):
+        PENDING = "pending", "Waiting for a restart"
+        RUNNING = "running", "Running update steps"
+        OK = "ok", "Done"
+        STEPS_FAILED = "steps_failed", "Update steps failed"
+        REFUSED = "refused", "Refused"
+        CANCELLED = "cancelled", "Cancelled by a rollback"
+
+    #: Outcomes where the plugin's folder was swapped (everything but a refusal).
+    SWAPPED = (
+        Outcome.PENDING, Outcome.RUNNING, Outcome.OK, Outcome.STEPS_FAILED, Outcome.CANCELLED,
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    plugin = models.ForeignKey(Plugin, on_delete=models.CASCADE, related_name="updates")
+    from_version = models.CharField(max_length=50, blank=True, default="")
+    to_version = models.CharField(max_length=50, blank=True, default="")
+    from_checksum = models.CharField(max_length=64, blank=True, default="")
+    to_checksum = models.CharField(max_length=64, blank=True, default="")
+    source = models.CharField(max_length=20, choices=Source.choices, default=Source.UPLOAD)
+    initiated_by = models.CharField(
+        max_length=10, choices=InitiatedBy.choices, default=InitiatedBy.USER
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    outcome = models.CharField(max_length=20, choices=Outcome.choices, default=Outcome.PENDING)
+    error = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "plugin_updates"
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["plugin", "outcome"], name="plugin_upd_plugin_outcome")]
+
+    def __str__(self):
+        return f"{self.plugin_id}: {self.from_version} -> {self.to_version} [{self.outcome}]"

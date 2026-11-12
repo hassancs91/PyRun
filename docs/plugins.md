@@ -32,6 +32,8 @@ the live process.
   worker_body.py             # optional; the body of a managed Script you provision
   lib/                       # optional; *.py shared by your worker scripts (see Libraries)
   triggers.py                # optional; watcher adapters (see Watchers)
+  lifecycle.py               # optional; update steps: reprovision(), on_update(from_version)
+  CHANGELOG.md               # recommended; the doctor warns on an update without one
   assets/icon.svg            # optional; the manifest "icon" path (any path under <slug>/)
   templates/<slug>/...       # extend "base.html" so pages match the console
   static/<slug>/...          # optional
@@ -1316,7 +1318,10 @@ and run automatically at activation). Tier-1 is a **static lint** — file check
 | `provides.public_pages` drift: declared page with no `@page` handler, missing `api.py`, duplicate names, or manifest `api` < `2.3` | fail |
 | `requires_connections` malformed: not a list of objects, unknown provider, bad `key`, `scopes` that aren't scope names (or on a provider without OAuth), a too-long `label`, a duplicate key, more than 20 entries | fail |
 | `triggers.py` adapters: doesn't parse, a `TriggerAdapter` subclass without a literal valid `key` (or a duplicate, or `<slug>:<key>` over 80 characters), without a literal `title`, without its own `check`/`test`, a literal `config_schema` that isn't flat, unknown `providers` | fail |
+| `lifecycle.py` doesn't parse, or `reprovision` / `on_update` is async or can't be called with no argument / one argument | fail |
 | `triggers.py` defines no `TriggerAdapter` subclass | warn |
+| `lifecycle.py` defines neither `reprovision` nor `on_update` | warn |
+| On an update (or `plugin_doctor --update-from <version>`): the version is not higher, or there is no `CHANGELOG.md` | warn |
 | `apps.py` has heavy/third-party top-level imports | warn |
 | Imports core internals directly instead of `core.plugins.api` | warn |
 | Missing recommended marketplace fields (`author` / `license` / `summary` / `icon`) | warn |
@@ -1344,9 +1349,78 @@ even if new rules are added.
    re-import the new active set, preflighting each in isolation first.
 4. **Deactivate** keeps your data; **Delete** removes files + row, optionally
    deleting the resources your plugin owns.
+5. **Update**: upload a zip of the same slug with a higher version. See
+   *Updating a plugin* below.
 
 If a plugin ever fails at boot, it's quarantined as `Errored` and skipped — the
 site still boots. Last resort: `PYRUNNER_DISABLE_PLUGINS=1` boots with zero plugins.
+
+---
+
+## Updating a plugin (PyRun 2.5)
+
+Upload a zip of an installed plugin (Plugins → Upload, or **Update** on its page)
+whose `plugin.json` `version` is **higher** (semver: `1.1.3` > `1.1.2`, and a
+pre-release such as `1.2.0-rc.1` sorts before `1.2.0`). PyRun updates it in place:
+
+1. The zip is checked like an install and unpacked next to the live folder. Its
+   code is not imported.
+2. A version that is the same or lower is refused ("Upload a higher version").
+3. The **doctor** runs on the unpacked copy, with the update rules (version
+   increase, `CHANGELOG.md`). A `fail` refuses the update.
+4. `min_pyrunner` and the SDK `api` must fit this PyRun.
+5. The live folder moves to `plugins/.previous/<slug>-<old version>/` and the new
+   one takes its place. For an **active** plugin the new code must pass the
+   isolated preflight; if it doesn't, the old folder goes straight back.
+6. The plugin's row gets the new version and keeps the old one for a rollback.
+   An active plugin needs a restart (the banner appears).
+
+Every attempt, refused ones too, is listed under **Updates** on the plugin's page:
+versions, source, who, outcome and the error. Dev-mode plugins
+(`PYRUNNER_PLUGIN_DEV`) are never updated by upload.
+
+**What an update never touches:** everything your plugin owns. Its secrets, data
+stores, tables, scripts, schedules, watchers and connections stay as they are,
+values included. Only the files change. If a managed script should run the new
+version's code, re-provision it in `lifecycle.py`:
+
+```python
+# my_flows/lifecycle.py  (optional)
+from . import provisioning as prov
+
+
+def reprovision():
+    """Re-apply the saved settings (idempotent, like a settings save)."""
+    if prov.get_script() is None:
+        return  # never configured: nothing to re-apply
+    prov.provision(prov.initial_from_config())
+
+
+def on_update(from_version):
+    """Migrate stored data from an older version, once."""
+    if from_version.startswith("1."):
+        ...
+```
+
+Both functions are optional. They run **after the restart that loads the new
+version**, while the plugin is active: `reprovision()` first, then
+`on_update(from_version)`, once, in an isolated process that loads only your
+plugin (`manage.py plugin_post_update`; the Docker entrypoint runs it after the
+plugin preflight, never failing the boot; outside Docker run it yourself after
+restarting PyRun). Several updates before one restart run them once, from the
+oldest version. A plugin that is inactive keeps its steps waiting until it is
+activated and PyRun restarts. If a step raises, the update is marked **Update
+steps failed** with its output (your plugin's secret values masked); fix it with
+a newer version or roll back. Brand Tracker 1.1.3's `lifecycle.py` is a working
+example.
+
+**Rollback.** **Roll back to <version>** on the plugin's page puts the kept
+folder back, after checking it against the checksum taken when it was replaced,
+restores the row and asks for a restart. After that restart `reprovision()` runs
+(the old version's, if it has one), so provisioned code matches the files again;
+`on_update` doesn't run for a rollback. The removed version's files are deleted;
+upload it again to go forward. Only the latest previous version is kept, until
+the next successful update; deleting the plugin deletes it too.
 
 ---
 

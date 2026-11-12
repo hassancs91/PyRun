@@ -25,7 +25,7 @@ from .public_page import PluginPublicPage
 from .claude_usage import ClaudeUsage
 from .ai_provider import AIProvider, PROVIDER_PRESETS
 from .storage_connection import StorageConnection, STORAGE_PRESETS
-from .plugin import Plugin
+from .plugin import Plugin, PluginUpdate
 from .channel import Channel, ChannelMember, ChannelMessage
 from .embedding_provider import EmbeddingProvider, EMBEDDING_PRESETS
 from .vector_connection import VectorConnection
@@ -76,6 +76,7 @@ __all__ = [
     "StorageConnection",
     "STORAGE_PRESETS",
     "Plugin",
+    "PluginUpdate",
     "Channel",
     "ChannelMember",
     "ChannelMessage",

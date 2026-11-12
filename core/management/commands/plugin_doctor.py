@@ -8,6 +8,7 @@ plugin.
 
     python manage.py plugin_doctor qdrant_backup
     python manage.py plugin_doctor --path ./qdrant-backup-plugin/qdrant_backup
+    python manage.py plugin_doctor --path ./brand_tracker --update-from 1.1.2
 
 Exit code is 0 when nothing blocks activation (warnings are advisory), 1 when
 there is at least one blocking failure — so it slots into CI.
@@ -29,6 +30,12 @@ class Command(BaseCommand):
         parser.add_argument(
             "--path", help="Path to a local plugin folder (its name is the slug)."
         )
+        parser.add_argument(
+            "--update-from",
+            metavar="VERSION",
+            help="Check the folder as an update of this installed version "
+            "(version must increase; CHANGELOG.md expected).",
+        )
 
     def handle(self, *args, **options):
         slug = options.get("slug")
@@ -40,7 +47,7 @@ class Command(BaseCommand):
         if not folder.is_dir():
             raise CommandError(f"Not a directory: {folder}")
 
-        report = run_doctor(folder)
+        report = run_doctor(folder, installed_version=options.get("update_from"))
 
         style = {"pass": self.style.SUCCESS, "warn": self.style.WARNING, "fail": self.style.ERROR}
         self.stdout.write(f"Plugin doctor — {report.slug}")

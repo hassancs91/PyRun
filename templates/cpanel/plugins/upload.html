@@ -7,7 +7,7 @@
 <span>Upload</span>
 {% endblock %}
 {% block heading %}Upload plugin{% endblock %}
-{% block subtitle %}Install a plugin from a .zip. It will be installed but not activated.{% endblock %}
+{% block subtitle %}Install a plugin from a .zip, or update an installed one with a higher version.{% endblock %}
 
 {% block page %}
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
@@ -39,6 +39,7 @@
                         <li>The .zip is validated (path-traversal safe) and unpacked — its code is <strong>not</strong> imported.</li>
                         <li>A registry entry is created with status <span class="font-mono">Installed</span>.</li>
                         <li>Click <strong>Activate</strong> to validate it in an isolated process, then restart to load it.</li>
+                        <li>A zip of an <strong>installed</strong> plugin with a higher version updates it in place: its settings, secrets and data stay, and the old version is kept for a rollback.</li>
                     </ul>
                 </div>
             </div>

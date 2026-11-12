@@ -21,11 +21,14 @@ from django.views.decorators.http import require_POST
 
 from core.forms import PluginUploadForm
 from core.models import Plugin
-from core.services import PluginInstallError, PluginService
+from core.services import PluginInstallError, PluginService, plugin_updates
 from core.services.plugin_connections import states_for
 from core.views.decorators import superuser_required
 
 logger = logging.getLogger(__name__)
+
+#: Update history rows shown on a plugin's page.
+UPDATE_HISTORY_ROWS = 20
 
 # Content types for bundled plugin icons (kept in sync with the doctor's
 # ALLOWED_ICON_EXTS). SVG is served only as an <img> source, never inlined.
@@ -71,6 +74,9 @@ def plugin_detail_view(request: HttpRequest, slug: str) -> HttpResponse:
     context = {
         "plugin": plugin,
         "pending_restart": PluginService.pending_restart(),
+        # In-place updates (2.5 T42): history, newest first, and the rollback.
+        "updates": list(plugin.updates.select_related("user")[:UPDATE_HISTORY_ROWS]),
+        "rollback_problem": plugin_updates.rollback_problem(plugin) if plugin.previous_version else None,
         # requires_connections (T25), with their status in this workspace.
         "connection_requirements": states_for(request.workspace, plugin.slug, plugin.manifest),
     }
@@ -115,7 +121,9 @@ def plugin_upload_view(request: HttpRequest) -> HttpResponse:
         form = PluginUploadForm(request.POST, request.FILES)
         if form.is_valid():
             try:
-                plugin = PluginService.install_from_zip(form.cleaned_data["plugin_file"])
+                plugin, update, warnings = PluginService.upload(
+                    form.cleaned_data["plugin_file"], user=request.user
+                )
             except PluginInstallError as exc:
                 messages.error(request, f"Upload failed: {exc}")
                 return render(request, "cpanel/plugins/upload.html", {"form": form})
@@ -123,6 +131,12 @@ def plugin_upload_view(request: HttpRequest) -> HttpResponse:
                 logger.exception("Unexpected plugin install error")
                 messages.error(request, "Upload failed unexpectedly. Check the logs.")
                 return render(request, "cpanel/plugins/upload.html", {"form": form})
+
+            if update is not None:
+                messages.success(request, _updated_message(plugin, update))
+                if warnings.strip():
+                    messages.warning(request, f'Doctor warnings for "{plugin.name}":\n{warnings}')
+                return redirect("cpanel:plugin_detail", slug=plugin.slug)
 
             provisions = plugin.provisions_summary
             provision_note = f" It will create {provisions}." if provisions else ""
@@ -185,6 +199,31 @@ def plugin_delete_view(request: HttpRequest, pk) -> HttpResponse:
         messages.warning(request, w)
     messages.success(request, f'Plugin "{name}" deleted. Restart to apply.')
     return redirect("cpanel:plugin_list")
+
+
+def _updated_message(plugin, update) -> str:
+    text = f'Plugin "{plugin.name}" updated from {update.from_version} to {update.to_version}.'
+    if plugin.status == Plugin.Status.ACTIVE:
+        return text + " Restart to load the new version; its update steps run after the restart."
+    return text + " Its update steps run after the next restart while it is active."
+
+
+@login_required
+@superuser_required
+@require_POST
+def plugin_rollback_view(request: HttpRequest, pk) -> HttpResponse:
+    """Put the previous version of a plugin back (2.5 T42)."""
+    plugin = get_object_or_404(Plugin, pk=pk)
+    try:
+        row = PluginService.rollback(plugin, user=request.user)
+    except PluginInstallError as exc:
+        messages.error(request, f"Rollback failed: {exc}")
+        return redirect("cpanel:plugin_detail", slug=plugin.slug)
+    note = " Restart to load it." if plugin.status == Plugin.Status.ACTIVE else ""
+    messages.success(
+        request, f'Plugin "{plugin.name}" rolled back from {row.from_version} to {row.to_version}.{note}'
+    )
+    return redirect("cpanel:plugin_detail", slug=plugin.slug)
 
 
 @login_required

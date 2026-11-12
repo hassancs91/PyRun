@@ -2,7 +2,8 @@
 Plugin management service.
 
 Implements the lifecycle the management UI drives — install (from an uploaded
-.zip), activate, deactivate, delete — plus the "restart required" detection and
+.zip), update in place and roll back (core/services/plugin_updates.py),
+activate, deactivate, delete — plus the "restart required" detection and
 the controlled-restart trigger.
 
 Safety is the whole point (see docs/plugins.md):
@@ -67,7 +68,8 @@ class PluginService:
 
             if Plugin.objects.filter(slug=slug).exists():
                 raise PluginInstallError(
-                    f"A plugin named '{slug}' already exists. Delete it first to replace it."
+                    f"A plugin named '{slug}' already exists. Upload a higher version to update it, "
+                    "or delete it first to replace it."
                 )
             PluginService._retire_orphan_folder(slug)
 
@@ -108,6 +110,33 @@ class PluginService:
             )
             logger.info("Plugin %r installed (status=INSTALLED)", slug)
             return plugin
+
+    @staticmethod
+    def upload(uploaded_file, *, user=None):
+        """Install a new plugin, or update the installed one of the same slug.
+
+        Returns ``(plugin, update, warnings)``: see ``plugin_updates.upload``.
+        """
+        from core.services import plugin_updates
+
+        return plugin_updates.upload(uploaded_file, user=user)
+
+    @staticmethod
+    def update(plugin: Plugin, uploaded_file, **kwargs):
+        """Update ``plugin`` in place from a higher version's zip (2.5 T42).
+
+        Returns ``(PluginUpdate, doctor_warnings)``; see ``plugin_updates.update``.
+        """
+        from core.services import plugin_updates
+
+        return plugin_updates.update(plugin, uploaded_file, **kwargs)
+
+    @staticmethod
+    def rollback(plugin: Plugin, **kwargs):
+        """Put the previous version back; see ``plugin_updates.rollback``."""
+        from core.services import plugin_updates
+
+        return plugin_updates.rollback(plugin, **kwargs)
 
     @staticmethod
     def _validate_zip(zf: zipfile.ZipFile) -> str:
@@ -426,6 +455,10 @@ class PluginService:
         folder = Path(settings.PLUGINS_DIR) / plugin.slug
         if folder.exists():
             shutil.rmtree(folder, ignore_errors=True)
+        # The version kept for a rollback (2.5 T42) goes with it.
+        from core.services.plugin_updates import remove_previous_folders
+
+        remove_previous_folders(plugin.slug)
         slug = plugin.slug
         plugin.delete()
         logger.info("Plugin %r deleted (remove_data=%s)", slug, remove_data)
@@ -606,8 +639,13 @@ class PluginService:
 
     @staticmethod
     def pending_restart() -> bool:
-        """True when the active set in the DB differs from what's loaded now."""
-        return PluginService.loaded_slugs() != PluginService.active_slugs()
+        """True when the active set in the DB differs from what's loaded now,
+        or an active plugin was updated or rolled back since this process loaded it."""
+        if PluginService.loaded_slugs() != PluginService.active_slugs():
+            return True
+        from core.services.plugin_updates import swapped_since_load
+
+        return swapped_since_load()
 
     @staticmethod
     def trigger_restart() -> None:

@@ -75,6 +75,11 @@ else
 
     echo "[*] Preflighting plugins..."
     PYRUNNER_DISABLE_PLUGINS=1 python manage.py plugin_preflight --all --disable-broken || true
+
+    # Update steps of plugins updated in place (lifecycle.py), now that their new
+    # code is the code that loads. Each runs isolated; never fatal.
+    echo "[*] Running plugin update steps..."
+    PYRUNNER_DISABLE_PLUGINS=1 python manage.py plugin_post_update || true
 fi
 
 echo ""

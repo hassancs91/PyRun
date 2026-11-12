@@ -590,6 +590,23 @@ begins tracking at the current release; earlier history is in the git log.
   **Next page**), shows a long payload in full on request, and its search box
   runs the same search as the API's `vectors.search`. docs/run-context.md has
   the details.
+- **Update a plugin in place, with rollback.** Uploading a zip of an installed
+  plugin with a higher version (semver) now updates it instead of asking you to
+  delete it first; the same or a lower version is refused with a message. The
+  new files are checked before anything changes: the plugin doctor runs on the
+  unpacked copy (and now warns when the version doesn't go up or there is no
+  `CHANGELOG.md`), then the `min_pyrunner` and SDK `api` checks, and an active
+  plugin's new code must pass the isolated preflight or the old files go
+  straight back. The plugin's settings, secrets, data and schedules are not
+  touched. The old version is kept, and **Roll back to <version>** on the
+  plugin's page puts it back (its files are checked against the checksum taken
+  when it was replaced). The page lists every update and rollback with who did
+  it and how it went. A plugin can ship a `lifecycle.py` with `reprovision()`
+  and `on_update(from_version)`: they run once, in an isolated process, after
+  the restart that loads the new version (`manage.py plugin_post_update`, which
+  the Docker entrypoint runs; run it yourself after a manual restart).
+  Dev-mode plugins are not updated by upload. Brand Tracker 1.1.3 ships a
+  `lifecycle.py`. docs/plugins.md has the details.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

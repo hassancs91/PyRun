@@ -36,6 +36,10 @@ SLUG_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 SEMVER_RE = re.compile(
     r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$"
 )
+# The same shape with groups, for ordering (2.5 T42 updates).
+_SEMVER_PARTS_RE = re.compile(
+    r"^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$"
+)
 PUBLISHER_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 # Icons are served via <img src>; bitmap + svg are safe in that context (svg is
 # never inlined). Keep the set small and explicit.
@@ -64,6 +68,24 @@ _API_RESOURCES_MIN_SDK = (2, 3)
 # VectorAPI shipped in SDK 2.6.
 _VECTORS_MIN_SDK = (2, 6)
 _BRAINS_MIN_SDK = (2, 7)
+
+
+def semver_key(value):
+    """A sort key for a semver string, or None when it isn't one.
+
+    Pre-releases sort before their release (``1.2.0-rc.1`` < ``1.2.0``), numeric
+    identifiers numerically and before alphanumeric ones; build metadata is
+    ignored, as semver says.
+    """
+    match = _SEMVER_PARTS_RE.match(str(value or "").strip())
+    if not match:
+        return None
+    core = tuple(int(match.group(i)) for i in (1, 2, 3))
+    pre = match.group(4)
+    if pre is None:
+        return core + ((1,),)
+    idents = tuple((0, int(p), "") if p.isdigit() else (1, 0, p) for p in pre.split("."))
+    return core + ((0,) + idents,)
 
 
 @dataclass
@@ -113,8 +135,12 @@ class DoctorReport:
         return "\n".join(f"• {f.rule}: {f.message}" for f in warns)
 
 
-def run_doctor(path) -> DoctorReport:
-    """Run all Tier-1 static checks on a plugin folder; return a DoctorReport."""
+def run_doctor(path, *, installed_version=None) -> DoctorReport:
+    """Run all Tier-1 static checks on a plugin folder; return a DoctorReport.
+
+    ``installed_version`` (2.5 T42): the folder is an update of a plugin at that
+    version, which adds the ``update`` rule (version increase, CHANGELOG.md).
+    """
     folder = Path(path).resolve()
     report = DoctorReport(slug=folder.name)
 
@@ -135,6 +161,9 @@ def run_doctor(path) -> DoctorReport:
     _check_public_pages(folder, report)
     _check_connections(folder, report)
     _check_triggers(folder, report)
+    _check_lifecycle(folder, report)
+    if installed_version is not None:
+        _check_update(folder, report, installed_version)
     return report
 
 
@@ -743,6 +772,66 @@ def _check_triggers(folder: Path, report: DoctorReport):
         report.add("triggers", WARN, warning)
     if keys and not failures:
         report.add("triggers", PASS, f"{len(keys)} watcher adapter(s): {', '.join(keys)}.")
+
+
+def _check_lifecycle(folder: Path, report: DoctorReport):
+    """Update steps in ``lifecycle.py`` (2.5 T42): ``reprovision()`` and
+    ``on_update(from_version)``, both optional, run after an update's restart."""
+    path = folder / "lifecycle.py"
+    if not path.exists():
+        return
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    except (SyntaxError, ValueError, OSError) as exc:
+        report.add("lifecycle", FAIL, f"lifecycle.py does not parse: {exc}")
+        return
+    functions = {
+        node.name: node for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    failures = []
+    for name, wanted in (("reprovision", 0), ("on_update", 1)):
+        node = functions.get(name)
+        if node is None:
+            continue
+        if isinstance(node, ast.AsyncFunctionDef):
+            failures.append(f"{name} must be a plain function, not async.")
+            continue
+        args = node.args
+        positional = len(args.posonlyargs) + len(args.args)
+        required = positional - len(args.defaults)
+        required_kw = sum(1 for d in args.kw_defaults if d is None)
+        takes = positional >= wanted or args.vararg is not None
+        if required > wanted or required_kw or not takes:
+            shape = "no arguments" if wanted == 0 else "one argument (from_version)"
+            failures.append(f"{name} must be callable with {shape}.")
+    if failures:
+        report.add("lifecycle", FAIL, " ".join(failures))
+    elif not any(n in functions for n in ("reprovision", "on_update")):
+        report.add(
+            "lifecycle", WARN,
+            "lifecycle.py defines neither reprovision() nor on_update(from_version), so it does nothing.",
+        )
+    else:
+        names = [f"{n}()" for n in ("reprovision", "on_update") if n in functions]
+        report.add("lifecycle", PASS, "Update steps: " + ", ".join(names) + ".")
+
+
+def _check_update(folder: Path, report: DoctorReport, installed_version):
+    """An update of an installed plugin (2.5 T42): the version must go up, and a
+    CHANGELOG.md tells the admin what changed. Both advisory here; the update
+    itself refuses a version that does not increase."""
+    manifest = _manifest_dict(folder) or {}
+    version = manifest.get("version")
+    new_key, old_key = semver_key(version), semver_key(installed_version)
+    if new_key is None or old_key is None or new_key <= old_key:
+        report.add(
+            "update", WARN,
+            f"version {version!r} is not higher than the installed {installed_version!r}; "
+            "an update needs a higher semver version.",
+        )
+    if not (folder / "CHANGELOG.md").is_file():
+        report.add("update", WARN, "No CHANGELOG.md: the admin can't see what this version changes.")
 
 
 def _base_name(node):

@@ -40,6 +40,13 @@
     <button type="submit" class="text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">{% if plugin.status == 'errored' %}Retry activation{% else %}Activate{% endif %}</button>
 </form>
 {% endif %}
+<a href="{% url 'cpanel:plugin_upload' %}" title="Upload a zip of a higher version to update this plugin in place" class="text-[13px] px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Update</a>
+{% if plugin.previous_version and not rollback_problem %}
+<form method="post" action="{% url 'cpanel:plugin_rollback' pk=plugin.pk %}" class="inline" onsubmit="return confirm('Roll {{ plugin.name|escapejs }} back to {{ plugin.previous_version|escapejs }}? Its {{ plugin.version|escapejs }} files are removed.');">
+    {% csrf_token %}
+    <button type="submit" class="text-[13px] px-3.5 py-2 rounded-lg border border-warn/40 text-warn hover:bg-warn/10 transition-colors">Roll back to {{ plugin.previous_version }}</button>
+</form>
+{% endif %}
 <button type="button"
         data-url="{% url 'cpanel:plugin_delete' pk=plugin.pk %}"
         data-name="{{ plugin.name }}"
@@ -96,6 +103,39 @@
         {% endif %}
 
         {% include "cpanel/plugins/_connections.html" with requirements=connection_requirements next=request.get_full_path %}
+
+        {# In-place updates (2.5 T42) #}
+        {% if updates or rollback_problem %}
+        <section class="rounded-2xl border border-line bg-panel p-6">
+            <h2 class="text-sm font-semibold text-text mb-1">Updates</h2>
+            <p class="text-xs text-faint mb-3">Uploading a higher version updates the plugin in place. Its settings, secrets and data stay; its update steps run after the next restart while it is active.</p>
+            {% if rollback_problem %}
+            <p class="text-xs text-warn mb-3">Rollback unavailable: {{ rollback_problem }}</p>
+            {% endif %}
+            <ul class="divide-y divide-line-soft">
+                {% for u in updates %}
+                <li class="py-2.5 text-sm min-w-0">
+                    <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                        <span class="font-mono text-text">{{ u.from_version|default:"?" }} → {{ u.to_version|default:"?" }}</span>
+                        {% if u.outcome == 'ok' %}
+                        <span class="px-2 py-0.5 text-xs rounded-md bg-ok/10 text-ok">{{ u.get_outcome_display }}</span>
+                        {% elif u.outcome == 'steps_failed' or u.outcome == 'refused' %}
+                        <span class="px-2 py-0.5 text-xs rounded-md bg-fail/10 text-fail">{{ u.get_outcome_display }}</span>
+                        {% elif u.outcome == 'cancelled' %}
+                        <span class="px-2 py-0.5 text-xs rounded-md bg-panel-hi text-muted">{{ u.get_outcome_display }}</span>
+                        {% else %}
+                        <span class="px-2 py-0.5 text-xs rounded-md bg-warn/10 text-warn">{{ u.get_outcome_display }}</span>
+                        {% endif %}
+                        <span class="text-xs text-faint">{{ u.get_source_display }}{% if u.initiated_by == 'auto' %} · automatic{% elif u.user %} · {{ u.user.get_username }}{% endif %} · <span title="{{ u.created_at|date:'Y-m-d H:i:s' }}">{{ u.created_at|timesince }} ago</span></span>
+                    </div>
+                    {% if u.error %}
+                    <pre class="mt-2 text-[11px] text-muted bg-ink border border-line-soft rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">{{ u.error }}</pre>
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+        </section>
+        {% endif %}
     </div>
 
     {# About / metadata #}

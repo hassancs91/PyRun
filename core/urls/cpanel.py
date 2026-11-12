@@ -243,6 +243,7 @@ from core.views.plugins import (
     plugin_activate_view,
     plugin_deactivate_view,
     plugin_delete_view,
+    plugin_rollback_view,
     plugin_restart_view,
     plugin_restart_status_view,
     plugin_restarting_view,
@@ -568,6 +569,7 @@ urlpatterns = [
     path("plugins/<uuid:pk>/activate/", plugin_activate_view, name="plugin_activate"),
     path("plugins/<uuid:pk>/deactivate/", plugin_deactivate_view, name="plugin_deactivate"),
     path("plugins/<uuid:pk>/delete/", plugin_delete_view, name="plugin_delete"),
+    path("plugins/<uuid:pk>/rollback/", plugin_rollback_view, name="plugin_rollback"),
     # Slug routes LAST so the literal/uuid plugin routes above always win.
     path("plugins/<slug:slug>/icon/", plugin_icon_view, name="plugin_icon"),
     path("plugins/<slug:slug>/", plugin_detail_view, name="plugin_detail"),
