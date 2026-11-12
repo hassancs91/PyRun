@@ -110,6 +110,7 @@ def channel_edit_view(request: HttpRequest, pk) -> HttpResponse:
             "inbound_form": ChannelInboundForm(channel=channel, workspace=request.workspace),
             "supports_inbound": getattr(provider, "supports_inbound", False),
             "supports_discovery": callable(getattr(provider, "discover_chat_ids", None)),
+            "registers_webhook": getattr(provider, "registers_webhook", True),
             "webhook_url": webhook_url,
             "members": channel.members.all(),
             "message_log": ledger.display_rows(
@@ -151,8 +152,10 @@ def channel_inbound_view(request: HttpRequest, pk) -> HttpResponse:
             reverse("channel_webhook", args=[channel.inbound_token])
         )
         try:
-            provider.set_inbound_webhook(channel, public_url)
-            messages.success(request, "Inbound enabled and webhook registered.")
+            # A provider whose webhook is set in its own dashboard (WhatsApp)
+            # says where instead.
+            note = provider.set_inbound_webhook(channel, public_url)
+            messages.success(request, note or "Inbound enabled and webhook registered.")
         except Exception as e:
             logger.warning("set_inbound_webhook failed for channel %s: %s", channel.id, e)
             messages.error(

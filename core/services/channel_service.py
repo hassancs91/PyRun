@@ -36,17 +36,21 @@ class ChannelService:
         return ok, message
 
     @classmethod
-    def send(cls, channel, text: str, reply_ref: dict | None = None) -> dict:
+    def send(cls, channel, text: str, reply_ref: dict | None = None, content: dict | None = None) -> dict:
         """Send a message through the channel. Raises ChannelError on failure.
 
         Persists last_error on failure (and clears a stale one on success) so the
         UI surfaces delivery problems without an extra write on every send.
+        ``content`` is structured content (a WhatsApp template) sent instead of
+        the text by a provider that supports it.
         """
         from core.services.channels import ChannelError, OutboundMessage
 
         provider = cls.provider_for(channel)
         try:
-            result = provider.send(channel, OutboundMessage(text=text, reply_ref=reply_ref))
+            result = provider.send(
+                channel, OutboundMessage(text=text, reply_ref=reply_ref, content=content or {}),
+            )
         except ChannelError as e:
             channel.last_error = str(e)
             channel.save(update_fields=["last_error", "updated_at"])

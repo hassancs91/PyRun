@@ -5,8 +5,14 @@ Mounted at /channels/<token>/ (no auth — external chat services POST here). Th
 flow is deliberately front-loaded into the web process so we can fast-ack:
 
   IP rate-limit → resolve channel → provider URL-verification challenge →
-  verify signature → dedup → parse → per-sender rate-limit → approval inbox →
-  worker-heartbeat preflight → enqueue → 200
+  verify signature → delivery callbacks → then for each message: dedup →
+  parse → per-sender rate-limit → approval inbox → worker-heartbeat
+  preflight → enqueue → 200
+
+A provider that batches (WhatsApp) splits one POST into one payload per
+message (``split_inbound``) and reports delivery statuses in it
+(``apply_status_updates``); Telegram sends one update per POST and no
+statuses, so its responses are the same as before.
 
 GET is accepted only for a provider's challenge (WhatsApp's ``hub.challenge``);
 any other GET gets 405, as before.
@@ -81,12 +87,32 @@ def channel_webhook_view(request: HttpRequest, token: str) -> HttpResponse:
     if not isinstance(payload, dict):
         return JsonResponse({"error": "bad request"}, status=400)
 
+    # Delivery callbacks (WhatsApp: sent / delivered / read / failed) update
+    # the ledger. A failure here is logged; the messages are still handled.
+    statuses = 0
+    try:
+        statuses = provider.apply_status_updates(channel, payload)
+    except Exception:
+        logger.exception("Applying delivery statuses failed for channel %s", channel.id)
+
+    pieces = provider.split_inbound(payload)
+    if not pieces:
+        return JsonResponse({"status": "ok" if statuses else "ignored"})
+    if len(pieces) == 1:
+        body, status = _accept(channel, provider, pieces[0])
+        return JsonResponse(body, status=status)
+    results = [_accept(channel, provider, piece)[0].get("status", "error") for piece in pieces]
+    return JsonResponse({"status": "batch", "results": results})
+
+
+def _accept(channel, provider, payload):
+    """Handle one inbound message's payload: ``(body, http status)``."""
     # Drop retried/duplicate deliveries (providers retry on slow acks).
     dedup = provider.dedup_id(payload)
     if dedup:
         dkey = f"channel_dedup_{channel.id}_{dedup}"
         if cache.get(dkey):
-            return JsonResponse({"status": "duplicate"})
+            return {"status": "duplicate"}, 200
         cache.set(dkey, 1, _DEDUP_TTL)
 
     try:
@@ -95,9 +121,9 @@ def channel_webhook_view(request: HttpRequest, token: str) -> HttpResponse:
         # A payload with the right secret but an unexpected shape is the
         # caller's error, not ours: answer 400 instead of a 500.
         logger.warning("Unparseable inbound payload for channel %s", channel.id, exc_info=True)
-        return JsonResponse({"error": "bad request"}, status=400)
+        return {"error": "bad request"}, 400
     if msg is None:
-        return JsonResponse({"status": "ignored"})
+        return {"status": "ignored"}, 200
     sender_id = msg.sender.get("id")
 
     # Per-sender rate limit (applies even to unapproved senders).
@@ -106,7 +132,7 @@ def channel_webhook_view(request: HttpRequest, token: str) -> HttpResponse:
         _SENDER_RATE_LIMIT,
         _RATE_WINDOW,
     ):
-        return JsonResponse({"status": "rate_limited"})
+        return {"status": "rate_limited"}, 200
 
     channel.last_inbound_at = timezone.now()
     channel.save(update_fields=["last_inbound_at", "updated_at"])
@@ -115,12 +141,12 @@ def channel_webhook_view(request: HttpRequest, token: str) -> HttpResponse:
     if channel.inbound_access == Channel.InboundAccess.APPROVAL:
         decision = _approval_gate(channel, provider, msg, sender_id)
         if decision is not None:
-            return decision  # not approved → short-circuit
+            return decision, 200  # not approved → short-circuit
 
     # Worker-down preflight: a friendly reply beats a silent black hole.
     if not GlobalSettings.get_settings().worker_is_alive():
         _safe_send(channel, provider, msg, "💤 I'm asleep right now — please try again shortly.")
-        return JsonResponse({"status": "worker_unavailable"})
+        return {"status": "worker_unavailable"}, 200
 
     async_task(
         "core.services.channels.inbound.dispatch_inbound",
@@ -128,11 +154,11 @@ def channel_webhook_view(request: HttpRequest, token: str) -> HttpResponse:
         payload,
         task_name=f"inbound-{channel.id}",
     )
-    return JsonResponse({"status": "queued"})
+    return {"status": "queued"}, 200
 
 
 def _approval_gate(channel, provider, msg, sender_id):
-    """Return a JsonResponse to short-circuit, or None if the sender is approved."""
+    """Return a response body to short-circuit, or None if the sender is approved."""
     member = ChannelMember.objects.filter(channel=channel, sender_id=sender_id).first()
     if member is None:
         ChannelMember.objects.create(
@@ -146,14 +172,14 @@ def _approval_gate(channel, provider, msg, sender_id):
             channel, provider, msg, sender_id,
             "👋 You're not approved to use this bot yet. Ask the owner to grant you access.",
         )
-        return JsonResponse({"status": "pending"})
+        return {"status": "pending"}
 
     ChannelMember.objects.filter(pk=member.pk).update(last_seen_at=timezone.now())
     if member.status == ChannelMember.Status.BLOCKED:
-        return JsonResponse({"status": "blocked"})
+        return {"status": "blocked"}
     if member.status == ChannelMember.Status.PENDING:
         _reply_once(channel, provider, msg, sender_id, "Still pending approval — hang tight.")
-        return JsonResponse({"status": "pending"})
+        return {"status": "pending"}
     return None  # approved
 
 

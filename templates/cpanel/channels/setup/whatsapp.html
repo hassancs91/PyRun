@@ -1,0 +1,14 @@
+<div class="rounded-2xl border border-line bg-panel p-5 flex items-start gap-3">
+        <svg class="w-5 h-5 text-info flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        <div class="text-sm text-muted">
+            <p class="font-medium text-text">WhatsApp setup</p>
+            <ul class="mt-2 space-y-1 list-disc list-inside text-xs">
+                <li>Create a Meta app (type Business) with the WhatsApp product; its API Setup page has a free test number.</li>
+                <li>Copy the <span class="text-text">Phone number ID</span> and <span class="text-text">WhatsApp Business Account ID</span> from API Setup.</li>
+                <li>Make a permanent token: Meta Business settings → System users → Generate token with <span class="font-mono text-text">whatsapp_business_messaging</span>.</li>
+                <li>For inbound, add the app secret and a verify token of your choice, then turn Inbound on and paste the callback URL into the app's WhatsApp → Configuration.</li>
+                <li>Outside the 24-hour window only approved templates can be sent: set a default template with one <span class="font-mono text-text">{% templatetag openvariable %}1{% templatetag closevariable %}</span> variable.</li>
+            </ul>
+            <p class="mt-2 text-xs">Full walkthrough: the Chat channels guide (<span class="font-mono">docs/channels.md</span>).</p>
+        </div>
+    </div>

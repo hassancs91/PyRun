@@ -14,7 +14,9 @@ POST /internal/channels/send
     "text": "...",
     "subject": "...",       # email only (optional)
     "to": "...",            # email only (optional; defaults to core default)
-    "reply_ref": {...}      # chat target override (e.g. {"chat_id": ...})
+    "reply_ref": {...},     # chat target override (e.g. {"chat_id": ...})
+    "template": {...}       # WhatsApp only: {"name", "language", "components"};
+                            # "text" is then optional (the log shows it)
   }
 
 A chat send goes through the delivery ledger (``core.services.channels.ledger``)
@@ -45,6 +47,8 @@ logger = logging.getLogger(__name__)
 # daily_send_cap covers every run and kind).
 _RUN_SEND_LIMIT = 30
 _RUN_SEND_WINDOW = 60  # seconds
+# A template's name, language and components as JSON.
+_TEMPLATE_MAX_BYTES = 16 * 1024
 
 
 def _bad_request(message: str) -> JsonResponse:
@@ -77,10 +81,15 @@ def send(request: HttpRequest) -> JsonResponse:
 
     target = (data.get("target") or "").strip()
     text = data.get("text")
+    template = data.get("template")
     if not target:
         return _bad_request("Missing 'target'")
-    if not isinstance(text, str) or not text:
+    if template is not None and target == "email":
+        return _bad_request("'template' is for a WhatsApp channel, not email")
+    if template is None and (not isinstance(text, str) or not text):
         return _bad_request("Missing 'text'")
+    if text is not None and not isinstance(text, str):
+        return _bad_request("'text' must be a string")
 
     # --- email target: delegate to PyRun core email ---
     if target == "email":
@@ -123,11 +132,27 @@ def send(request: HttpRequest) -> JsonResponse:
     if reply_ref is not None and not isinstance(reply_ref, dict):
         return _bad_request("'reply_ref' must be an object")
 
+    content = None
+    if template is not None:
+        from core.services.channels import get_provider
+        from core.services.channels.whatsapp import clean_template
+
+        if not getattr(get_provider(channel.provider), "supports_templates", False):
+            return _bad_request(f"Channel '{target}' ({channel.get_provider_display()}) doesn't send templates")
+        try:
+            template = clean_template(template)
+        except ValueError as e:
+            return _bad_request(str(e))
+        if len(json.dumps(template)) > _TEMPLATE_MAX_BYTES:
+            return _bad_request("'template' is too large")
+        content = {"template": template}
+        text = text or f"Template {template['name']}"
+
     # A reply answers an inbound message (pyrunner_notify.reply() passes its
     # reply_ref) and counts toward the channel's daily reply cap.
     kind = ChannelMessage.Kind.REPLY if reply_ref else ChannelMessage.Kind.SCRIPT
     run = Run.objects.filter(pk=run_id).first() if run_id else None
-    row = ledger.deliver(channel, text, kind=kind, reply_ref=reply_ref, run=run)
+    row = ledger.deliver(channel, text, kind=kind, reply_ref=reply_ref, run=run, content=content)
 
     if row.status == ChannelMessage.Status.SENT:
         return JsonResponse(

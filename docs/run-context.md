@@ -105,7 +105,7 @@ the kind.
 | `manual` | **Run now**, or **Re-run with same inputs** | `user` (`{id, email}`; API and MCP callers reading the run get `{id}` only); `rerun_of` (the id of the run it copies) for a re-run |
 | `schedule` | the script's schedule | `schedule_id`, `run_mode` (`interval`, `daily`, `cron`...), `fired_at` |
 | `webhook` | a call to the script's webhook URL | `method`, `path`, `remote_ip`, `query` (each name maps to a list of values), `content_type`, `headers`; for a POST, `body_size`, `body` (the raw text) and, when the body is JSON, `body_json`. See [Webhook calls](#webhook-calls) |
-| `channel` | a chat message to a channel linked to the script | `channel` (its name), `channel_id`, `provider`, `text`, `sender`, `reply_ref`, `raw` (the provider's own payload) |
+| `channel` | a chat message to a channel linked to the script | `channel` (its name), `channel_id`, `provider`, `text`, `sender`, `reply_ref`, `raw` (the provider's own payload); a WhatsApp message also has `message_type`, `message_id` and, when it has them, `details` and `media` (see [WhatsApp inbound](channels.md#inbound-subscribe-the-webhook)) |
 | `watcher` | a [watcher](scheduling.md#watchers) that saw a new item | `watcher` (`{id, name, adapter}`), `event_id` (the item's id at the source), `item` (the item as the source gave it) |
 | `plugin` | a plugin (`ScriptAPI.queue_run`) | `plugin`, `script_key`; `user` when the plugin passed one |
 | `api` | `scripts.run` over the API or MCP; or code that created the run itself | `token_id` (the API token that started it) and `via` (`rest` or `mcp`) for `scripts.run`; none otherwise |
@@ -593,7 +593,11 @@ many attempts it took, its status and the provider's message id.
   resend it yourself, or it may arrive twice. It raises `NotifyError` when the
   send was refused (HTTP 502) or the channel's daily send cap is used up
   (HTTP 429, code `SEND_CAP_REACHED`). A send with a `reply_ref` (which is
-  what `reply()` does) counts as a reply.
+  what `reply()` does) counts as a reply. On a WhatsApp channel,
+  `send(channel, reply_ref=..., template={"name", "language", "components"})`
+  sends an approved template; plain text outside WhatsApp's 24-hour window
+  goes out as the channel's default template (see
+  [Sending: the 24-hour window and templates](channels.md#sending-the-24-hour-window-and-templates)).
 - **Caps.** A channel's **daily reply cap** counts replies only; notifications
   and plain script sends don't use it. Its **daily send cap** (on the
   channel's settings, 0 = none) counts notifications, replies and script sends
@@ -605,6 +609,10 @@ many attempts it took, its status and the provider's message id.
   messages that run sent; a channel's page has a **Message log** of its last
   50 messages, both directions. The text of a run's message is masked with
   that run's secrets. Records are kept for 30 days.
+- **Delivery.** A sent message shows *sent*; a provider that reports
+  delivery (WhatsApp) moves it to *delivered* and *read*, or to *failed*
+  with its reason when it couldn't deliver a message it had accepted.
+  Telegram reports nothing after the send.
 
 The webhook notification (a script's notification URL) counts as sent only
 when the endpoint answers with a 2xx status; any other status is logged as a

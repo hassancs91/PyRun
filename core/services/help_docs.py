@@ -47,6 +47,7 @@ CORPUS = (
     "docs/api.md",
     "docs/plugins.md",
     "docs/brain.md",
+    "docs/channels.md",
     "CHANGELOG.md",
 )
 # One generated page per integration, <key>.md (plan Stage 6); none before it.

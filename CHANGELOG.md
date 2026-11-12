@@ -513,6 +513,21 @@ begins tracking at the current release; earlier history is in the git log.
   providers plug in without Telegram-shaped fields. The inbound webhook can now
   answer a provider's URL-verification handshake (a GET challenge) before the
   signature check. Telegram channels work exactly as before.
+- **WhatsApp channels.** Connect a WhatsApp Business number (Meta's Cloud
+  API, directly) as a channel: phone number id, WABA id, a permanent System
+  User token, the app secret and a verify token, all encrypted. Notifications,
+  `pyrunner_notify` and replies go out as text inside WhatsApp's 24-hour
+  window and as the channel's default template outside it;
+  `pyrunner_notify.send(..., template={...})` sends any approved template.
+  Inbound answers Meta's webhook verification, checks every call's
+  `X-Hub-Signature-256` signature, and turns text, button and list replies,
+  locations, contacts and reactions into messages for a script or Py AI
+  (media arrive as metadata; the run event gains `message_type`, `details`
+  and `media`), with the approval inbox as for Telegram. Each handled message
+  is marked as read, and delivery callbacks move the message log from sent to
+  delivered to read, or to failed with WhatsApp's reason. Setup walkthrough
+  (business verification, test number, token, webhook, templates, limits) in
+  the new Chat channels guide, docs/channels.md.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

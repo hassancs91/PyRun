@@ -12,6 +12,10 @@ Usage:
     pyrunner_notify.send("Ops Alerts", "Backup finished ✅")
     pyrunner_notify.email("Report ready", "See the dashboard.", to="me@example.com")
     pyrunner_notify.reply("On it!")   # only inside an inbound-triggered run (Phase 2)
+    # WhatsApp: an approved template (needed outside the 24-hour window)
+    pyrunner_notify.send("Support WA", reply_ref={"chat_id": "15551234567"},
+                         template={"name": "order_update", "language": "en_US",
+                                   "components": [{"type": "body", "parameters": [{"type": "text", "text": "1042"}]}]})
 """
 
 import json
@@ -58,17 +62,24 @@ def _post(payload: dict) -> dict:
         raise NotifyError(f"Could not reach PyRun: {e}")
 
 
-def send(channel: str, text: str, reply_ref: dict | None = None) -> dict:
+def send(channel: str, text: str = "", reply_ref: dict | None = None, template: dict | None = None) -> dict:
     """Send ``text`` to the named Channel (resolved in this run's workspace).
 
     Returns ``{"ok": True, "status": "sent", ...}``, or ``"status": "retrying"``
     when the provider failed for a temporary reason and PyRun will send it
     again later (don't resend, or it may arrive twice). Raises NotifyError when
     the send was refused or the channel's daily send cap is used up.
+
+    ``template`` (WhatsApp channels only) sends an approved message template
+    instead of text: ``{"name": ..., "language": "en_US", "components": [...]}``
+    as in WhatsApp's Cloud API. ``text`` is then optional: it is what the
+    channel's message log shows.
     """
     payload = {"target": channel, "text": text}
     if reply_ref:
         payload["reply_ref"] = reply_ref
+    if template is not None:
+        payload["template"] = template
     return _post(payload)
 
 

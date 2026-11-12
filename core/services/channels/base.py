@@ -24,6 +24,10 @@ class OutboundMessage:
     # Echo back to the same conversation. None ⇒ the channel's default target.
     reply_ref: Optional[dict] = None
     attachments: list = field(default_factory=list)
+    # Structured content a provider sends instead of plain text, e.g.
+    # {"template": {"name", "language", "components"}} for WhatsApp. ``text``
+    # stays the readable version (what the ledger shows). Empty ⇒ plain text.
+    content: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -37,6 +41,14 @@ class InboundMessage:
     reply_ref: dict       # chat_id / channel_id / thread_ts — where a reply goes
     raw: dict             # full provider payload (advanced handlers)
     received_at: Optional[datetime] = None
+    # Optional, for providers with typed messages (WhatsApp): the message's
+    # type ("text", "interactive", "location", ...), its structured parts
+    # (``details``), any attachments as metadata (``media``) and the
+    # provider's own message id. Empty for Telegram.
+    message_type: str = ""
+    details: dict = field(default_factory=dict)
+    media: list = field(default_factory=list)
+    message_id: str = ""
 
 
 class ChannelError(Exception):
@@ -108,6 +120,11 @@ class ChannelProvider:
     default_target_help: str = "Where notifications are sent."
     default_target_placeholder: str = ""
     setup_template: str = ""
+    # False when the user registers the webhook URL in the provider's own
+    # dashboard (WhatsApp) instead of PyRun registering it through the API.
+    registers_webhook: bool = True
+    # True when ``send`` takes ``OutboundMessage.content["template"]``.
+    supports_templates: bool = False
 
     def identity_for_fingerprint(self, creds: dict) -> str:
         """The stable credential identity (e.g. bot token) used for the
@@ -152,8 +169,41 @@ class ChannelProvider:
         """Turn a decoded webhook payload into an InboundMessage (or None)."""
         return None
 
-    def set_inbound_webhook(self, channel, public_url: str) -> None:
-        """Register ``public_url`` as the provider's webhook for this channel."""
+    def split_inbound(self, payload: dict) -> list:
+        """The payloads of the messages in one webhook delivery.
+
+        A provider that can batch several messages into one POST (WhatsApp)
+        returns one payload per message, each in its own documented shape, so
+        de-duplication, the approval inbox and the handler see one message at
+        a time. The default is the payload itself.
+        """
+        return [payload]
+
+    def apply_status_updates(self, channel, payload: dict) -> int:
+        """Apply the delivery statuses a webhook delivery carries; returns how many.
+
+        For providers that report delivered/read/failed by callback
+        (WhatsApp); the ledger row is found by ``provider_message_id``. The
+        default reports none.
+        """
+        return 0
+
+    def acknowledge_inbound(self, channel, msg: InboundMessage) -> None:
+        """Tell the provider an inbound message was seen (WhatsApp's mark-as-read).
+
+        Called by the worker for every message it dispatches (after logging
+        it, before the handler); may raise ChannelError (the caller logs it
+        and carries on). Default: nothing.
+        """
+        return None
+
+    def set_inbound_webhook(self, channel, public_url: str) -> Optional[str]:
+        """Register ``public_url`` as the provider's webhook for this channel.
+
+        May return a sentence for the user (shown instead of "webhook
+        registered"), e.g. where to paste the URL when ``registers_webhook``
+        is False.
+        """
         raise NotImplementedError
 
     def clear_inbound_webhook(self, channel) -> None:

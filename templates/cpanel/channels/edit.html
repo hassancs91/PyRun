@@ -92,6 +92,7 @@
                         <div class="min-w-0 text-xs text-faint truncate">
                             <span class="font-mono" title="{{ d.msg.created_at|date:'M d, Y H:i:s' }}">{{ d.msg.created_at|date:"M d H:i" }}</span>
                             · {% if d.msg.direction == 'in' %}in{% if d.msg.sender_json.display_name %} from {{ d.msg.sender_json.display_name }}{% endif %}{% else %}{{ d.msg.get_kind_display|lower }}{% endif %}
+                            {% if d.msg.content.template.name %}· template <span class="font-mono">{{ d.msg.content.template.name }}</span>{% endif %}
                             {% if d.msg.attempts > 1 %}· {{ d.msg.attempts }} attempts{% endif %}
                             {% if d.msg.run_id %}· <a href="{% url 'cpanel:run_detail' pk=d.msg.run_id %}" class="text-info hover:underline">run</a>{% endif %}
                         </div>
@@ -147,8 +148,9 @@
                 </div>
                 {% if webhook_url and channel.inbound_enabled %}
                 <div>
-                    <label class="block text-[13px] font-medium text-text mb-1.5">Webhook URL (registered with the provider)</label>
+                    <label class="block text-[13px] font-medium text-text mb-1.5">{% if registers_webhook %}Webhook URL (registered with the provider){% else %}Callback URL (paste it into the provider's webhook settings){% endif %}</label>
                     <input type="text" readonly value="{{ webhook_url }}" onclick="this.select()" class="w-full px-3.5 py-2.5 bg-ink border border-line rounded-lg text-faint text-sm font-mono">
+                    {% if not registers_webhook %}<p class="mt-1.5 text-xs text-faint">Use it with this channel's verify token, and subscribe to the messages field.</p>{% endif %}
                 </div>
                 {% endif %}
                 <div class="rounded-lg border border-warn/30 bg-warn/10 p-4 flex items-start gap-3">

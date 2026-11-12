@@ -85,7 +85,7 @@
         {% icon "messages-square" class="w-7 h-7 text-info" %}
     </div>
     <h3 class="text-base font-semibold mb-1">No channels yet</h3>
-    <p class="text-sm text-muted mb-6">{% if encryption_configured %}Connect a Telegram bot to send run notifications to a chat.{% else %}Configure encryption to start adding channels.{% endif %}</p>
+    <p class="text-sm text-muted mb-6">{% if encryption_configured %}Connect a Telegram bot or a WhatsApp Business number to send run notifications to a chat.{% else %}Configure encryption to start adding channels.{% endif %}</p>
     {% if encryption_configured %}
     <a href="{% url 'cpanel:channel_create' %}" class="inline-flex items-center gap-2 text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>

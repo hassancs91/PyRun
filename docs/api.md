@@ -594,7 +594,7 @@ Each endpoint declares a Py AI tier:
 | Tier | Who | Endpoints |
 |---|---|---|
 | `console` | The console's Py AI, open to workspace owners and admins | Every read endpoint |
-| `channel` | Py AI on a chat channel (Telegram), whose approved senders need not be owners or admins | `scripts.list`, `scripts.get`, `runs.list`, `runs.get`, the four datastore reads, `databases.list`, `databases.tables`, `vectors.list`, `vectors.search`, `plugins.list`, `environments.list`, `libraries.list`, `schedules.list`, `watchers.list`, `system.health`, `help.search`, and the Brain reads |
+| `channel` | Py AI on a chat channel (Telegram, WhatsApp), whose approved senders need not be owners or admins | `scripts.list`, `scripts.get`, `runs.list`, `runs.get`, the four datastore reads, `databases.list`, `databases.tables`, `vectors.list`, `vectors.search`, `plugins.list`, `environments.list`, `libraries.list`, `schedules.list`, `watchers.list`, `system.health`, `help.search`, and the Brain reads |
 
 So a chat channel can't read a run's output (`runs.output`), run a database
 query (`databases.query`), read a script's code (`scripts.code`) or list secret

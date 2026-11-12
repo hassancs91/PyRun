@@ -228,7 +228,20 @@ def webhook_event(webhook_data: dict, received_at=None, *, path=None, headers=No
 
 
 def channel_event(channel, msg) -> dict:
-    """An inbound chat message (``core.services.channels.base.InboundMessage``)."""
+    """An inbound chat message (``core.services.channels.base.InboundMessage``).
+
+    A typed message (WhatsApp) adds ``message_type``, ``message_id`` and, when
+    it has them, ``details`` (a button reply, location, contacts, reaction)
+    and ``media`` (attachments as metadata); a Telegram event is unchanged.
+    """
+    typed = {}
+    if getattr(msg, "message_type", ""):
+        typed["message_type"] = msg.message_type
+        typed["message_id"] = msg.message_id or ""
+        if msg.details:
+            typed["details"] = msg.details
+        if msg.media:
+            typed["media"] = msg.media
     return build_event(
         KIND_CHANNEL,
         msg.received_at,
@@ -238,6 +251,7 @@ def channel_event(channel, msg) -> dict:
         text=msg.text or "",
         sender=msg.sender or {},
         reply_ref=msg.reply_ref or {},
+        **typed,
         raw=msg.raw or {},
     )
 

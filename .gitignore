@@ -45,6 +45,7 @@ docs/*
 !docs/brain.md
 !docs/api.md
 !docs/run-context.md
+!docs/channels.md
 # Generated per-integration pages (2.5 Stage 6), bundled for help.search.
 !docs/integrations/
 

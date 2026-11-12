@@ -414,8 +414,9 @@ class TelegramRegressionTests(_Base):
         for text in ('name="bot_token"', "Paste the token from @BotFather", "Default chat ID", "e.g. 123456789",
                      "Telegram setup", "@BotFather"):
             self.assertIn(text, html)
-        # One provider registered: no reload script.
-        self.assertNotIn('getElementById("id_provider")', html)
+        # Telegram and WhatsApp are registered (T36): the provider select reloads the page.
+        self.assertIn('getElementById("id_provider")', html)
+        self.assertIn('<option value="whatsapp">WhatsApp</option>', html)
         resp = self.client.post(reverse("cpanel:channel_create"), {"name": "N", "provider": "telegram", "bot_token": ""})
         self.assertIn("A bot token is required.", resp.content.decode())
 

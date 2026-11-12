@@ -60,12 +60,14 @@ def backoff_seconds(attempts: int, retry_after=None) -> int:
 
 
 def deliver(channel, text: str, *, kind: str, reply_ref: dict | None = None,
-            run=None, run_id=None, note: str = ""):
+            run=None, run_id=None, note: str = "", content: dict | None = None):
     """Record and send one outbound message; returns its ``ChannelMessage``.
 
     Never raises for a provider failure: the outcome is on the row (``status``
     sent | retrying | failed, ``error``). ``note`` is kept in ``error`` on a
-    successful send (e.g. why PyRun answered with an apology).
+    successful send (e.g. why PyRun answered with an apology). ``content`` is
+    structured content the provider sends instead of the text (a WhatsApp
+    template); it is stored on the row, so a retry sends the same thing.
     """
     ChannelMessage = _model()
     now = timezone.now()
@@ -74,6 +76,7 @@ def deliver(channel, text: str, *, kind: str, reply_ref: dict | None = None,
         direction=ChannelMessage.Direction.OUT,
         kind=kind,
         text=text,
+        content=content or {},
         reply_ref_json=reply_ref or {},
         handler=channel.inbound_handler,
         run=run,
@@ -104,7 +107,9 @@ def _attempt(row, channel, *, note: str = "", now=None) -> None:
 
     ChannelMessage = _model()
     try:
-        result = ChannelService.send(channel, row.text, reply_ref=row.reply_ref_json or None)
+        result = ChannelService.send(
+            channel, row.text, reply_ref=row.reply_ref_json or None, content=row.content or None,
+        )
     except Exception as e:  # noqa: BLE001 — the outcome goes on the row, never up
         if not isinstance(e, ChannelError):
             logger.exception("Channel %s: unexpected send failure", channel.id)
@@ -121,6 +126,12 @@ def _attempt(row, channel, *, note: str = "", now=None) -> None:
     # The provider's answer, for a caller that returns it (not stored).
     row.send_result = result
     message_id = (result or {}).get("message_id") if isinstance(result, dict) else None
+    fields = {}
+    auto = result.get("auto_template") if isinstance(result, dict) else None
+    if isinstance(auto, dict) and not row.content:
+        # Sent as the channel's default template (WhatsApp, outside the
+        # 24-hour window): the log says so.
+        fields["content"] = {"template": {**auto, "auto": True}}
     _record(
         row,
         status=ChannelMessage.Status.SENT,
@@ -128,6 +139,7 @@ def _attempt(row, channel, *, note: str = "", now=None) -> None:
         next_attempt_at=None,
         provider_message_id="" if message_id is None else str(message_id)[:128],
         delivery_state=ChannelMessage.DeliveryState.SENT,
+        **fields,
     )
 
 
@@ -201,6 +213,43 @@ def _retry(pk, now):
     row.status, row.attempts = ChannelMessage.Status.PENDING, row.attempts + 1
     _attempt(row, channel, now=now)
     return row.status
+
+
+# Delivery states in the order a provider reports them; a callback never moves
+# a row backwards (they can arrive out of order).
+_STATE_ORDER = ("", "sent", "delivered", "read")
+
+
+def apply_delivery_status(channel, provider_message_id: str, state: str, *, error: str = "") -> bool:
+    """Record a provider's delivery callback on the sent row it is about.
+
+    ``state`` is ``sent``, ``delivered``, ``read`` or ``failed``. A state only
+    moves forward (a late "delivered" after "read" changes nothing). ``failed``
+    (the provider couldn't deliver a message it had accepted) marks a row that
+    isn't delivered yet as failed with ``error``; it is not retried. Returns
+    whether a row changed. Conditional UPDATEs: same on SQLite and Postgres.
+    """
+    ChannelMessage = _model()
+    if not provider_message_id:
+        return False
+    rows = ChannelMessage.objects.filter(
+        channel=channel, direction=ChannelMessage.Direction.OUT,
+        provider_message_id=str(provider_message_id)[:128],
+    )
+    now = timezone.now()
+    if state == "failed":
+        changed = rows.filter(
+            status=ChannelMessage.Status.SENT, delivery_state__in=("", "sent"),
+        ).update(status=ChannelMessage.Status.FAILED, error=error or "The provider couldn't deliver it.",
+                 updated_at=now)
+        return bool(changed)
+    if state not in _STATE_ORDER or not state:
+        return False
+    earlier = _STATE_ORDER[: _STATE_ORDER.index(state)]
+    changed = rows.filter(
+        status=ChannelMessage.Status.SENT, delivery_state__in=earlier,
+    ).update(delivery_state=state, updated_at=now)
+    return bool(changed)
 
 
 def display_rows(rows, mask_sets: dict | None = None) -> list[dict]:

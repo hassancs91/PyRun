@@ -19,6 +19,7 @@ from .handlers import get_handler, register_handler
 
 # Side-effect imports: register providers and inbound handlers on import.
 from . import telegram  # noqa: F401  (provider registration)
+from . import whatsapp  # noqa: F401  (provider registration)
 from . import handlers  # noqa: F401  (handler registration)
 
 __all__ = [

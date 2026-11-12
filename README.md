@@ -23,7 +23,7 @@ A self-hosted Python script automation platform. Upload a script, schedule it, m
 - **Unified REST and MCP** — Connect AI clients over MCP or call the same permission-scoped tools from REST, scripts and plugins; discover them from Connect and OpenAPI ([API guide](docs/api.md))
 - **Vector collections** — Embedding providers, Local and Qdrant storage, shared filters and a credential-free script helper
 - **Reviewed GitHub sync** — Pull repository changes into a Brain's inbox for review and export a revision to a dedicated branch
-- **Notifications** — Get alerts via email, webhook, or Telegram on script completion/failure
+- **Notifications** — Get alerts via email, webhook, Telegram or WhatsApp on script completion/failure
 - **Invite-Only Auth** — Admin-invited accounts with email + password login and email-based reset (no open registration)
 - **Single Container** — Deploy with one Docker command
 

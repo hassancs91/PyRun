@@ -31,7 +31,8 @@ class Channel(models.Model):
         TELEGRAM = "telegram", "Telegram"
         SLACK = "slack", "Slack"
         DISCORD = "discord", "Discord"
-        # whatsapp is designed-for but not built (Meta Cloud API approval).
+        # WhatsApp Business Cloud API (Meta), direct: no Twilio, no bridge.
+        WHATSAPP = "whatsapp", "WhatsApp"
 
     class InboundHandler(models.TextChoices):
         # Empty = inbound is notify-only / disabled. 'agent' is intentionally
@@ -362,6 +363,10 @@ class ChannelMessage(models.Model):
     direction = models.CharField(max_length=4, choices=Direction.choices, db_index=True)
     kind = models.CharField(max_length=20, choices=Kind.choices, blank=True, default="")
     text = models.TextField(blank=True)
+    # Structured outbound content the provider sends instead of plain text
+    # (a WhatsApp template: {"template": {"name", "language", "components"}}),
+    # so a retry sends the same thing. Empty for plain text and inbound rows.
+    content = models.JSONField(default=dict, blank=True)
     sender_json = models.JSONField(default=dict, blank=True)
     reply_ref_json = models.JSONField(default=dict, blank=True)
     handler = models.CharField(max_length=20, blank=True)

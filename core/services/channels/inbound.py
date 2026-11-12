@@ -35,7 +35,9 @@ def dispatch_inbound(channel_id: str, payload: dict) -> None:
         reply_ref_json=msg.reply_ref,
         handler=channel.inbound_handler,
         status=ChannelMessage.Status.RECEIVED,
+        provider_message_id=(msg.message_id or "")[:128],
     )
+    _acknowledge(channel, provider, msg)
 
     handler = get_handler(channel.inbound_handler)
     if handler is None:
@@ -60,6 +62,14 @@ def dispatch_inbound(channel_id: str, payload: dict) -> None:
 
     if out is not None:
         _reply(channel, msg, out.text, reply_ref=out.reply_ref)
+
+
+def _acknowledge(channel, provider, msg):
+    """Tell the provider the message was seen (WhatsApp's read receipt); never raises."""
+    try:
+        provider.acknowledge_inbound(channel, msg)
+    except Exception as e:  # noqa: BLE001 — a missed read receipt must not stop the handler
+        logger.warning("Marking an inbound message read on channel %s failed: %s", channel.id, e)
 
 
 def _reply(channel, msg, text, *, reply_ref=None, note=""):
