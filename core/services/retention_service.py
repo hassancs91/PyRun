@@ -1,11 +1,25 @@
 """
 Log retention service for managing run cleanup.
+
+The policy, per script (the script's overrides, else the global settings):
+
+- Only FINISHED runs are ever deleted. A run that is pending (queued, held by
+  the Queue concurrency policy, a retry waiting for its time) or running is
+  kept whatever the days/count settings, by every cleanup path: the daily
+  sweep, **Run cleanup now**, and the preview counts the same way.
+- A finished run is kept while it is newer than the retention days (0 = no
+  age rule) or among the script's newest N finished runs that actually ran
+  (0 = no count rule). Both 0 keeps everything.
+- Runs refused before they started (``cancel_reason`` concurrency skip or
+  maintenance) don't take those N places: they get their own newest N, so a
+  burst of them (a sender retrying a blocked webhook) can't push real runs
+  out of the history, and can't grow without limit under a count-only policy.
 """
 
 import logging
 from datetime import timedelta
 
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 from django.utils import timezone
 
 # The name lives in schedule_service's infra-schedule registry so global
@@ -55,7 +69,8 @@ class RetentionService:
         cls, script, days: int | None = None, count: int | None = None
     ) -> QuerySet:
         """
-        Get queryset of runs that would be deleted for a specific script.
+        Get queryset of runs that would be deleted for a specific script
+        (finished runs only; see the module docstring for the policy).
 
         Args:
             script: Script model instance
@@ -74,32 +89,41 @@ class RetentionService:
             if count is None:
                 count = effective_count
 
-        # Start with all runs for this script
-        runs = Run.objects.filter(script=script)
-
-        # Get IDs of runs to keep
-        runs_to_keep_ids = set()
-
-        # Keep runs newer than retention_days
-        if days > 0:
-            cutoff_date = timezone.now() - timedelta(days=days)
-            runs_to_keep_ids.update(
-                runs.filter(created_at__gte=cutoff_date).values_list("id", flat=True)
-            )
-
-        # Keep last N runs if count is set
-        if count > 0:
-            last_n_ids = runs.order_by("-created_at").values_list("id", flat=True)[
-                :count
-            ]
-            runs_to_keep_ids.update(last_n_ids)
-
         # If both are 0, keep everything (no cleanup)
         if days == 0 and count == 0:
             return Run.objects.none()
 
-        # Return runs NOT in the keep list
-        return runs.exclude(id__in=runs_to_keep_ids)
+        # Only finished runs can go: pending (queued, held, a retry waiting
+        # for its time) and running ones are never deleted. The status is
+        # part of the DELETE's own query, so a run that is still in flight
+        # when the cleanup runs is kept even if the preview was taken earlier.
+        finished = Run.objects.filter(
+            script=script, status__in=Run.FINISHED_STATUSES
+        )
+        to_delete = finished
+
+        # Keep runs newer than retention_days
+        if days > 0:
+            cutoff_date = timezone.now() - timedelta(days=days)
+            to_delete = to_delete.filter(created_at__lt=cutoff_date)
+
+        # Keep the newest N runs that actually ran, and separately the newest
+        # N refused ones (skipped by the concurrency policy or blocked by a
+        # maintenance window), so refused runs can't crowd out real ones.
+        if count > 0:
+            refused = Q(cancel_reason__in=cls.refused_reasons())
+            for kept in (finished.exclude(refused), finished.filter(refused)):
+                newest = kept.order_by("-created_at", "-id").values("id")[:count]
+                to_delete = to_delete.exclude(id__in=newest)
+
+        return to_delete
+
+    @staticmethod
+    def refused_reasons() -> tuple[str, ...]:
+        """``cancel_reason`` values of runs refused before they started."""
+        from core.models import Run
+
+        return (Run.CancelReason.CONCURRENCY_SKIP, Run.CancelReason.MAINTENANCE)
 
     @classmethod
     def cleanup_runs_for_script(
@@ -117,7 +141,10 @@ class RetentionService:
             int: Number of runs deleted
         """
         runs_to_delete = cls.get_runs_to_delete_for_script(script, days, count)
-        deleted_count, _ = runs_to_delete.delete()
+        # delete()'s total also counts rows removed with the runs (their mask
+        # rows); report runs only, the number the preview shows.
+        _, per_model = runs_to_delete.delete()
+        deleted_count = per_model.get(runs_to_delete.model._meta.label, 0)
 
         if deleted_count > 0:
             logger.info(
@@ -143,9 +170,9 @@ class RetentionService:
             try:
                 deleted = cls.cleanup_runs_for_script(script)
                 total_deleted += deleted
-            except Exception as e:
-                logger.error(
-                    f"Failed to cleanup runs for script '{script.name}': {e}"
+            except Exception:
+                logger.exception(
+                    f"Failed to cleanup runs for script '{script.name}'"
                 )
 
         logger.info(f"Total cleanup: {total_deleted} runs deleted across all scripts")
@@ -157,7 +184,9 @@ class RetentionService:
         Get statistics about what would be cleaned up.
 
         Returns:
-            dict: Stats including total_runs, runs_to_delete, runs_to_keep, per_script breakdown
+            dict: Stats including total_runs, runs_to_delete, runs_to_keep,
+            runs_in_progress, per_script breakdown. Counted with the same
+            query the cleanup deletes with.
         """
         from core.models import Script, Run
 
@@ -183,6 +212,10 @@ class RetentionService:
             "total_runs": total_runs,
             "runs_to_delete": total_to_delete,
             "runs_to_keep": total_runs - total_to_delete,
+            # Pending or running now: never deleted (part of runs_to_keep).
+            "runs_in_progress": Run.objects.exclude(
+                status__in=Run.FINISHED_STATUSES
+            ).count(),
             "per_script": per_script,
         }
 

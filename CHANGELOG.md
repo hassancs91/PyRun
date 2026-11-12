@@ -533,6 +533,18 @@ begins tracking at the current release; earlier history is in the git log.
   of the new feed's id is appended (`thought-2026-11-3f9a1c-7b2e`). A source
   named by its title or URL path keeps the id it got before unless the Brain
   already has it, and ids already given are not changed.
+- **Run cleanup never deletes a run that hasn't finished, and skipped runs
+  no longer crowd out real ones.** With a "keep the last N runs" setting, a
+  run still pending (waiting its turn under the Queue policy, a retry waiting
+  for its time) or even running could fall outside the last N on a busy
+  script and be deleted. And runs refused before they started (skipped
+  because the script was already running, or blocked by a maintenance window)
+  took those N places, so a sender retrying a blocked webhook could push the
+  runs that actually ran out of the history. Now pending and running runs are
+  never deleted, by the daily cleanup or **Run cleanup now**; the last N are
+  the newest runs that ran, and refused runs keep their own last N. The
+  cleanup preview counts exactly what is deleted, shows how many runs are in
+  progress, and the cleanup reports runs only.
 
 ## [2.0.0] — October 23, 2026
 

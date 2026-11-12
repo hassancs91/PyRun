@@ -400,6 +400,24 @@ with `watchers.list` (never their settings, which can hold a key in a URL).
 
 ---
 
+## Run history and retention
+
+Settings → Retention deletes old runs: a run is kept while it is newer than
+the retention days **or** among its script's last N runs (a script can
+override both). The cleanup runs daily when **Auto Cleanup** is on, and on
+**Run cleanup now**; **Preview** counts exactly what that would delete.
+
+- A run that is pending (queued for a worker, waiting its turn under the
+  Queue policy, or a retry waiting for its time) or running is never
+  deleted, whatever the settings.
+- The last N are the newest finished runs that actually ran. Runs refused
+  before they started (**skipped: already running** and **skipped:
+  maintenance window**) don't take those places: they keep their own last N,
+  so a sender retrying a blocked webhook can't push real runs out of the
+  history, and refused runs don't pile up when only a count is set.
+
+---
+
 ## When the server was down
 
 Missed fires are not replayed one by one. If one or more scheduled times pass
