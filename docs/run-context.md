@@ -807,6 +807,80 @@ API's `connections.list` and the console's Py AI list them without credentials
 
 ---
 
+## Tables
+
+A **table** (the **Tables** page) is a list of rows with typed columns: leads,
+orders, a reading list. You choose the columns in the console; scripts read
+and write the rows with `pyrunner_tables`, and you can sort, filter and edit
+them in the table's grid. Tables live in PyRun's own database, so they work the
+same on SQLite and Postgres installs and need nothing set up.
+
+```python
+from pyrunner_tables import table
+
+leads = table("leads")                    # the table's slug (or its name)
+row = leads.insert({"email": "ana@example.com", "score": "7"})   # score stored as 7
+ids = leads.insert([{"email": "b@example.com"}, {"email": "c@example.com"}])
+for lead in leads.rows(where={"score": {"$gte": 5}}, order="-created_at", limit=50):
+    print(lead["id"], lead["email"], lead["score"])
+leads.get(row["id"])                      # the row, or None
+leads.update(row["id"], {"score": None})  # None empties a cell
+leads.upsert("email", {"email": "ana@example.com", "score": 10})
+leads.count(where={"active": True})
+leads.delete(row["id"])                   # True if it existed
+```
+
+Rows come back as dicts with `id`, every column, `created_at` and
+`updated_at` (UTC). Column types and what a value becomes when it is stored:
+
+| Type | Stored as |
+|---|---|
+| `text` | text (a number is written as its text) |
+| `number` | a JSON number; `"12"` and `" 2.5 "` are converted |
+| `boolean` | true/false; also `"yes"`/`"no"`, `"on"`/`"off"`, `1`/`0` |
+| `date` | `YYYY-MM-DD` |
+| `datetime` | UTC to the second, `YYYY-MM-DDTHH:MM:SSZ` (a value without a zone is UTC) |
+| `json` | any JSON value |
+| `link` | an `http(s)://` address |
+
+A value that doesn't fit its column, a column the table doesn't have, or a
+required column left empty raises `pyrunner_tables.TableError` with code
+`invalid`; nothing is written. A list is checked whole before any of its rows
+goes in, up to 500 rows: the helper sends a longer list in batches of 500,
+each all or nothing, so on an error the earlier batches are already stored. A
+column's **default** fills new rows that leave it out.
+
+`where` holds conditions that must all match: `{"field": value}` (None means
+empty), or `{"field": {"$op": value}}` with `$eq`, `$ne` (empty cells count
+as "not equal"), `$gt`, `$gte`, `$lt`, `$lte`, `$in` (a list of up to 100),
+`$contains` and `$prefix` (text, ignoring case) and `$empty` (true or false).
+Values are converted like a write, so `{"score": "5"}` matches the number 5.
+`id`, `created_at` and `updated_at` can be filtered and sorted too; a `json`
+column can only be tested for `$empty` and can't be sorted. `order` is a field,
+`-field` for descending, or a list; empty cells sort last and `id` breaks ties.
+`rows()` returns at most 1 000 rows per call (`limit`, `offset`).
+
+`upsert(key, values)` updates the first row whose `key` column equals
+`values[key]` and inserts `values` when there is none; two runs upserting the
+same new key at the same moment can both insert.
+
+A table holds at most **100 000 rows** (the operator can change it with
+`PYRUNNER_TABLE_ROW_CAP`). At the limit an insert raises `TableError` with
+code `row_cap` and the table's page says so; past that size, or for joins and
+SQL, use a managed **Database** (`pyrunner_db`). A row can hold 256 KB.
+
+A table made by a plugin is that plugin's: only its scripts can open it (others
+get `TableNotFound`, as for a missing table), its page shows the plugin's pill,
+and its columns can't be changed in the console. Every other table is open to
+every script in its workspace. Changing a column's type in the console
+converts every stored value (refused, with nothing changed, when one doesn't
+convert); removing a column deletes its values. Backups carry tables and their
+rows, with their ids. Big tables make big backups: **Settings → Backup** takes
+a file of up to 100 MB, and `python manage.py restore_backup <file>` on the
+server restores a larger one.
+
+---
+
 ## How it works
 
 `inputs()`, `event()` and `run_id()` only read the run file and the

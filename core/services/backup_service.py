@@ -34,6 +34,8 @@ from core.models import (
     ScriptSchedule,
     Secret,
     SecretProvider,
+    Table,
+    TableRow,
     Tag,
     User,
     VectorCollection,
@@ -199,6 +201,10 @@ class BackupService:
     # watchers; one without it has none (they go with their scripts). A
     # watcher whose connection didn't come back restores turned off, named in
     # the warnings; a claim in progress (``checking_since``) is never carried.
+    # ``tables`` (2.5 T38: columns, description, owner fields and every row with
+    # its id, data, times and creator). A backup with the section replaces the
+    # tables; one without it leaves this instance's tables alone. Row ids are
+    # kept (scripts address rows by id); ``row_count`` is recounted.
     BACKUP_VERSION = "1.13.0"
     MAX_BACKUP_SIZE_MB = 100
     # Default cap on a gzip backup's expanded size (F92, zip-bomb guard);
@@ -281,8 +287,103 @@ class BackupService:
         backup_data["oauth_clients"] = cls._export_oauth_clients()
         backup_data["connections"] = cls._export_connections()
         backup_data["watchers"] = cls._export_watchers()
+        backup_data["tables"] = cls._export_tables()
 
         return backup_data
+
+    @classmethod
+    def _export_tables(cls) -> List[dict]:
+        """Tables (2.5 T38) with their rows, read in id order a chunk at a time."""
+        out = []
+        for table in Table.objects.select_related("created_by").order_by("created_at"):
+            rows = [
+                {
+                    "id": row.id,
+                    "data": row.data,
+                    "created_at": cls._serialize_datetime(row.created_at),
+                    "updated_at": cls._serialize_datetime(row.updated_at),
+                    "created_by_email": email,
+                }
+                for row, email in (
+                    (r, r.created_by.email if r.created_by_id else None)
+                    for r in TableRow.objects.filter(table=table).select_related("created_by")
+                    .order_by("id").iterator(chunk_size=2000)
+                )
+            ]
+            out.append({
+                "id": str(table.id),
+                "workspace_id": str(table.workspace_id),
+                "name": table.name,
+                "slug": table.slug,
+                "columns": table.columns,
+                "description": table.description,
+                "owner_plugin": table.owner_plugin,
+                "owner_key": table.owner_key,
+                "created_by_email": table.created_by.email if table.created_by else None,
+                "created_at": cls._serialize_datetime(table.created_at),
+                "updated_at": cls._serialize_datetime(table.updated_at),
+                "rows": rows,
+            })
+        return out
+
+    @classmethod
+    def _import_tables(cls, tables: List[dict], user_map: dict, current_user, ws_map: dict, default_ws) -> Tuple[int, List[str]]:
+        """Replace the tables with the backup's; ids of tables and rows are kept.
+
+        A table whose slug or name another restored table of the same
+        workspace already took (two source workspaces folded into the default)
+        is skipped with a warning. The row data is written as it was saved:
+        it was checked against the columns when it was written.
+        """
+        from django.db import connection
+        from django.db.models import Max
+
+        Table.objects.all().delete()
+        warnings, restored = [], 0
+        taken = set()
+        for row in tables:
+            workspace = cls._resolve_workspace(row.get("workspace_id"), ws_map, default_ws)
+            keys = {(workspace.pk, "slug", row["slug"]), (workspace.pk, "name", row["name"].lower())}
+            if keys & taken:
+                warnings.append(f'Table "{row["name"]}": another restored table in its workspace has the same '
+                                "name or slug, so it was left out.")
+                continue
+            taken |= keys
+            table = Table.objects.create(
+                id=row["id"], workspace=workspace, name=row["name"], slug=row["slug"],
+                columns=row.get("columns") or [], description=row.get("description", ""),
+                owner_plugin=row.get("owner_plugin"), owner_key=row.get("owner_key"),
+                created_by=user_map.get(row.get("created_by_email"), current_user),
+            )
+            batch = []
+            for item in row.get("rows") or []:
+                batch.append(TableRow(
+                    id=item["id"], table=table, data=item.get("data") or {},
+                    created_at=cls._deserialize_datetime(item.get("created_at")) or timezone.now(),
+                    updated_at=cls._deserialize_datetime(item.get("updated_at")) or timezone.now(),
+                    created_by=user_map.get(item.get("created_by_email")),
+                ))
+                if len(batch) >= 1000:
+                    TableRow.objects.bulk_create(batch)
+                    batch = []
+            if batch:
+                TableRow.objects.bulk_create(batch)
+            Table.objects.filter(pk=table.pk).update(row_count=TableRow.objects.filter(table=table).count())
+            restored += 1
+        # Rows keep their ids, so Postgres' id sequence must move past them. It
+        # never moves back: like SQLite's AUTOINCREMENT, an id a deleted row had
+        # isn't handed out again (a script may still hold it).
+        top = TableRow.objects.aggregate(top=Max("id"))["top"]
+        if connection.vendor == "postgresql" and top:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT pg_get_serial_sequence(%s, 'id')", [TableRow._meta.db_table])
+                sequence = cursor.fetchone()[0]
+                if sequence:
+                    cursor.execute(
+                        f"SELECT setval(%s::regclass, GREATEST(%s, (SELECT last_value FROM {sequence})))",
+                        [sequence, top],
+                    )
+        return restored, warnings
 
     @classmethod
     def _export_watchers(cls) -> List[dict]:
@@ -1358,6 +1459,9 @@ class BackupService:
             # A restore replaces the watchers (an older backup without the
             # section restores none), so the preview names how many come back.
             "watchers": len(backup_data.get("watchers", [])),
+            # Like watchers: an older backup without the section leaves tables alone.
+            "tables": len(backup_data.get("tables", [])),
+            "table_rows": sum(len(t.get("rows") or []) for t in backup_data.get("tables", [])),
         }
 
         return {
@@ -1563,6 +1667,12 @@ class BackupService:
                     backup_data["watchers"], script_map, user_map
                 )
                 warnings.extend(watcher_warnings)
+            tables_restored = None
+            if "tables" in backup_data:
+                tables_restored, table_warnings = cls._import_tables(
+                    backup_data["tables"], user_map, current_user, ws_map, default_ws
+                )
+                warnings.extend(table_warnings)
 
             # create() can't set auto_now/auto_now_add fields: Django overwrites
             # them, so every row above was stamped with the restore time. Put
@@ -1593,6 +1703,9 @@ class BackupService:
                 counts["maintenance_windows"] = maintenance_windows_restored
             if watchers_restored is not None:
                 counts["watchers"] = watchers_restored
+            if tables_restored is not None:
+                counts["tables"] = tables_restored
+                counts["table_rows"] = TableRow.objects.count()
             if connections_restored is not None:
                 counts["connections"] = connections_restored
             if oauth_clients_restored is not None:
@@ -1620,6 +1733,7 @@ class BackupService:
         ("connections", Connection),
         ("oauth_clients", OAuthClient),
         ("watchers", Watcher),
+        ("tables", Table),
     )
 
     @classmethod

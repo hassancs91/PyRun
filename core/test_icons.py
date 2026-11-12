@@ -14,7 +14,7 @@ from core.test_console_layout import ShellBase
 SIDEBAR = {
     "Dashboard": "layout-dashboard", "Scripts": "file-code-2", "Libraries": "library-big", "Brains": "brain",
     "Runs": "circle-play", "Py AI": "sparkles", "Tasks": "list-checks", "Connect": "plug-zap", "Triggers": "plug-zap",
-    "Environments": "boxes", "Secrets": "key-round", "Connections": "link", "Tags": "tag", "Data Stores": "hard-drive",
+    "Environments": "boxes", "Secrets": "key-round", "Connections": "link", "Tags": "tag", "Data Stores": "hard-drive", "Tables": "table",
     "Databases": "database", "Vectors": "chart-scatter", "Channels": "messages-square", "Services": "blocks",
     "Settings": "settings", "Logs": "scroll-text", "Workspaces": "layout-grid", "Users": "users", "Plugins": "puzzle",
 }

@@ -1122,6 +1122,7 @@ function showRestorePreview(preview, warnings) {
         ['Connections', 'connections'], ['OAuth apps', 'oauth_clients'], ['Watchers', 'watchers'],
         ['Data stores', 'datastores'], ['Data store entries', 'datastore_entries'],
         ['Databases', 'databases'], ['Vector collections', 'vector_collections'], ['Brains', 'brains'],
+        ['Tables', 'tables'], ['Table rows', 'table_rows'],
     ];
     kinds.forEach(([label, key]) => {
         html += '<div>• ' + label + ': <strong>' + escapeHtml(String(preview.counts[key] || 0)) + '</strong></div>';

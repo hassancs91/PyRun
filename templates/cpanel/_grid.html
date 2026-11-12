@@ -1,0 +1,122 @@
+{% load static %}{% comment %}
+The shared data grid (core/grid.py builds ``grid``; static/js/data_grid.js
+adds the inline editors). Include with:
+    {% include "cpanel/_grid.html" with grid=grid empty_text="No rows yet." %}
+Read-only when ``grid.editable`` is false: no editors, no add/delete.
+{% endcomment %}
+<section class="rounded-2xl border border-line bg-panel overflow-hidden" data-grid data-csrf="{{ grid.csrf_token }}">
+    {# Toolbar: add a filter, the active filter chips #}
+    <div class="px-4 sm:px-6 py-3 border-b border-line-soft space-y-3">
+        <form method="get" class="flex flex-wrap items-end gap-2" data-grid-filter data-ops="{{ grid.ops_json }}" data-valueless="{{ grid.valueless_json }}">
+            {% for name, value in grid.hidden_params %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+            <label class="flex flex-col gap-1">
+                <span class="eyebrow text-faint">Filter</span>
+                <select name="fc" class="px-2.5 py-1.5 bg-ink border border-line rounded-lg text-text text-sm focus:outline-none focus:ring-2 focus:ring-ok/30">
+                    {% for column in grid.filter_columns %}<option value="{{ column.key }}">{{ column.label }}</option>{% endfor %}
+                </select>
+            </label>
+            <label class="flex flex-col gap-1">
+                <span class="sr-only">Operator</span>
+                <select name="fo" class="px-2.5 py-1.5 bg-ink border border-line rounded-lg text-text text-sm focus:outline-none focus:ring-2 focus:ring-ok/30">
+                    <option value="eq">is</option><option value="ne">is not</option><option value="contains">contains</option>
+                    <option value="prefix">starts with</option><option value="gt">&gt;</option><option value="gte">≥</option>
+                    <option value="lt">&lt;</option><option value="lte">≤</option><option value="empty">is empty</option>
+                    <option value="not_empty">is not empty</option>
+                </select>
+            </label>
+            <label class="flex flex-col gap-1 min-w-0 flex-1 sm:flex-none">
+                <span class="sr-only">Value</span>
+                <input type="text" name="fv" placeholder="value" class="w-full sm:w-48 px-2.5 py-1.5 bg-ink border border-line rounded-lg text-text text-sm placeholder-faint/60 focus:outline-none focus:ring-2 focus:ring-ok/30">
+            </label>
+            <button type="submit" class="text-[13px] px-3 py-1.5 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Add filter</button>
+        </form>
+        {% if grid.chips %}
+        <div class="flex flex-wrap items-center gap-2">
+            {% for chip in grid.chips %}
+            <span class="inline-flex items-center gap-1.5 pl-2.5 pr-1 py-0.5 rounded-full border border-info/30 bg-info/10 text-info text-xs">
+                <span class="font-mono">{{ chip.label }}</span>
+                <a href="?{{ chip.remove_qs }}" class="w-5 h-5 grid place-items-center rounded-full hover:bg-info/20" aria-label="Remove filter {{ chip.label }}">×</a>
+            </span>
+            {% endfor %}
+            <a href="?{{ grid.clear_qs }}" class="text-xs text-muted hover:text-text underline-offset-2 hover:underline">Clear filters</a>
+        </div>
+        {% endif %}
+        {% for problem in grid.problems %}<p class="text-xs text-warn">{{ problem }}</p>{% endfor %}
+    </div>
+
+    <div class="overflow-x-auto">
+    <table class="w-full min-w-max text-sm">
+        <thead>
+            <tr class="border-b border-line-soft text-left">
+                {% for h in grid.headers %}
+                <th class="px-3 sm:px-4 py-2.5 font-normal whitespace-nowrap {% if h.column.numeric %}text-right{% endif %}" {% if h.sorted %}aria-sort="{% if h.sorted == 'asc' %}ascending{% else %}descending{% endif %}"{% endif %}>
+                    {% if h.sort_qs %}<a href="?{{ h.sort_qs }}" class="inline-flex items-center gap-1.5 text-muted hover:text-text">{% else %}<span class="inline-flex items-center gap-1.5 text-muted">{% endif %}
+                        <span class="font-medium text-text">{{ h.column.label }}</span>{% if h.column.required %}<span class="text-fail" title="Required">*</span>{% endif %}
+                        <span class="px-1.5 py-px rounded border border-line-soft bg-ink text-[10px] font-mono text-faint" title="{{ h.column.type }}">{{ h.column.badge }}</span>
+                        {% if h.sorted == "asc" %}<span aria-hidden="true">↑</span>{% elif h.sorted == "desc" %}<span aria-hidden="true">↓</span>{% endif %}
+                    {% if h.sort_qs %}</a>{% else %}</span>{% endif %}
+                </th>
+                {% endfor %}
+                {% if grid.editable %}<th class="px-3 sm:px-4 py-2.5"><span class="sr-only">Actions</span></th>{% endif %}
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-line-soft">
+            {% for row in grid.rows %}
+            <tr class="hover:bg-panel-hi/50 transition-colors" {% if row.cell_url %}data-cell-url="{{ row.cell_url }}"{% endif %}>
+                {% for cell in row.cells %}
+                <td class="px-3 sm:px-4 py-2 align-top max-w-xs {% if cell.column.numeric %}text-right font-mono tnum{% endif %}{% if cell.column.type == 'json' or cell.column.type == 'datetime' or cell.column.type == 'date' %} font-mono text-xs{% endif %}{% if grid.editable and cell.column.editable %} cursor-text focus:outline-none focus:ring-2 focus:ring-ok/40{% endif %}"
+                    data-col="{{ cell.column.key }}" data-type="{{ cell.column.type }}"
+                    {% if grid.editable and cell.column.editable %}data-edit tabindex="0" data-raw="{{ cell.raw }}" title="Click to edit"{% endif %}>
+                    {% include "cpanel/_grid_cell.html" with cell=cell %}
+                </td>
+                {% endfor %}
+                {% if grid.editable %}
+                <td class="px-3 sm:px-4 py-2 text-right whitespace-nowrap">
+                    {% if row.delete_url %}
+                    <form method="post" action="{{ row.delete_url }}" onsubmit="return confirm('Delete this row? This cannot be undone.');" class="inline">
+                        <input type="hidden" name="csrfmiddlewaretoken" value="{{ grid.csrf_token }}">
+                        <input type="hidden" name="next" value="?{{ grid.querystring }}{% if grid.page_number > 1 %}&page={{ grid.page_number }}{% endif %}">
+                        <button type="submit" class="text-xs px-2 py-1 rounded-md border border-fail/30 bg-fail/10 text-fail hover:bg-fail/20 transition-colors" aria-label="Delete row {{ row.id }}">Delete</button>
+                    </form>
+                    {% endif %}
+                </td>
+                {% endif %}
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="{{ grid.columns|length|add:1 }}" class="px-6 py-10 text-center text-sm text-muted">
+                    {% if grid.filters %}No rows match these filters.{% else %}{{ empty_text|default:"No rows yet." }}{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% if grid.page_obj.paginator.num_pages > 1 %}
+    <div class="px-4 sm:px-6 py-3 border-t border-line-soft">
+        {% include "cpanel/_pagination.html" with page_obj=grid.page_obj page_range=grid.page_range querystring=grid.querystring %}
+    </div>
+    {% elif grid.total %}
+    <p class="px-4 sm:px-6 py-2.5 border-t border-line-soft text-xs text-faint"><span class="font-mono tnum text-muted">{{ grid.total }}</span> row{{ grid.total|pluralize }}</p>
+    {% endif %}
+</section>
+
+{% if grid.editable %}
+{# JSON cell editor (opened by data_grid.js for json cells) #}
+<dialog data-grid-json class="w-[min(40rem,calc(100vw-2rem))] rounded-2xl border border-line bg-panel text-text p-0 backdrop:bg-ink/70">
+    <form method="dialog" class="p-5 space-y-3">
+        <div class="flex items-center justify-between gap-3">
+            <h2 class="text-sm font-semibold" data-grid-json-title>Edit JSON</h2>
+            <button type="button" data-grid-json-format class="text-xs px-2.5 py-1 rounded-md border border-line text-muted hover:text-text hover:border-faint transition-colors">Format</button>
+        </div>
+        <textarea rows="14" spellcheck="false" data-grid-json-text class="w-full px-3 py-2 bg-ink border border-line rounded-lg text-text text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ok/30"></textarea>
+        <p class="text-xs text-fail empty:hidden" data-grid-json-error></p>
+        <p class="text-xs text-faint">Any JSON value. Leave it empty to clear the cell.</p>
+        <div class="flex justify-end gap-2">
+            <button type="button" data-grid-json-cancel class="text-[13px] px-3 py-1.5 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Cancel</button>
+            <button type="button" data-grid-json-save class="text-[13px] font-medium px-3 py-1.5 rounded-lg bg-ok text-ink hover:opacity-90 transition">Save</button>
+        </div>
+    </form>
+</dialog>
+{% endif %}
+<script src="{% static 'js/data_grid.js' %}"></script>

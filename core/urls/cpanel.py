@@ -150,6 +150,16 @@ from core.views.datastores import (
     datastore_entry_edit_view,
     datastore_entry_delete_view,
 )
+from core.views.tables import (
+    table_create_view,
+    table_delete_view,
+    table_detail_view,
+    table_edit_view,
+    table_list_view,
+    table_row_add_view,
+    table_row_cell_view,
+    table_row_delete_view,
+)
 from core.views.backup import (
     backup_create_view,
     backup_upload_view,
@@ -433,6 +443,15 @@ urlpatterns = [
     path("datastores/<uuid:pk>/entries/create/", datastore_entry_create_view, name="datastore_entry_create"),
     path("datastores/<uuid:pk>/entries/<uuid:entry_pk>/edit/", datastore_entry_edit_view, name="datastore_entry_edit"),
     path("datastores/<uuid:pk>/entries/<uuid:entry_pk>/delete/", datastore_entry_delete_view, name="datastore_entry_delete"),
+    # Tables (2.5): typed columns, JSON rows, the shared grid
+    path("tables/", table_list_view, name="table_list"),
+    path("tables/create/", table_create_view, name="table_create"),
+    path("tables/<uuid:pk>/", table_detail_view, name="table_detail"),
+    path("tables/<uuid:pk>/edit/", table_edit_view, name="table_edit"),
+    path("tables/<uuid:pk>/delete/", table_delete_view, name="table_delete"),
+    path("tables/<uuid:pk>/rows/add/", table_row_add_view, name="table_row_add"),
+    path("tables/<uuid:pk>/rows/<int:row_id>/cell/", table_row_cell_view, name="table_row_cell"),
+    path("tables/<uuid:pk>/rows/<int:row_id>/delete/", table_row_delete_view, name="table_row_delete"),
 
     # Settings
     path("settings/", settings_view, name="settings"),

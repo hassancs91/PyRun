@@ -540,6 +540,18 @@ begins tracking at the current release; earlier history is in the git log.
   file by URL (`media={...}`), up to three reply buttons or a list
   (`interactive={...}`) through the delivery ledger. docs/channels.md has a
   support-bot example.
+- **Tables.** A new **Tables** page: make a table with typed columns (text,
+  number, yes/no, date, date and time, JSON, link; required and default
+  values) and work with its rows in a grid that sorts, filters with chips,
+  pages, edits cells in place (a JSON editor with Format for JSON cells), adds
+  and deletes rows. Scripts use the new `pyrunner_tables` helper:
+  `table("leads").insert(...)`, `.rows(where=..., order=..., limit=...)`,
+  `.get`, `.update`, `.upsert`, `.delete`, `.count`, with every value checked
+  and converted against its column on the server. Tables live in PyRun's own
+  database (SQLite or Postgres alike). A table holds up to 100 000 rows
+  (`PYRUNNER_TABLE_ROW_CAP`); its page warns at 90% and, when full, points at
+  managed Databases. Backups carry tables and their rows. docs/run-context.md
+  has the details.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

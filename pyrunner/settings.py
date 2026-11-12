@@ -589,6 +589,9 @@ PYRUNNER_VECTOR_CACHE_MB = int(os.environ.get("PYRUNNER_VECTOR_CACHE_MB", "256")
 # but skipped with a warning, so a big index can't make the archive unloadable
 # through the web restore path (MAX_BACKUP_SIZE_MB) or the session store.
 PYRUNNER_VECTOR_BACKUP_MAX_MB = int(os.environ.get("PYRUNNER_VECTOR_BACKUP_MAX_MB", "50"))
+# Tables (2.5): most rows one table may hold. Past it inserts are refused and
+# the console points at managed Databases, the answer for bigger data.
+PYRUNNER_TABLE_ROW_CAP = max(1, int(os.environ.get("PYRUNNER_TABLE_ROW_CAP", "100000")))
 # Largest expanded size (MB) of a gzip backup the web restore will read; bigger
 # ones are refused before they can exhaust memory (zip-bomb guard). The CLI
 # `manage.py restore_backup` is not capped.

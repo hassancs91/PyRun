@@ -35,6 +35,7 @@ from core.views.api.storage_internal import (
     put as storage_put,
     url as storage_url,
 )
+from core.views.api.tables_internal import table_op as tables_op
 from core.views.api.vectors_internal import collection_op as vectors_op
 
 app_name = "internal"
@@ -60,5 +61,6 @@ urlpatterns = [
     path("storage/delete", storage_delete, name="storage_delete"),
     path("storage/list", storage_list, name="storage_list"),
     path("storage/url", storage_url, name="storage_url"),
+    path("tables/<str:name>/<str:op>", tables_op, name="tables_op"),
     path("vectors/<str:name>/<str:op>", vectors_op, name="vectors_op"),
 ]

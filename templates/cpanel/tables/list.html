@@ -1,0 +1,99 @@
+{% extends "cpanel/layout.html" %}
+{% load icon_tags %}
+
+{% block title %}Tables - {{ instance_name }}{% endblock %}
+
+{% block heading %}Tables{% endblock %}
+{% block subtitle %}Rows with typed columns, for your scripts and for you{% endblock %}
+{% block actions %}
+<a href="{% url 'cpanel:table_create' %}" class="inline-flex items-center gap-2 text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">
+    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+    New table
+</a>
+{% endblock %}
+
+{% block page %}
+{% if owners %}
+<div class="flex justify-end">
+    {% include "cpanel/_owner_filter.html" with owners=owners selected_owner=selected_owner %}
+</div>
+{% endif %}
+
+{% if tables %}
+<section class="rounded-2xl border border-line bg-panel overflow-hidden">
+    <div class="overflow-x-auto">
+    <table class="table-cards w-full sm:min-w-[640px]">
+        <thead>
+            <tr class="border-b border-line-soft text-left">
+                <th class="px-3 sm:px-6 py-3 eyebrow text-faint font-normal">Name</th>
+                <th class="px-3 sm:px-6 py-3 eyebrow text-faint font-normal">Slug</th>
+                <th class="px-3 sm:px-6 py-3 eyebrow text-faint font-normal text-right">Columns</th>
+                <th class="px-3 sm:px-6 py-3 eyebrow text-faint font-normal text-right">Rows</th>
+                <th class="px-3 sm:px-6 py-3 eyebrow text-faint font-normal text-right">Updated</th>
+                <th class="px-3 sm:px-6 py-3 eyebrow text-faint font-normal text-right">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-line-soft">
+            {% for t in tables %}
+            <tr class="group hover:bg-panel-hi/50 transition-colors">
+                <td class="px-3 sm:px-6 py-3.5">
+                    <a href="{% url 'cpanel:table_detail' pk=t.pk %}" class="text-sm font-medium text-info hover:underline">{{ t.name }}</a>
+                    {% include "cpanel/_owner_pill.html" with obj=t %}
+                    {% if t.description %}<p class="text-xs text-muted mt-0.5 max-w-xs truncate">{{ t.description }}</p>{% endif %}
+                </td>
+                <td data-label="Slug" class="px-3 sm:px-6 py-3.5 font-mono text-sm text-muted">{{ t.slug }}</td>
+                <td data-label="Columns" class="px-3 sm:px-6 py-3.5 text-right font-mono tnum text-sm text-muted">{{ t.columns|length }}</td>
+                <td data-label="Rows" class="px-3 sm:px-6 py-3.5 text-right font-mono tnum text-sm {% if t.at_cap %}text-fail{% elif t.near_cap %}text-warn{% else %}text-muted{% endif %}">{{ t.row_count }}</td>
+                <td data-label="Updated" class="px-3 sm:px-6 py-3.5 text-right text-xs text-faint whitespace-nowrap">{{ t.updated_at|timesince }} ago</td>
+                <td class="tc-actions px-3 sm:px-6 py-3.5">
+                    <div class="flex items-center justify-end gap-2">
+                        <a href="{% url 'cpanel:table_detail' pk=t.pk %}" class="text-[13px] px-3 py-1.5 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Open</a>
+                        {% if t.owner_plugin %}
+                        {% if user.is_superuser %}
+                        <form method="post" action="{% url 'cpanel:table_delete' pk=t.pk %}" onsubmit="return confirm('&quot;{{ t.name|escapejs }}&quot; is managed by the {{ t.owner_plugin|escapejs }} plugin. Force-delete it and all its rows anyway? The plugin may break.');" class="inline">
+                            {% csrf_token %}
+                            <input type="hidden" name="force" value="1">
+                            <button type="submit" title="Superuser escape hatch for a plugin-managed table" class="text-[13px] px-3 py-1.5 rounded-lg border border-fail/30 bg-fail/10 text-fail hover:bg-fail/20 transition-colors">Force delete</button>
+                        </form>
+                        {% else %}
+                        <span class="text-xs text-faint" title="Delete it from the plugin's page">Plugin-managed</span>
+                        {% endif %}
+                        {% else %}
+                        <form method="post" action="{% url 'cpanel:table_delete' pk=t.pk %}" onsubmit="return confirm('Delete the table &quot;{{ t.name|escapejs }}&quot; and all its rows? This cannot be undone.');" class="inline">
+                            {% csrf_token %}
+                            <button type="submit" class="text-[13px] px-3 py-1.5 rounded-lg border border-fail/30 bg-fail/10 text-fail hover:bg-fail/20 transition-colors">Delete</button>
+                        </form>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</section>
+
+<div class="rounded-2xl border border-line bg-panel p-5">
+    <h3 class="text-sm font-medium text-text mb-2">Using tables in scripts</h3>
+    <p class="text-sm text-muted mb-3">Values are checked against the columns, on SQLite and Postgres alike. Bigger or relational data belongs in a managed Database.</p>
+    <code class="block px-3 py-3 bg-ink border border-line-soft rounded-lg text-sm font-mono text-text whitespace-pre overflow-x-auto">from pyrunner_tables import table
+
+rows = table("{{ tables.0.slug }}")
+rows.insert({...})
+for row in rows.rows(where={...}, order="-created_at", limit=50):
+    print(row["id"], row)</code>
+</div>
+{% else %}
+<section class="rounded-2xl border border-line bg-panel px-6 py-16 text-center">
+    <div class="w-14 h-14 rounded-full bg-info/10 grid place-items-center mx-auto mb-4">
+        {% icon "table" class="w-7 h-7 text-info" %}
+    </div>
+    <h3 class="text-base font-semibold mb-1">No tables yet</h3>
+    <p class="text-sm text-muted mb-6">A table is a list of rows with typed columns: leads, orders, a reading list. Scripts read and write it with <code class="font-mono">pyrunner_tables</code>.</p>
+    <a href="{% url 'cpanel:table_create' %}" class="inline-flex items-center gap-2 text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+        Create table
+    </a>
+</section>
+{% endif %}
+{% endblock %}

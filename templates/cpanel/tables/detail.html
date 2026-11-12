@@ -1,0 +1,92 @@
+{% extends "cpanel/layout.html" %}
+
+{% block title %}{{ table.name }} - Tables - {{ instance_name }}{% endblock %}
+
+{% block breadcrumbs %}
+<a href="{% url 'cpanel:table_list' %}">Tables</a>
+<span>{{ table.name }}</span>
+{% endblock %}
+{% block heading %}{{ table.name }}{% endblock %}
+{% block heading_badges %}{% include "cpanel/_owner_pill.html" with obj=table %}{% endblock %}
+{% block subtitle %}{{ table.description|default:"" }}{% endblock %}
+{% block actions %}
+<a href="{% url 'cpanel:table_edit' pk=table.pk %}" class="text-[13px] px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Edit table</a>
+{% endblock %}
+
+{% block page %}
+{% if table.at_cap %}
+<div class="rounded-xl border border-fail/30 bg-fail/10 p-4 flex items-start gap-3" role="alert">
+    <svg class="w-5 h-5 text-fail flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5.07 19H19a2 2 0 001.75-2.96l-6.93-12a2 2 0 00-3.5 0l-6.93 12A2 2 0 005.07 19z"/></svg>
+    <p class="text-sm text-text">This table is full: it holds {{ table.row_count }} rows, the limit of {{ table.row_cap }}, so new rows are refused (from scripts too). Tables are for small and medium data; for more, use a <a href="{% url 'cpanel:database_list' %}" class="text-info hover:underline">managed Database</a> (Postgres, with <code class="font-mono">pyrunner_db</code>), or delete rows you no longer need.</p>
+</div>
+{% elif table.near_cap %}
+<div class="rounded-xl border border-warn/30 bg-warn/10 p-4 flex items-start gap-3" role="status">
+    <svg class="w-5 h-5 text-warn flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5.07 19H19a2 2 0 001.75-2.96l-6.93-12a2 2 0 00-3.5 0l-6.93 12A2 2 0 005.07 19z"/></svg>
+    <p class="text-sm text-text">This table holds {{ table.row_count }} of its {{ table.row_cap }} rows ({{ cap_percent }}%). At the limit new rows are refused; if it keeps growing, a <a href="{% url 'cpanel:database_list' %}" class="text-info hover:underline">managed Database</a> is the better home for it.</p>
+</div>
+{% endif %}
+{% if table.owner_plugin %}
+<div class="rounded-xl border border-warn/30 bg-warn/10 p-4">
+    <p class="text-sm text-text">Managed by the “{{ table.owner_plugin }}” plugin: the plugin reads and writes these rows, so edits made here may be overwritten, and its columns can't be changed here.</p>
+</div>
+{% endif %}
+
+<div class="rounded-2xl border border-line bg-panel grid grid-cols-3 divide-x divide-line-soft">
+    <div class="px-4 sm:px-5 py-3 min-w-0">
+        <p class="eyebrow text-faint truncate">Rows</p>
+        <p class="text-lg sm:text-2xl font-semibold font-mono tnum text-text mt-1">{{ table.row_count }}<span class="text-xs sm:text-sm font-normal text-faint"> / {{ table.row_cap }}</span></p>
+    </div>
+    <div class="px-4 sm:px-5 py-3 min-w-0">
+        <p class="eyebrow text-faint truncate">Columns</p>
+        <p class="text-lg sm:text-2xl font-semibold font-mono tnum text-text mt-1">{{ table.columns|length }}</p>
+    </div>
+    <div class="px-4 sm:px-5 py-3 min-w-0">
+        <p class="eyebrow text-faint truncate">Slug</p>
+        <p class="text-sm sm:text-lg font-mono text-text mt-1 truncate">{{ table.slug }}</p>
+    </div>
+</div>
+
+{% if not table.at_cap %}
+<details class="rounded-2xl border border-line bg-panel group" {% if not grid.total %}open{% endif %}>
+    <summary class="px-4 sm:px-6 py-3 cursor-pointer text-sm font-medium text-text select-none">Add a row</summary>
+    <form method="post" action="{{ grid.add_url }}" class="px-4 sm:px-6 pb-5 pt-1 space-y-3">
+        {% csrf_token %}
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {% for c in add_columns %}
+            <label class="flex flex-col gap-1 {% if c.type == 'json' %}sm:col-span-2{% endif %}">
+                <span class="text-xs text-muted"><span class="font-mono text-text">{{ c.key }}</span> · {{ c.label }}{% if c.required %} <span class="text-fail">*</span>{% endif %}</span>
+                {% if c.type == "boolean" %}
+                <select name="c_{{ c.key }}" class="px-2.5 py-1.5 bg-ink border border-line rounded-lg text-text text-sm focus:outline-none focus:ring-2 focus:ring-ok/30">
+                    <option value="">—</option>
+                    <option value="true" {% if c.default is True %}selected{% endif %}>Yes</option>
+                    <option value="false" {% if c.default is False %}selected{% endif %}>No</option>
+                </select>
+                {% elif c.type == "json" %}
+                <textarea name="c_{{ c.key }}" rows="3" spellcheck="false" placeholder='{"any": "JSON"}' class="px-2.5 py-1.5 bg-ink border border-line rounded-lg text-text text-sm font-mono placeholder-faint/60 focus:outline-none focus:ring-2 focus:ring-ok/30"></textarea>
+                {% else %}
+                <input name="c_{{ c.key }}" {% if c.type == "number" %}type="number" step="any"{% elif c.type == "date" %}type="date"{% elif c.type == "link" %}type="url" placeholder="https://"{% elif c.type == "datetime" %}type="text" placeholder="2026-11-12T09:30:00Z"{% else %}type="text"{% endif %}
+                       {% if c.default is not None %}value="{{ c.default }}"{% endif %}
+                       class="px-2.5 py-1.5 bg-ink border border-line rounded-lg text-text text-sm placeholder-faint/60 focus:outline-none focus:ring-2 focus:ring-ok/30">
+                {% endif %}
+            </label>
+            {% endfor %}
+        </div>
+        <div class="flex justify-end">
+            <button type="submit" class="text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">Add row</button>
+        </div>
+    </form>
+</details>
+{% endif %}
+
+{% include "cpanel/_grid.html" with grid=grid empty_text="No rows yet. Add one above, or from a script." %}
+
+<div class="rounded-2xl border border-line bg-panel p-5">
+    <h3 class="text-sm font-medium text-text mb-2">From a script</h3>
+    <code class="block px-3 py-3 bg-ink border border-line-soft rounded-lg text-sm font-mono text-text whitespace-pre overflow-x-auto">from pyrunner_tables import table
+
+t = table("{{ table.slug }}")
+t.insert({% templatetag openbrace %}{% for c in add_columns|slice:":2" %}"{{ c.key }}": ...{% if not forloop.last %}, {% endif %}{% endfor %}{% templatetag closebrace %})
+rows = t.rows(where={...}, order="-created_at", limit=50)
+t.count()</code>
+</div>
+{% endblock %}

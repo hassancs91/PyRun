@@ -35,6 +35,7 @@ from .ratelimit import RateLimitCounter
 from .maintenance import MaintenanceWindow
 from .connection import Connection, ConnectionGrant, OAuthClient, RunMask
 from .watcher import Watcher
+from .table import Table, TableRow
 
 __all__ = [
     "User",
@@ -45,6 +46,8 @@ __all__ = [
     "WorkspaceMembership",
     "MaintenanceWindow",
     "Watcher",
+    "Table",
+    "TableRow",
     "Environment",
     "Script",
     "Run",

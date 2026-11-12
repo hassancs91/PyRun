@@ -41,6 +41,7 @@ _OWNED_RELATIONS = (
     ("schedules", "schedule", "schedules"),
     ("secrets", "secret", "secrets"),
     ("datastores", "data store", "data stores"),
+    ("tables", "table", "tables"),
     ("libraries", "library", "libraries"),
     ("databases", "database", "databases"),
     ("vector_collections", "vector collection", "vector collections"),
