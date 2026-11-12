@@ -289,10 +289,11 @@ class SetupService:
             logger.info(f"Admin user created: {email}")
             return True, f"Admin user {email} created successfully."
 
-        except Exception as e:
-            error_msg = f"Failed to create admin user: {str(e)}"
-            logger.error(error_msg)
-            return False, error_msg
+        except Exception:
+            # The setup page is public until the first admin exists: the
+            # details go to the server log, not into the page.
+            logger.exception("Failed to create admin user")
+            return False, "The admin account couldn't be created. The server log has the details."
 
     @classmethod
     def complete_setup(cls) -> None:

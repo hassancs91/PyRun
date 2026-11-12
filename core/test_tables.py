@@ -193,6 +193,23 @@ class FilterTests(_TableFixture):
         row, created = TableService.upsert(table, "in", {"in": "a", "exact": "z"})
         self.assertEqual((row.id, created), (one.id, False))
 
+    def test_numbers_past_64_bits_are_refused_not_a_500(self):
+        # Test pass 8, 38.03: the database can't bind an integer past 64 bits
+        # (SQLite: OverflowError; Postgres: bigint out of range), so a filter
+        # with one was a 500 in the grid and an error from the helper.
+        huge = 2**64
+        for where in ({"id": huge}, {"id": {"$gt": str(huge)}}, {"id": {"$ne": -huge}},
+                      {"id": {"$in": [self.a, huge]}}, {"score": huge}, {"score": {"$lt": -huge}},
+                      {"score": {"$in": [7, str(huge)]}}):
+            with self.subTest(where=where), self.assertRaises(TableError) as ctx:
+                self.ids(where=where)
+            self.assertEqual(ctx.exception.code, "unsupported_filter")
+        # The largest 64-bit values still compare; a big float is fine.
+        self.assertEqual(self.ids(where={"id": {"$lt": 2**63 - 1}}), [self.a, self.b, self.c, self.d])
+        self.assertEqual(self.ids(where={"id": {"$in": [self.a, -(2**63)]}}), [self.a])
+        self.assertEqual(self.ids(where={"score": {"$gt": -(2**63)}}), [self.a, self.b, self.c])
+        self.assertEqual(self.ids(where={"score": {"$lt": 1e300}}), [self.a, self.b, self.c])
+
 
 class ServiceTests(_TableFixture):
     def test_insert_update_upsert_delete_keep_row_count_exact(self):
@@ -513,6 +530,22 @@ class ConsoleTests(_Console):
         problems = " ".join(grid.problems)
         for needle in ("nope:eq:1", "meta:gt:1", 'sort by "meta"', 'expects a number'):
             self.assertIn(needle, problems)
+        # Test pass 8, 38.03: a number past 64 bits is a problem note, not a 500.
+        for query, needle in ((f"?f=id:gt:{2**64}", '"id" compares with a whole number'),
+                              (f"?f=id:in:1,{2**70}", '"id" compares with a whole number'),
+                              (f"?f=score:lt:-{2**64}", '"score" compares with whole numbers from')):
+            with self.subTest(query=query):
+                resp = self.detail(query)
+                self.assertEqual(resp.status_code, 200)
+                grid = resp.context["grid"]
+                self.assertEqual(grid.total, 60)
+                self.assertIn(needle, " ".join(grid.problems))
+        # "is one of" from the grid is comma-separated text (it was refused as "needs a list").
+        resp = self.detail("?f=score:in:7, 9&f=email:in:u07@x,u09@x,u11@x")
+        grid = resp.context["grid"]
+        self.assertEqual((grid.total, grid.problems), (2, []))
+        first = TableRow.objects.order_by("id").first().id
+        self.assertEqual(self.detail(f"?f=id:in:{first},{first + 1}").context["grid"].total, 2)
 
     def test_cell_edit_add_row_and_delete_row(self):
         row = TableService.insert(self.table, [{"email": "a@x"}])[0]

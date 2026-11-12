@@ -128,9 +128,13 @@ def table_delete_view(request: HttpRequest, pk) -> HttpResponse:
 
 def _filtered_rows(table, grid):
     """The grid's rows (its filters and sort); a filter that doesn't fit is dropped with a note."""
+    # "is one of" comes from the grid as comma-separated text (as on the other grids).
+    conditions = [
+        (f.column, f.op, [v.strip() for v in f.value.split(",") if v.strip()] if f.op == "in" else f.value)
+        for f in grid.filters
+    ]
     try:
-        return TableService.queryset(table, conditions=[(f.column, f.op, f.value) for f in grid.filters],
-                                     order=grid.sort or "id")
+        return TableService.queryset(table, conditions=conditions, order=grid.sort or "id")
     except TableError as exc:
         # A filter value that doesn't fit its column (text in a number filter).
         grid.problems.append(exc.message)

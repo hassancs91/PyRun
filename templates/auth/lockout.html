@@ -23,9 +23,8 @@
                 {% if cooloff_timedelta %}Try again in about {% widthratio cooloff_timedelta.total_seconds 60 1 %} minutes.{% else %}An administrator has to unlock the account.{% endif %}
             </p>
             <p class="text-sm text-muted">
-                Forgot your password? Reset it from the sign-in page (when email is set up), or ask an
-                administrator for a reset link. An administrator can also unlock you with
-                <code class="font-mono text-xs px-1.5 py-0.5 rounded bg-panel-hi text-text">manage.py user unlock &lt;email&gt;</code>.
+                Forgot your password? Reset it from the sign-in page, or contact your administrator to
+                unlock your account.
             </p>
             <a href="{% url 'auth:login' %}" class="block w-full py-3 px-4 bg-panel-hi/40 hover:border-faint text-text border border-line font-medium rounded-lg transition-colors text-center">Back to sign in</a>
         </div>

@@ -50,6 +50,9 @@ VALUELESS = ("empty", "not_empty")
 # The helper's where-dict spelling of each op.
 DOLLAR = {f"${op}": op for op in OPS}
 MAX_IN = 100
+# A whole number in a filter must fit 64 bits: neither database binds a
+# bigger one (SQLite raises OverflowError, Postgres "bigint out of range").
+INT_MIN, INT_MAX = -(2**63), 2**63 - 1
 
 
 def field_type(columns: list, field: str) -> str:
@@ -78,9 +81,12 @@ def _value(columns, field, kind, op, value):
         return str(value)
     if kind == "id":
         try:
-            return int(value)
+            number = int(value)
         except (TypeError, ValueError):
-            raise TableError(f'"id" compares with a whole number; got {value!r}.', "unsupported_filter") from None
+            number = None
+        if number is None or not INT_MIN <= number <= INT_MAX:
+            raise TableError(f'"id" compares with a whole number; got {value!r}.', "unsupported_filter")
+        return number
     if kind == "timestamp":
         moment = parse_datetime(value)
         if moment is None:
@@ -93,6 +99,11 @@ def _value(columns, field, kind, op, value):
         raise TableError(exc.message, "unsupported_filter") from None
     if coerced is None:
         raise TableError(f'"{field}" {OP_LABELS[op]} needs a value.', "unsupported_filter")
+    if isinstance(coerced, int) and not isinstance(coerced, bool) and not INT_MIN <= coerced <= INT_MAX:
+        raise TableError(
+            f'"{field}" compares with whole numbers from {INT_MIN} to {INT_MAX}; got {value!r}.',
+            "unsupported_filter",
+        )
     return coerced
 
 
