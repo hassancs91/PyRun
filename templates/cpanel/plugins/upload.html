@@ -7,7 +7,7 @@
 <span>Upload</span>
 {% endblock %}
 {% block heading %}Upload plugin{% endblock %}
-{% block subtitle %}Install a plugin from a .zip, or update an installed one with a higher version.{% endblock %}
+{% block subtitle %}Install a plugin from a .zip or a URL, or update an installed one with a higher version. Signed plugins are also in the <a href="{% url 'cpanel:plugin_store' %}" class="text-info hover:underline">Store</a>.{% endblock %}
 
 {% block page %}
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
@@ -26,6 +26,26 @@
         <div class="flex items-center justify-end gap-2.5 pt-4 border-t border-line-soft">
             <a href="{% url 'cpanel:plugin_list' %}" class="text-[13px] px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Cancel</a>
             <button type="submit" class="text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">Upload plugin</button>
+        </div>
+    </form>
+
+    {# Install from URL (2.5 T44): same SSRF guard and 50 MB cap as the store #}
+    <form method="post" action="{% url 'cpanel:plugin_install_url' %}" id="install-from-url" class="lg:col-span-2 lg:row-start-2 max-w-3xl w-full rounded-2xl border border-line bg-panel p-6 space-y-4">
+        {% csrf_token %}
+        <div>
+            <h2 class="text-base font-semibold text-text mb-1">Install from URL</h2>
+            <p class="text-sm text-muted">PyRun downloads the .zip (up to 50 MB) and installs or updates it exactly like an upload. Give its sha256 to be sure you get the file you expect.</p>
+        </div>
+        <div>
+            <label for="id_url" class="block text-[13px] font-medium text-text mb-1.5">Zip URL</label>
+            <input type="url" name="url" id="id_url" required maxlength="2000" placeholder="https://example.com/my_plugin-1.0.0.zip" class="w-full bg-ink border border-line rounded-lg px-3 py-2 text-sm font-mono text-text placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-ok/40">
+        </div>
+        <div>
+            <label for="id_sha256" class="block text-[13px] font-medium text-text mb-1.5">sha256 <span class="text-faint font-normal">(optional)</span></label>
+            <input type="text" name="sha256" id="id_sha256" maxlength="64" pattern="[0-9a-fA-F]{64}" autocomplete="off" spellcheck="false" class="w-full bg-ink border border-line rounded-lg px-3 py-2 text-sm font-mono text-text focus:outline-none focus:ring-2 focus:ring-ok/40">
+        </div>
+        <div class="flex justify-end pt-4 border-t border-line-soft">
+            <button type="submit" class="text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">Install from URL</button>
         </div>
     </form>
 

@@ -534,7 +534,8 @@ reads them by its tiers below.
   With `script`, the list is the connections that script may use. Scripts use
   connections through `pyrunner_connections` (`docs/run-context.md`).
 - `plugins.list` returns `plugins`, each with `slug`, `name`, `version`, `status`
-  (`active`, `installed`, `disabled`, `errored`), `source`, `summary`, `author`,
+  (`active`, `installed`, `disabled`, `errored`), `source` (`upload`, `store`, `url`,
+  `git` or `builtin`), `summary`, `author`,
   `trust` (`verified` or `unsigned`), `signed_by` (the signing publisher, or
   null), `installed_at` and `activated_at`.
 - `environments.list` returns `environments`, each with `id`, `name`,

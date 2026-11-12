@@ -1,0 +1,63 @@
+{% extends "cpanel/layout.html" %}
+
+{% block title %}{{ item.entry.name }} - Plugin store - {{ instance_name }}{% endblock %}
+
+{% block breadcrumbs %}
+<a href="{% url 'cpanel:plugin_list' %}">Plugins</a>
+<a href="{% url 'cpanel:plugin_store' %}">Store</a>
+<span>{{ item.entry.name }}</span>
+{% endblock %}
+{% block heading %}{{ item.entry.name }}{% endblock %}
+{% block subtitle %}{{ item.entry.summary|default:"A plugin from the store." }}{% endblock %}
+{% block actions %}
+{% if item.action == 'installed' %}
+<a href="{% url 'cpanel:plugin_detail' slug=item.entry.slug %}" class="text-[13px] font-medium px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Installed · open</a>
+{% else %}
+<form method="post" action="{% url 'cpanel:plugin_store_install' slug=item.entry.slug %}">
+    {% csrf_token %}
+    <button type="submit" class="text-[13px] font-medium px-3.5 py-2 rounded-lg {% if item.action == 'update' %}bg-info{% else %}bg-ok{% endif %} text-ink hover:opacity-90 transition disabled:opacity-40"{% if item.problem %} disabled{% endif %}>{% if item.action == 'update' %}Update to {{ item.entry.version }}{% else %}Install{% endif %}</button>
+</form>
+{% endif %}
+{% endblock %}
+
+{% block page %}
+{% if item.problem %}
+<p class="rounded-xl border border-warn/30 bg-warn/10 p-4 text-sm text-warn">{{ item.problem }}</p>
+{% endif %}
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+    <section class="lg:col-span-2 rounded-2xl border border-line bg-panel p-6 space-y-5">
+        <div class="flex flex-wrap items-center gap-2">
+            {% include "cpanel/plugins/_trust_badge.html" with plugin=item from_store=True show_unsigned=True %}
+            {% for c in item.entry.categories %}<span class="px-2 py-0.5 text-xs rounded-md bg-panel-hi text-muted">{{ c }}</span>{% endfor %}
+        </div>
+        {% if item.entry.description %}<p class="text-sm text-muted whitespace-pre-line">{{ item.entry.description }}</p>{% endif %}
+
+        <div>
+            <h2 class="text-sm font-semibold text-text mb-1.5">What it creates</h2>
+            {% if item.provisions_summary %}
+            <p class="text-sm text-muted">{{ item.provisions_summary }}{% if item.secret_keys %}<span class="block text-xs text-faint mt-1">Secrets: <span class="font-mono">{{ item.secret_keys|join:", " }}</span></span>{% endif %}</p>
+            {% else %}
+            <p class="text-sm text-muted">The plugin declares nothing it creates.</p>
+            {% endif %}
+        </div>
+
+        {% if item.action == 'update' %}
+        <p class="text-sm text-muted">Updating keeps the plugin's settings, secrets and data, and keeps {{ item.installed.version }} for a rollback.</p>
+        {% endif %}
+    </section>
+
+    <aside class="rounded-2xl border border-line bg-panel p-6">
+        <dl class="space-y-3.5 text-sm">
+            <div><dt class="eyebrow text-faint font-normal mb-1">Version</dt><dd class="text-text font-mono">{{ item.entry.version }}{% if item.installed %} <span class="block text-xs text-faint font-sans mt-0.5">{{ item.installed.version }} installed</span>{% endif %}</dd></div>
+            <div><dt class="eyebrow text-faint font-normal mb-1">Slug</dt><dd class="text-text font-mono">{{ item.entry.slug }}</dd></div>
+            <div><dt class="eyebrow text-faint font-normal mb-1">Publisher</dt><dd class="text-text">{{ item.entry.publisher }}</dd></div>
+            {% if item.entry.size %}<div><dt class="eyebrow text-faint font-normal mb-1">Download</dt><dd class="text-text">{{ item.entry.size|filesizeformat }}</dd></div>{% endif %}
+            {% if item.entry.min_pyrunner or item.entry.api %}<div><dt class="eyebrow text-faint font-normal mb-1">Requires</dt><dd class="text-text">{% if item.entry.min_pyrunner %}PyRun {{ item.entry.min_pyrunner }}+{% endif %}{% if item.entry.min_pyrunner and item.entry.api %} · {% endif %}{% if item.entry.api %}plugin SDK {{ item.entry.api }}{% endif %}</dd></div>{% endif %}
+            {% if item.entry.changelog_url %}<div><dt class="eyebrow text-faint font-normal mb-1">Changelog</dt><dd><a href="{{ item.entry.changelog_url }}" rel="noopener noreferrer" target="_blank" class="text-info hover:underline break-all">What's new</a></dd></div>{% endif %}
+            {% if item.entry.homepage %}<div><dt class="eyebrow text-faint font-normal mb-1">Homepage</dt><dd><a href="{{ item.entry.homepage }}" rel="noopener noreferrer" target="_blank" class="text-info hover:underline break-all">{{ item.entry.homepage }}</a></dd></div>{% endif %}
+            <div><dt class="eyebrow text-faint font-normal mb-1">sha256</dt><dd class="text-xs font-mono text-muted break-all">{{ item.entry.sha256 }}</dd></div>
+        </dl>
+    </aside>
+</div>
+{% endblock %}

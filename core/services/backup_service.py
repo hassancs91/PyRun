@@ -515,6 +515,7 @@ class BackupService:
             "schedules_paused": settings_obj.schedules_paused,
             "api_writes_enabled": settings_obj.api_writes_enabled,
             "plugin_trust_policy": settings_obj.plugin_trust_policy,
+            "plugin_store_url": settings_obj.plugin_store_url,
         }
 
     @classmethod
@@ -1812,6 +1813,15 @@ class BackupService:
         settings_obj.plugin_trust_policy = (
             policy if policy in GlobalSettings.PluginTrustPolicy.values
             else GlobalSettings.PluginTrustPolicy.ALLOW_UNSIGNED
+        )
+        # Plugin store index URL (2.5 T44): blank (PyRun's official index) when
+        # absent or not an http(s) URL; every fetch is SSRF-checked anyway.
+        store_url = data.get("plugin_store_url")
+        settings_obj.plugin_store_url = (
+            store_url.strip()
+            if isinstance(store_url, str) and len(store_url.strip()) <= 500
+            and store_url.strip().lower().startswith(("http://", "https://"))
+            else ""
         )
         settings_obj.save()
 

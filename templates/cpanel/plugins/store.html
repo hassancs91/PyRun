@@ -1,0 +1,142 @@
+{% extends "cpanel/layout.html" %}
+{% load icon_tags %}
+
+{% block title %}Plugin store - {{ instance_name }}{% endblock %}
+
+{% block heading %}Plugins{% endblock %}
+{% block subtitle %}Install and update plugins from a signed store index. Every download is checked against the index before it installs.{% endblock %}
+{% block actions %}
+<form method="post" action="{% url 'cpanel:plugin_store_refresh' %}">
+    {% csrf_token %}
+    <button type="submit" class="inline-flex items-center gap-2 text-[13px] font-medium px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors"{% if not state.url %} disabled title="Set a store index URL first"{% endif %}>
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.58M20 20v-5h-.58M5.07 9A8 8 0 0119 11M18.93 15A8 8 0 015 13"/></svg>
+        Refresh
+    </button>
+</form>
+{% endblock %}
+
+{% block page %}
+{% include "cpanel/plugins/_tabs.html" %}
+
+{% if pending_restart %}
+<div class="rounded-xl border border-warn/30 bg-warn/10 p-4 text-sm">
+    <p class="font-medium text-text">Restart required</p>
+    <p class="text-muted mt-0.5">Plugin changes take effect after a restart. <a href="{% url 'cpanel:plugin_list' %}" class="text-info hover:underline">Restart from the Installed tab</a>.</p>
+</div>
+{% endif %}
+
+{% if state.problem %}
+<p class="rounded-xl border border-fail/30 bg-fail/10 p-4 text-sm text-fail">{{ state.problem }}</p>
+{% elif state.error %}
+<p class="rounded-xl border border-warn/30 bg-warn/10 p-4 text-sm text-warn">{{ state.error }}{% if state.index %} Showing the index loaded {{ state.row.fetched_at|timesince }} ago.{% endif %}</p>
+{% elif state.index and state.stale %}
+<p class="rounded-xl border border-warn/30 bg-warn/10 p-4 text-sm text-warn">The store index was last checked {{ state.row.checked_at|timesince }} ago; PyRun refreshes it every 12 hours while its workers run. Press Refresh for the latest.</p>
+{% endif %}
+
+{% if not state.url %}
+<section class="rounded-2xl border border-line bg-panel px-6 py-12 text-center">
+    <div class="w-14 h-14 rounded-full bg-info/10 grid place-items-center mx-auto mb-4">
+        {% icon "puzzle" class="w-7 h-7 text-info" %}
+    </div>
+    <h3 class="text-base font-semibold mb-1">No store index set</h3>
+    <p class="text-sm text-muted max-w-lg mx-auto">PyRun's official plugin index is not published yet. If you have the URL of a signed <span class="font-mono">index.json</span>, add it under Store settings below.</p>
+</section>
+{% elif not state.index %}
+<section class="rounded-2xl border border-line bg-panel px-6 py-12 text-center">
+    <h3 class="text-base font-semibold mb-1">The store index hasn't been loaded yet</h3>
+    <p class="text-sm text-muted mb-5">PyRun reads it every 12 hours. Press Refresh to load it now.</p>
+    <form method="post" action="{% url 'cpanel:plugin_store_refresh' %}">
+        {% csrf_token %}
+        <button type="submit" class="text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">Load the store</button>
+    </form>
+</section>
+{% else %}
+
+{% if updates %}
+<section id="updates" class="rounded-2xl border border-info/30 bg-info/5 p-5">
+    <h2 class="text-sm font-semibold text-text mb-3">Updates available</h2>
+    <ul class="divide-y divide-line-soft">
+        {% for item in updates %}
+        <li class="py-2.5 flex flex-wrap items-center justify-between gap-3">
+            <div class="min-w-0">
+                <a href="{% url 'cpanel:plugin_store_detail' slug=item.entry.slug %}" class="text-[13.5px] font-medium text-text hover:text-info">{{ item.entry.name }}</a>
+                <span class="text-xs font-mono text-muted ml-1">{{ item.installed.version }} → {{ item.entry.version }}</span>
+                {% if item.problem %}<p class="text-xs text-warn mt-0.5">{{ item.problem }}</p>{% endif %}
+            </div>
+            <form method="post" action="{% url 'cpanel:plugin_store_install' slug=item.entry.slug %}">
+                {% csrf_token %}
+                <button type="submit" class="text-[13px] font-medium px-3 py-1.5 rounded-lg bg-info text-ink hover:opacity-90 transition disabled:opacity-40"{% if item.problem %} disabled{% endif %}>Update</button>
+            </form>
+        </li>
+        {% endfor %}
+    </ul>
+</section>
+{% endif %}
+
+<form method="get" class="flex flex-wrap items-center gap-2.5">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search plugins" aria-label="Search plugins" class="flex-1 min-w-[12rem] bg-ink border border-line rounded-lg px-3 py-2 text-sm text-text placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-ok/40">
+    {% if categories %}
+    <select name="category" aria-label="Category" class="bg-ink border border-line rounded-lg px-3 py-2 text-sm text-text focus:outline-none focus:ring-2 focus:ring-ok/40">
+        <option value="">All categories</option>
+        {% for c in categories %}<option value="{{ c }}"{% if c == category %} selected{% endif %}>{{ c }}</option>{% endfor %}
+    </select>
+    {% endif %}
+    <button type="submit" class="text-[13px] px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Search</button>
+    {% if q or category %}<a href="{% url 'cpanel:plugin_store' %}" class="text-[13px] text-info hover:underline">Clear</a>{% endif %}
+</form>
+
+{% if items %}
+<section class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+    {% for item in items %}
+    <article class="rounded-2xl border border-line bg-panel p-5 flex flex-col gap-3">
+        <div class="flex items-start gap-3">
+            {% if item.entry.icon_url %}
+            <img src="{{ item.entry.icon_url }}" alt="" referrerpolicy="no-referrer" loading="lazy" class="w-9 h-9 rounded-lg object-cover border border-line-soft bg-panel-hi flex-shrink-0" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';">
+            <div class="w-9 h-9 rounded-lg bg-panel-hi border border-line-soft place-items-center text-lg flex-shrink-0" style="display:none">🧩</div>
+            {% else %}
+            <div class="w-9 h-9 rounded-lg bg-panel-hi border border-line-soft grid place-items-center text-lg flex-shrink-0">🧩</div>
+            {% endif %}
+            <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <a href="{% url 'cpanel:plugin_store_detail' slug=item.entry.slug %}" class="text-[13.5px] font-medium text-text hover:text-info transition-colors">{{ item.entry.name }}</a>
+                    {% include "cpanel/plugins/_trust_badge.html" with plugin=item from_store=True show_unsigned=True %}
+                </div>
+                <div class="text-xs font-mono text-faint mt-0.5">{{ item.entry.slug }} · {{ item.entry.version }}</div>
+            </div>
+        </div>
+        {% if item.entry.summary %}<p class="text-xs text-muted line-clamp-3">{{ item.entry.summary }}</p>{% endif %}
+        {% if item.provisions_summary %}<p class="text-xs text-muted"><span class="text-faint">Creates</span> {{ item.provisions_summary }}</p>{% endif %}
+        {% if item.entry.categories %}
+        <div class="flex flex-wrap gap-1.5">{% for c in item.entry.categories %}<span class="px-2 py-0.5 text-xs rounded-md bg-panel-hi text-muted">{{ c }}</span>{% endfor %}</div>
+        {% endif %}
+        <div class="mt-auto pt-2 flex flex-wrap items-center justify-between gap-2">
+            {% if item.action == 'installed' %}
+            <span class="text-xs text-ok">Installed{% if item.installed.version != item.entry.version %} ({{ item.installed.version }}){% endif %}</span>
+            <a href="{% url 'cpanel:plugin_detail' slug=item.entry.slug %}" class="text-[13px] px-3 py-1.5 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Open</a>
+            {% else %}
+            {% if item.problem %}<a href="{% url 'cpanel:plugin_store_detail' slug=item.entry.slug %}" class="text-xs text-warn hover:underline">Can't {{ item.action }} here</a>{% else %}<span class="text-xs text-faint">{% if item.action == 'update' %}{{ item.installed.version }} installed{% endif %}</span>{% endif %}
+            <form method="post" action="{% url 'cpanel:plugin_store_install' slug=item.entry.slug %}">
+                {% csrf_token %}
+                <button type="submit" class="text-[13px] font-medium px-3 py-1.5 rounded-lg {% if item.action == 'update' %}bg-info{% else %}bg-ok{% endif %} text-ink hover:opacity-90 transition disabled:opacity-40"{% if item.problem %} disabled{% endif %}>{% if item.action == 'update' %}Update{% else %}Install{% endif %}</button>
+            </form>
+            {% endif %}
+        </div>
+    </article>
+    {% endfor %}
+</section>
+{% else %}
+<p class="rounded-2xl border border-line bg-panel px-6 py-10 text-center text-sm text-muted">{% if total %}No plugin matches.{% else %}The store index lists no plugins yet.{% endif %}</p>
+{% endif %}
+{% endif %}
+
+{# Store settings: which index this PyRun reads #}
+<form method="post" action="{% url 'cpanel:plugin_store_settings' %}" id="store-settings" class="rounded-2xl border border-line bg-panel p-6">
+    {% csrf_token %}
+    <h3 class="text-base font-semibold text-text mb-1">Store settings</h3>
+    <p class="text-sm text-muted mb-4">The signed <span class="font-mono">index.json</span> this PyRun reads. Leave it empty for PyRun's official index{% if not official_url %} (not published yet){% endif %}. A private index works too, as long as it is signed by a key this PyRun trusts.{% if state.row.checked_at %} Last checked {{ state.row.checked_at|timesince }} ago.{% endif %}</p>
+    <div class="flex flex-wrap items-center gap-3">
+        <input type="url" name="store_url" value="{{ configured_url }}" maxlength="500" placeholder="{{ official_url|default:'https://example.com/index.json' }}" aria-label="Store index URL" class="flex-1 min-w-[14rem] bg-ink border border-line rounded-lg px-3 py-2 text-sm font-mono text-text placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-ok/40">
+        <button type="submit" class="text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">Save</button>
+    </div>
+</form>
+{% endblock %}

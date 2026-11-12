@@ -621,6 +621,22 @@ begins tracking at the current release; earlier history is in the git log.
   each plugin's `trust`. Maintainers build signed zips with
   `manage.py plugin_sign <folder> --key <path> --key-id <id>`. docs/plugins.md
   has the details.
+- **Plugin Store.** Plugins → **Store** lists the plugins of a signed store
+  index: search, categories, what each plugin creates, and **Install** or
+  **Update** in one click. Installed plugins with a newer version in the store
+  appear under **Updates available**, with a count on the Store tab and a
+  notice on the dashboard. PyRun reads the index every 12 hours (or now, with
+  **Refresh**) and only uses it when its signature checks out with a key it
+  trusts. A download must match the size and sha256 the index gives, and then
+  installs or updates exactly like an uploaded zip (signature, publisher pin
+  and trust policy included). PyRun's official index isn't published yet:
+  until it is, **Store settings** takes the URL of any index signed by a
+  trusted key. **Install from URL** on the Upload page installs or updates a
+  plugin from a zip link, with an optional sha256. Every download goes through
+  the SSRF guard, with a 2 MB cap for the index and 50 MB for a zip. Each
+  plugin now has an update policy (only *Manual* for now) and its page says
+  where it came from. Maintainers build the index with
+  `manage.py plugin_store_index`. docs/plugins.md has the details.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

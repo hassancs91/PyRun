@@ -1484,6 +1484,95 @@ The plugin folder isn't changed. `__pycache__`, `.pyc` files and hidden files or
 folders (names starting with `.`) are left out of the zip. `--publisher` names the
 publisher (default `pyrun`), `--out` the folder for the zip (default `dist/`).
 
+## The plugin store (PyRun 2.5)
+
+Plugins → **Store** lists what a **store index** offers: a signed `index.json`
+plus the plugin zips it points at, served as static files. Search, filter by
+category, open a plugin to see its description, what it creates (its
+`provisions`), its changelog link and its signature, then **Install** (or
+**Update**, when an older version is installed). Installed plugins with a newer
+version in the index are listed under **Updates available**; the Store tab
+shows how many, and superusers see a notice on the dashboard.
+
+**Which index.** Plugins → Store → **Store settings**. Empty means PyRun's
+official index. That index isn't published yet, so for now the Store asks for
+an index URL. A private index works too, as long as it is signed by a key this
+PyRun trusts (`core/plugins/trust/keys.py`). The URL is in backups.
+
+**Fetching.** PyRun reads the index every 12 hours in the background (the
+`pyrunner-plugin-store` task, like the PyRun update check) and when you press
+**Refresh** or save a new URL; the Store page itself never goes to the network.
+The index must be at most 2 MB and pass the SSRF guard
+(`PYRUNNER_ALLOW_PRIVATE_NETWORK`, docs/DEPLOYMENT.md), and it is used only
+when its signature checks out with a trusted key that isn't revoked. The
+cached copy is checked again each time it is read, so revoking a key also stops
+an index already fetched. When a refresh fails, the Store says why and keeps
+showing the last good copy of the same URL.
+
+**Installing.** The zip is downloaded through the same guard, at most 50 MB
+and at most the `size` the index gives, and must match the index's `sha256`
+and hold that plugin's slug. Then it goes through the normal upload path: a new
+slug installs (as **Installed**; activate it as usual), an installed one
+updates in place (the update is recorded with the source *Store*), and the
+signature, publisher pin and trust policy checks all apply. Install is
+disabled, with the reason, when the plugin needs a newer PyRun (`min_pyrunner`)
+or plugin SDK (`api`), or when it is unsigned and the trust policy is
+*Signed plugins only*.
+
+**Install from URL.** Plugins → Upload → **Install from URL** takes a zip link
+(and, optionally, its sha256) and installs or updates it like an upload, with
+the same guard and 50 MB cap. The plugin's page shows the source (*Upload*,
+*Store* or *URL*).
+
+**Updates are manual.** Each plugin has an update policy, shown on its page;
+2.5 offers only *Manual*. Automatic updates are not available yet.
+
+### The index format
+
+```json
+{
+  "schema": 1,
+  "generated_at": "2026-11-12T10:00:00Z",
+  "plugins": [
+    {
+      "slug": "brand_tracker", "publisher": "pyrun", "name": "Brand Tracker",
+      "version": "1.1.3", "summary": "…", "description": "…",
+      "categories": ["Marketing"], "icon_url": "https://…/icon.png",
+      "min_pyrunner": "2.5.0", "api": "2.7", "provisions": {"scripts": 1},
+      "download_url": "zips/brand_tracker-1.1.3.zip",
+      "sha256": "…", "size": 48213, "signed": true,
+      "changelog_url": "https://…", "homepage": "https://…",
+      "tier": "", "requires_license": false
+    }
+  ],
+  "signature": {"publisher": "pyrun", "key_id": "pyrun-2026", "value": "<base64>"}
+}
+```
+
+`slug`, `publisher`, `name`, `version` (semver), `download_url` and `sha256`
+are required. A relative `download_url` (or `changelog_url`) is resolved
+against the index's own URL, so a mirror can serve the same files; `icon_url`
+must be https. `signed` is informational: the zip's own `plugin.sig` decides,
+when it installs. `tier` and `requires_license` are reserved. The signature is
+Ed25519 over a context line, the publisher and key id, and everything but
+`signature` as canonical JSON (sorted keys, no spaces, ASCII), so whitespace
+and key order don't matter but any changed value does. An index with a bad
+signature, an unknown schema or any malformed entry is refused as a whole.
+
+**Building an index (maintainers).** Sign each zip with `plugin_sign`, then:
+
+```bash
+python manage.py plugin_store_index dist/ --key ~/keys/pyrun-2026.pem --key-id pyrun-2026 \
+    --base-url https://example.com/pyrun-plugins/zips/ --out index.json
+```
+
+It reads each zip's `plugin.json` (name, version, summary, description,
+categories, `min_pyrunner`, `api`, `homepage`, `changelog_url`, `icon_url`,
+`provisions`, `tier`, `requires_license`) and `plugin.sig`, adds the sha256 and
+size, and signs the index. Without `--base-url` the download URLs are the zip
+file names, relative to the index. One zip per plugin; the key path must be
+outside the project, as for `plugin_sign`.
+
 ---
 
 ## Do / don't

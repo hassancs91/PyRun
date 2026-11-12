@@ -817,5 +817,11 @@ PYRUNNER_ALLOW_PRIVATE_NETWORK = (
     os.environ.get("PYRUNNER_ALLOW_PRIVATE_NETWORK", "False").lower() == "true"
 )
 
+# Automatic plugin updates from the store (plan D10, 2.5 T44): the job and the
+# Plugin.update_policy column exist, but this hidden flag stays off in 2.5 and
+# the console offers only the manual policy (core/services/plugin_store.py
+# auto_update). Not an environment variable on purpose.
+PYRUNNER_PLUGIN_AUTO_UPDATE = False
+
 # Operator-only origin override for isolated GitHub sync integration testing.
 PYRUNNER_GITHUB_API_URL = os.environ.get("PYRUNNER_GITHUB_API_URL", "https://api.github.com")

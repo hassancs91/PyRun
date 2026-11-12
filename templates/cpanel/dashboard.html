@@ -75,6 +75,19 @@
 </div>
 {% endif %}
 
+{% if plugin_updates %}
+<div class="p-4 rounded-xl bg-info/10 border border-info/30 flex items-center gap-3">
+    <svg class="w-5 h-5 text-info flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+    </svg>
+    <div class="text-sm">
+        <span class="font-medium text-info">Plugin update{{ plugin_updates|length|pluralize }} available</span>
+        <span class="text-muted"> — {% for item in plugin_updates|slice:":3" %}{{ item.entry.name }} {{ item.entry.version }}{% if not forloop.last %}, {% endif %}{% endfor %}{% if plugin_updates|length > 3 %} and {{ plugin_updates|length|add:"-3" }} more{% endif %}. </span>
+        <a href="{% url 'cpanel:plugin_store' %}#updates" class="text-info hover:underline">Open the Store</a>
+    </div>
+</div>
+{% endif %}
+
 {# ============ RUN PULSE (signature) ============ #}
 <section class="rounded-2xl border border-line bg-panel overflow-hidden">
     {# run pulse ribbon #}

@@ -235,6 +235,14 @@ from core.views.services import (
     secret_provider_delete_view,
     secret_provider_test_view,
 )
+from core.views.plugin_store import (
+    plugin_install_url_view,
+    plugin_store_detail_view,
+    plugin_store_install_view,
+    plugin_store_refresh_view,
+    plugin_store_settings_view,
+    plugin_store_view,
+)
 from core.views.plugins import (
     plugin_list_view,
     plugin_detail_view,
@@ -566,6 +574,13 @@ urlpatterns = [
     path("plugins/upload/", plugin_upload_view, name="plugin_upload"),
     path("plugins/restart/", plugin_restart_view, name="plugin_restart"),
     path("plugins/trust-policy/", plugin_trust_policy_view, name="plugin_trust_policy"),
+    # Plugin store (2.5 T44). Hyphenated, so no plugin slug can shadow them.
+    path("plugins/plugin-store/", plugin_store_view, name="plugin_store"),
+    path("plugins/store-refresh/", plugin_store_refresh_view, name="plugin_store_refresh"),
+    path("plugins/store-settings/", plugin_store_settings_view, name="plugin_store_settings"),
+    path("plugins/plugin-store/<slug:slug>/", plugin_store_detail_view, name="plugin_store_detail"),
+    path("plugins/plugin-store/<slug:slug>/install/", plugin_store_install_view, name="plugin_store_install"),
+    path("plugins/install-from-url/", plugin_install_url_view, name="plugin_install_url"),
     path("plugins/restarting/", plugin_restarting_view, name="plugin_restarting"),
     path("plugins/restart/status/", plugin_restart_status_view, name="plugin_restart_status"),
     path("plugins/<uuid:pk>/activate/", plugin_activate_view, name="plugin_activate"),

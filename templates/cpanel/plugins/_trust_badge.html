@@ -1,11 +1,11 @@
-{# Signature badge (2.5 T43). Expects `plugin`; `show_unsigned` also renders a muted "Unsigned" pill. #}
+{# Signature badge (2.5 T43). Expects `plugin`; `show_unsigned` also renders a muted "Unsigned" pill; `from_store` (T44) for a store entry, whose signature is checked when it installs. #}
 {% if plugin.verified_by_pyrun %}
-<span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-md bg-ok/10 text-ok whitespace-nowrap" title="Signed with PyRun's key (key {{ plugin.signing_key_id }}); every file matched its signed hash when it was installed.">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-md bg-ok/10 text-ok whitespace-nowrap" title="{% if from_store %}The store index says PyRun signed this plugin; the signature and every file are checked when it installs.{% else %}Signed with PyRun's key (key {{ plugin.signing_key_id }}); every file matched its signed hash when it was installed.{% endif %}">
     <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
     Verified · PyRun
 </span>
 {% elif plugin.trust == 'verified' %}
-<span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-md bg-info/10 text-info whitespace-nowrap" title="Signed by {{ plugin.signed_by }} (key {{ plugin.signing_key_id }}).">Signed · {{ plugin.signed_by }}</span>
+<span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-md bg-info/10 text-info whitespace-nowrap" title="Signed by {{ plugin.signed_by }}{% if plugin.signing_key_id %} (key {{ plugin.signing_key_id }}){% endif %}.">Signed · {{ plugin.signed_by }}</span>
 {% elif show_unsigned %}
 <span class="px-2 py-0.5 text-xs rounded-md bg-panel-hi text-muted whitespace-nowrap" title="No signature: PyRun can't tell who made this plugin or whether its files were changed.">Unsigned</span>
 {% endif %}

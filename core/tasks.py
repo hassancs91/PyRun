@@ -558,6 +558,26 @@ def check_for_updates_task() -> dict:
         return {"success": False, "error": str(e)}
 
 
+def refresh_plugin_store_task() -> dict:
+    """
+    Re-read the plugin store's signed index (every 12 hours, 2.5 T44), then
+    run the automatic-update step, which is off in 2.5 (plan D10).
+
+    Returns:
+        dict: How many plugins the index lists, or why nothing was fetched.
+    """
+    from core.services import plugin_store
+
+    if not plugin_store.index_url():
+        return {"success": True, "skipped": "no store index set"}
+    try:
+        index = plugin_store.refresh()
+    except plugin_store.StoreError as e:
+        # Already recorded on the cached index row (shown on the Store tab).
+        return {"success": False, "error": str(e)}
+    return {"success": True, "plugins": len(index.entries), "auto_update": plugin_store.auto_update()}
+
+
 def resync_schedules_task() -> dict:
     """
     Rebuild timezone-aware schedule crons with today's UTC offsets.

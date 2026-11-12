@@ -21,7 +21,7 @@ from django.views.decorators.http import require_POST
 
 from core.forms import PluginUploadForm
 from core.models import GlobalSettings, Plugin
-from core.services import PluginInstallError, PluginService, plugin_updates
+from core.services import PluginInstallError, PluginService, plugin_store, plugin_updates
 from core.services.plugin_connections import states_for
 from core.views.decorators import superuser_required
 
@@ -60,6 +60,8 @@ def plugin_list_view(request: HttpRequest) -> HttpResponse:
         "trust_policy": GlobalSettings.get_settings().plugin_trust_policy,
         "trust_policies": GlobalSettings.PluginTrustPolicy.choices,
         "unsigned_count": sum(1 for p in plugins if p.trust != Plugin.Trust.VERIFIED),
+        # Store (2.5 T44): the tab's "updates available" count.
+        "store_updates": len(plugin_store.updates_available()),
     }
     return render(request, "cpanel/plugins/list.html", context)
 
@@ -161,18 +163,12 @@ def plugin_upload_view(request: HttpRequest) -> HttpResponse:
                 return render(request, "cpanel/plugins/upload.html", {"form": form})
 
             if update is not None:
-                messages.success(request, _updated_message(plugin, update))
+                messages.success(request, updated_message(plugin, update))
                 if warnings.strip():
                     messages.warning(request, f'Doctor warnings for "{plugin.name}":\n{warnings}')
                 return redirect("cpanel:plugin_detail", slug=plugin.slug)
 
-            provisions = plugin.provisions_summary
-            provision_note = f" It will create {provisions}." if provisions else ""
-            messages.success(
-                request,
-                f'Plugin "{plugin.name}" installed.{provision_note} '
-                "Click Activate to validate and enable it.",
-            )
+            messages.success(request, installed_message(plugin))
             return redirect("cpanel:plugin_detail", slug=plugin.slug)
     else:
         form = PluginUploadForm()
@@ -229,7 +225,16 @@ def plugin_delete_view(request: HttpRequest, pk) -> HttpResponse:
     return redirect("cpanel:plugin_list")
 
 
-def _updated_message(plugin, update) -> str:
+def installed_message(plugin) -> str:
+    provisions = plugin.provisions_summary
+    provision_note = f" It will create {provisions}." if provisions else ""
+    return (
+        f'Plugin "{plugin.name}" installed.{provision_note} '
+        "Click Activate to validate and enable it."
+    )
+
+
+def updated_message(plugin, update) -> str:
     text = f'Plugin "{plugin.name}" updated from {update.from_version} to {update.to_version}.'
     if plugin.status == Plugin.Status.ACTIVE:
         return text + " Restart to load the new version; its update steps run after the restart."

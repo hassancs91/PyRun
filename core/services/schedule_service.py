@@ -26,6 +26,7 @@ CLEANUP_SCHEDULE_NAME = "pyrunner-auto-cleanup"
 RESYNC_SCHEDULE_NAME = "pyrunner-schedule-resync"
 HOUSEKEEPING_SCHEDULE_NAME = "pyrunner-housekeeping"
 WATCHERS_SCHEDULE_NAME = "pyrunner-watchers-tick"
+PLUGIN_STORE_SCHEDULE_NAME = "pyrunner-plugin-store"
 INFRA_SCHEDULE_NAMES = (
     HEARTBEAT_SCHEDULE_NAME,
     UPDATE_SCHEDULE_NAME,
@@ -34,6 +35,7 @@ INFRA_SCHEDULE_NAMES = (
     RESYNC_SCHEDULE_NAME,
     HOUSEKEEPING_SCHEDULE_NAME,
     WATCHERS_SCHEDULE_NAME,
+    PLUGIN_STORE_SCHEDULE_NAME,
 )
 
 
@@ -856,6 +858,32 @@ class ScheduleService:
             next_run=timezone.now(),  # Runs on first worker tick, then daily
         )
         logger.info("Created update check schedule")
+        return True
+
+    @classmethod
+    def ensure_plugin_store_schedule(cls) -> bool:
+        """
+        Ensure the 12-hour plugin store refresh exists
+        (``refresh_plugin_store_task``: re-reads the signed index, like the
+        update check; a no-op while no store index is set).
+
+        Returns:
+            bool: True if schedule was created, False if it already exists
+        """
+        from core.services.plugin_store import CACHE_TTL
+
+        if QSchedule.objects.filter(name=PLUGIN_STORE_SCHEDULE_NAME).exists():
+            return False
+
+        QSchedule.objects.create(
+            name=PLUGIN_STORE_SCHEDULE_NAME,
+            func="core.tasks.refresh_plugin_store_task",
+            schedule_type=QSchedule.MINUTES,
+            minutes=int(CACHE_TTL.total_seconds() // 60),
+            repeats=-1,  # Run forever
+            next_run=timezone.now(),  # Runs on first worker tick, then every 12 hours
+        )
+        logger.info("Created plugin store refresh schedule")
         return True
 
     @classmethod

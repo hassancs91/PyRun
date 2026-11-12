@@ -63,6 +63,15 @@ class GlobalSettings(models.Model):
         default=PluginTrustPolicy.ALLOW_UNSIGNED,
         help_text="Whether plugins without a valid signature may be installed and activated.",
     )
+    # Plugin store (2.5 T44): the signed index.json the Store tab reads. Blank
+    # means PyRun's own index (core/services/plugin_store.py OFFICIAL_INDEX_URL);
+    # a private index must be signed by a key this PyRun trusts.
+    plugin_store_url = models.URLField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text="URL of the plugin store index.json (blank: PyRun's official index).",
+    )
 
     # Email notification settings
     email_backend = models.CharField(

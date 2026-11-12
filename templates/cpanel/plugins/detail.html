@@ -180,6 +180,10 @@
                     <dd class="text-text font-mono">{{ plugin.version|default:"—" }}</dd>
                 </div>
                 <div>
+                    <dt class="eyebrow text-faint font-normal mb-1">Updates</dt>
+                    <dd class="text-text">{{ plugin.get_update_policy_display }}<span class="block text-xs text-faint mt-0.5">From the <a href="{% url 'cpanel:plugin_store' %}" class="text-info hover:underline">Store</a> or a zip upload. Automatic updates are not available yet.</span></dd>
+                </div>
+                <div>
                     <dt class="eyebrow text-faint font-normal mb-1">Signature</dt>
                     <dd class="text-text">{% if plugin.trust == 'verified' %}{{ plugin.signed_by }} <span class="font-mono text-xs text-faint">· key {{ plugin.signing_key_id }}</span>{% else %}None{% endif %}{% if plugin.pinned_publisher %}<span class="block text-xs text-faint mt-0.5">Updates must be signed by {{ plugin.pinned_publisher }}</span>{% endif %}</dd>
                 </div>

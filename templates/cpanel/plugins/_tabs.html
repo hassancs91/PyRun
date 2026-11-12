@@ -1,0 +1,7 @@
+{# Plugins page tabs (2.5 T44): Installed | Store. Expects `store_updates` (how many installed plugins the store has a newer version of). #}
+{% with u=request.resolver_match.url_name n=store_updates %}
+<nav class="inline-flex flex-wrap max-w-full gap-1 p-1 rounded-lg border border-line bg-panel" aria-label="Plugin sections">
+    <a href="{% url 'cpanel:plugin_list' %}" class="px-3 py-1.5 text-sm rounded-md transition-colors {% if u == 'plugin_list' %}bg-panel-hi text-text font-medium{% else %}text-muted hover:text-text hover:bg-panel-hi/50{% endif %}"{% if u == 'plugin_list' %} aria-current="page"{% endif %}>Installed</a>
+    <a href="{% url 'cpanel:plugin_store' %}" class="px-3 py-1.5 text-sm rounded-md transition-colors {% if u == 'plugin_store' %}bg-panel-hi text-text font-medium{% else %}text-muted hover:text-text hover:bg-panel-hi/50{% endif %}"{% if u == 'plugin_store' %} aria-current="page"{% endif %}>Store{% if n %} <span class="ml-1 px-1.5 py-0.5 text-xs rounded-md bg-info/10 text-info" title="Updates available">{{ n }}</span>{% endif %}</a>
+</nav>
+{% endwith %}

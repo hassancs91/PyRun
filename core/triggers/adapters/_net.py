@@ -28,14 +28,18 @@ def check_url(url) -> str:
     return url
 
 
-def get(url, *, params=None, accept=None, timeout=20) -> tuple[bytes, str]:
+def get(url, *, params=None, accept=None, timeout=20, max_bytes=MAX_RESPONSE_BYTES,
+        user_agent=USER_AGENT) -> tuple[bytes, str]:
     """GET ``url``; returns ``(body, content_type)``. AdapterError on any failure.
+
+    The body is cut off at ``max_bytes`` (the plugin store reuses this with its
+    own caps).
 
     Error text names the status or the kind of failure, never the URL's
     query (which may carry a key).
     """
     check_url(url)
-    headers = {"User-Agent": USER_AGENT}
+    headers = {"User-Agent": user_agent}
     if accept:
         headers["Accept"] = accept
     try:
@@ -47,10 +51,8 @@ def get(url, *, params=None, accept=None, timeout=20) -> tuple[bytes, str]:
                 body = bytearray()
                 for chunk in response.iter_content(64 * 1024):
                     body += chunk
-                    if len(body) > MAX_RESPONSE_BYTES:
-                        raise AdapterError(
-                            f"The response is larger than {MAX_RESPONSE_BYTES // (1024 * 1024)} MB."
-                        )
+                    if len(body) > max_bytes:
+                        raise AdapterError(f"The response is larger than {max_bytes / (1024 * 1024):.3g} MB.")
                 return bytes(body), response.headers.get("Content-Type", "")
     except AdapterError:
         raise

@@ -13,6 +13,7 @@
 {% endblock %}
 
 {% block page %}
+{% include "cpanel/plugins/_tabs.html" %}
 {# Restart-required banner #}
 {% if pending_restart %}
 <div class="rounded-xl border border-warn/30 bg-warn/10 p-4 flex items-center justify-between gap-4">

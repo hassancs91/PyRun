@@ -72,6 +72,8 @@ class Plugin(models.Model):
         UPLOAD = "upload", "Upload"
         GIT = "git", "Git"
         BUILTIN = "builtin", "Built-in"
+        STORE = "store", "Store"  # 2.5 T44: installed from the plugin store
+        URL = "url", "URL"  # 2.5 T44: installed from a download URL
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
@@ -137,6 +139,18 @@ class Plugin(models.Model):
     pinned_publisher = models.CharField(
         max_length=100, blank=True, default="",
         help_text="Once installed signed, updates must be signed by this publisher.",
+    )
+
+    # Auto-update readiness (plan D10, 2.5 T44): only ``manual`` can be chosen
+    # in 2.5. ``auto`` exists so turning automatic updates on later is a switch,
+    # not a migration (core/services/plugin_store.py ``auto_update``).
+    class UpdatePolicy(models.TextChoices):
+        MANUAL = "manual", "Manual"
+        AUTO = "auto", "Automatic"
+
+    update_policy = models.CharField(
+        max_length=10, choices=UpdatePolicy.choices, default=UpdatePolicy.MANUAL,
+        help_text="How this plugin is updated from the store (only manual in this release).",
     )
 
     installed_at = models.DateTimeField(auto_now_add=True)
@@ -317,3 +331,26 @@ class PluginUpdate(models.Model):
 
     def __str__(self):
         return f"{self.plugin_id}: {self.from_version} -> {self.to_version} [{self.outcome}]"
+
+
+class PluginStoreIndex(models.Model):
+    """The last plugin store index fetched (2.5 T44): one row, a cache.
+
+    ``raw`` is the signed ``index.json`` exactly as downloaded from ``url``; it
+    is verified again each time it is read (core/services/plugin_store.py), so a
+    key revoked after the fetch also stops the cached copy. ``checked_at`` is the
+    last attempt and ``error`` its failure ('' after a good fetch, which keeps
+    the previous good index). Never backed up: it is fetched again.
+    """
+
+    url = models.TextField(blank=True, default="")
+    raw = models.TextField(blank=True, default="")
+    fetched_at = models.DateTimeField(null=True, blank=True)
+    checked_at = models.DateTimeField(null=True, blank=True)
+    error = models.TextField(blank=True, default="")
+
+    class Meta:
+        db_table = "plugin_store_index"
+
+    def __str__(self):
+        return f"plugin store index {self.url or '(none)'}"

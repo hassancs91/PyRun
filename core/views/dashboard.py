@@ -9,7 +9,7 @@ from django.shortcuts import render
 from django.urls import reverse
 
 from core.models import Environment, Run, Script, WorkspaceMembership
-from core.services import maintenance
+from core.services import maintenance, plugin_store
 from core.services.dashboard_service import DashboardService
 from core.services.system_info_service import SystemInfoService
 
@@ -103,6 +103,9 @@ def dashboard_view(request):
         # System resources (CPU, RAM, Storage)
         "system_resources": system_resources,
         "in_container": _in_container(),
+        # Plugin store (2.5 T44): installed plugins with a newer store version
+        # (superusers only; reads the cached index, never the network).
+        "plugin_updates": plugin_store.updates_available() if request.user.is_superuser else [],
     }
     return render(request, "cpanel/dashboard.html", context)
 

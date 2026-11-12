@@ -212,11 +212,14 @@ def _cut(text) -> str:
 # Upload entry point
 # --------------------------------------------------------------------------- #
 
-def upload(uploaded_file, *, user=None, source=PluginUpdate.Source.UPLOAD):
+def upload(uploaded_file, *, user=None, source=PluginUpdate.Source.UPLOAD,
+           initiated_by=PluginUpdate.InitiatedBy.USER):
     """Install a new plugin, or update the installed one with the same slug.
 
     Returns ``(plugin, update, warnings)``; ``update`` is None for a fresh
-    install. Raises ``PluginInstallError`` with a user-facing message.
+    install. ``source`` (upload, store or url) is recorded on the new Plugin row
+    or on the update's history row. Raises ``PluginInstallError`` with a
+    user-facing message.
     """
     data = uploaded_file.read()
     try:
@@ -226,9 +229,10 @@ def upload(uploaded_file, *, user=None, source=PluginUpdate.Source.UPLOAD):
         raise PluginInstallError("That file is not a valid .zip archive.")
     plugin = Plugin.objects.filter(slug=slug).first()
     if plugin is None:
-        # A fresh install's Plugin.source is "upload"; ``source`` names the update's.
-        return PluginService.install_from_zip(io.BytesIO(data)), None, []
-    update_row, warnings = update(plugin, io.BytesIO(data), user=user, source=source)
+        return PluginService.install_from_zip(io.BytesIO(data), source=source), None, []
+    update_row, warnings = update(
+        plugin, io.BytesIO(data), user=user, source=source, initiated_by=initiated_by,
+    )
     plugin.refresh_from_db()
     return plugin, update_row, warnings
 
