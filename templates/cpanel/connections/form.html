@@ -129,7 +129,8 @@ with pyrunner_connections.smtp("{{ connection.name|default:preset.key }}") as se
     server.sendmail(server.from_address, [to], message){% elif preset.protocol == "imap" %}
 import imaplib
 login = pyrunner_connections.credentials("{{ connection.name|default:preset.key }}")["imap"]
-box = imaplib.IMAP4_SSL(login["host"], login["port"])  # security "ssl"
+{% with security=connection.config.security|default:"ssl" %}{% if security == "ssl" %}box = imaplib.IMAP4_SSL(login["host"], login["port"]){% else %}box = imaplib.IMAP4(login["host"], login["port"]){% if security == "starttls" %}
+box.starttls(){% endif %}{% endif %}  # security "{{ security }}"{% endwith %}
 box.login(login["username"], login["password"]){% else %}
 api = pyrunner_connections.client("{{ connection.name|default:preset.key }}")
 reply = api.get("/...")  # relative to the base URL{% endif %}{% if auth_kind == "oauth2" %}

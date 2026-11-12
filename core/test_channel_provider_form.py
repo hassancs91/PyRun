@@ -425,6 +425,14 @@ class TelegramRegressionTests(_Base):
         Channel.objects.filter(pk=ch.pk).update(creds_encrypted="not-a-fernet-token")
         page = self.client.get(reverse("cpanel:channel_edit", args=[ch.pk]))
         self.assertEqual(page.status_code, 200)
+        # Test pass 7 F2: an unreadable token reads as none, so the page doesn't offer to keep it,
+        # and the channel isn't "configured" (channels.list) until it is entered again.
+        html = page.content.decode()
+        self.assertNotIn("Leave blank to keep", html)
+        self.assertIn("The stored bot token can&#x27;t be decrypted (was ENCRYPTION_KEY changed?); enter it again.",
+                      html)
+        ch.refresh_from_db()
+        self.assertFalse(ch.is_configured)
         data = {"name": "Ops", "bot_token": "", "default_target": "555", "enabled": "on"}
         resp = self.client.post(reverse("cpanel:channel_edit", args=[ch.pk]), data)
         self.assertIn("The stored bot token can&#x27;t be decrypted", resp.content.decode())
@@ -432,3 +440,6 @@ class TelegramRegressionTests(_Base):
         self.assertEqual(resp.status_code, 302)
         ch.refresh_from_db()
         self.assertEqual(ch.get_credentials(), {"bot_token": _TOKEN})
+        self.assertTrue(ch.is_configured)
+        self.assertIn("Leave blank to keep the current bot token.",
+                      self.client.get(reverse("cpanel:channel_edit", args=[ch.pk])).content.decode())

@@ -78,14 +78,21 @@ def _form_field(field, editing, revoked=False):
     )
 
 
+def _name_usage(preset, auth_kind) -> str:
+    """How a script (or a watcher) uses a connection of this kind, for the Name help."""
+    if preset.protocol == "imap":
+        return ('How IMAP watchers and scripts name it: pick it in an IMAP watcher, or '
+                'pyrunner_connections.credentials("name")["imap"] in a script.')
+    if auth_kind == SMTP:
+        return 'How scripts name it: pyrunner_connections.smtp("name").'
+    return 'How scripts name it: pyrunner_connections.client("name").'
+
+
 class ConnectionForm(forms.Form):
     """Name, the preset's fields for one auth kind, and the wildcard grant."""
 
     name = forms.CharField(
         max_length=100,
-        help_text=(
-            f"How scripts name it: pyrunner_connections.client(\"name\") or smtp(\"name\"). {svc.NAME_HELP}"
-        ),
         widget=forms.TextInput(attrs={"class": INPUT_CLASS, "autocomplete": "off"}),
     )
     grant_all_scripts = forms.BooleanField(
@@ -102,6 +109,7 @@ class ConnectionForm(forms.Form):
         self.workspace = workspace
         self.instance = instance
         self.preset_fields = preset.fields_for(auth_kind)
+        self.fields["name"].help_text = f"{_name_usage(preset, auth_kind)} {svc.NAME_HELP}"
         revoked = instance is not None and instance.status == Connection.Status.REVOKED
         for field in self.preset_fields:
             self.fields[field.name] = _form_field(field, editing=instance is not None, revoked=revoked)

@@ -359,7 +359,10 @@ connection. Details per source:
   write it as a plain column name. The item is the row (dates as ISO text).
   When rows can share a cursor value (two signups in the same second), name an
   id column too: each row is its own event, and rows sharing a value are always
-  reported together. Rows whose cursor is empty are never reported.
+  reported together (a group that doesn't fit what is left of the hour's
+  **most runs an hour** waits for the next hour; one bigger than that limit
+  itself fails the check, naming it). Rows whose cursor is empty are never
+  reported.
 
 **The first check only marks where the source is**: what is already there
 never starts runs. After that, each check starts a run per new item, oldest

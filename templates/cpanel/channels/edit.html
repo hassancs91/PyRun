@@ -48,7 +48,7 @@
             <div>
                 <label for="{{ field.id_for_label }}" class="block text-[13px] font-medium text-text mb-1.5">{{ field.label }}</label>
                 {{ field }}
-                {% if field.field.widget.input_type == "password" %}<p class="mt-1.5 text-xs text-faint">Leave blank to keep the current {{ field.label|lower }}.</p>{% elif field.help_text %}<p class="mt-1.5 text-xs text-faint">{{ field.help_text }}</p>{% endif %}
+                {% if field.field.keeps_stored %}<p class="mt-1.5 text-xs text-faint">Leave blank to keep the current {{ field.label|lower }}.</p>{% elif field.help_text %}<p class="mt-1.5 text-xs text-faint">{{ field.help_text }}</p>{% endif %}
                 {% include "cpanel/_field_errors.html" with field=field %}
             </div>
             {% endfor %}

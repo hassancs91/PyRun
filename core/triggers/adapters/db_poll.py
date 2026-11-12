@@ -163,6 +163,21 @@ class DbPollAdapter(Adapter):
             boundary = rows[limit][0]
             rows = [row for row in rows[:limit] if row[0] != boundary]
             if not rows:
+                # The runner's limit is what is left of the watcher's fire cap
+                # this hour. A group that fits a whole hour of the cap waits
+                # for it (cursor kept, nothing reported) like any item past
+                # the cap; only a group bigger than the cap itself is an error.
+                cap = getattr(ctx.watcher, "fire_cap_per_hour", None) if ctx.limit is not None else None
+                if cap and limit < cap:
+                    group = self._rows(ctx, config, cursor, cap)
+                    if sum(1 for row in group if row[0] == boundary) <= cap:
+                        return [], {"cursor": cursor}
+                if cap:
+                    raise AdapterError(
+                        f"More than {cap} rows share the cursor value {_text(boundary)!r}, more than the "
+                        f"watcher's fire cap ({cap} runs an hour) can start: raise the fire cap, or pick a "
+                        "cursor column whose values don't repeat that much."
+                    )
                 raise AdapterError(
                     f"More than {limit} rows share the cursor value {_text(boundary)!r}: pick a cursor column "
                     "whose values don't repeat that much."

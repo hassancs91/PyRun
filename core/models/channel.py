@@ -253,7 +253,17 @@ class Channel(models.Model):
 
     @property
     def is_configured(self) -> bool:
-        return bool(self.creds_encrypted)
+        """Credentials are stored AND readable: a blob that can't be decrypted
+        (ENCRYPTION_KEY changed) is as good as none until they are entered again."""
+        if not self.creds_encrypted:
+            return False
+        from core.services.encryption_service import EncryptionError
+
+        try:
+            self.get_credentials()
+        except (EncryptionError, ValueError):
+            return False
+        return True
 
     @property
     def default_target(self) -> str:

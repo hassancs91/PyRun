@@ -3597,7 +3597,9 @@ class ChannelForm(forms.Form):
 
         stored = self._stored_credentials()
         for spec in self.credential_specs:
-            self.fields[spec.name] = self._credential_field(spec, stored, editing=instance is not None)
+            self.fields[spec.name] = self._credential_field(
+                spec, stored, editing=instance is not None, unreadable=self.stored_unreadable,
+            )
 
         target = self.fields["default_target"]
         target.label = getattr(self.provider_obj, "default_target_label", "Default recipient")
@@ -3637,10 +3639,12 @@ class ChannelForm(forms.Form):
             return {}
 
     @staticmethod
-    def _credential_field(spec, stored, *, editing):
+    def _credential_field(spec, stored, *, editing, unreadable=False):
+        # Only an existing channel has a stored secret to keep (U50), and only
+        # when it can still be decrypted: an unreadable one must be entered again.
+        keeps = spec.secret and editing and not unreadable
         if spec.secret:
-            # Only an existing channel has a stored secret to keep (U50).
-            placeholder = "Leave blank to keep current" if editing else spec.placeholder
+            placeholder = "Leave blank to keep current" if keeps else spec.placeholder
             widget = forms.PasswordInput(
                 attrs={
                     "class": INPUT_CLASS + " font-mono",
@@ -3652,7 +3656,14 @@ class ChannelForm(forms.Form):
             widget = forms.TextInput(
                 attrs={"class": INPUT_CLASS + " font-mono", "placeholder": spec.placeholder}
             )
-        field = forms.CharField(required=False, widget=widget, label=spec.label, help_text=spec.help)
+        help_text = spec.help
+        if spec.secret and editing and unreadable:
+            help_text = (
+                f"The stored {spec.label.lower()} can't be decrypted (was ENCRYPTION_KEY changed?); "
+                "enter it again."
+            )
+        field = forms.CharField(required=False, widget=widget, label=spec.label, help_text=help_text)
+        field.keeps_stored = keeps
         if editing and not spec.secret:
             field.initial = stored.get(spec.name, "")
         return field

@@ -581,6 +581,30 @@ class ConsoleTests(_Fixture, TestCase):
         for label in ("Airtable", "HTTP API", "SMTP"):
             self.assertIn(label, html)
 
+    def test_the_imap_pages_show_imap_usage_that_follows_its_security(self):
+        # Test pass 7 F3: no HTTP/SMTP helpers on an IMAP connection's pages, and the example
+        # opens the mailbox the way the stored security setting says.
+        html = self.client.get(reverse("cpanel:connection_create") + "?provider=imap").content.decode()
+        self.assertIn("pick it in an IMAP watcher", html)
+        for helper in ("client(", "smtp("):
+            self.assertNotIn(f"pyrunner_connections.{helper}&quot;name&quot;)", html)
+            self.assertNotIn(f'pyrunner_connections.{helper}"name")', html)
+        self.assertIn("imaplib.IMAP4_SSL(", html)
+        expected = {"ssl": ("imaplib.IMAP4_SSL(", None), "starttls": ("imaplib.IMAP4(", "box.starttls()"),
+                    "none": ("imaplib.IMAP4(", None)}
+        for security, (opener, starttls) in expected.items():
+            c = self._connection(f"mail-{security}", "imap", "basic", {"password": "pw"},
+                                 config={"host": "mail.example.com", "port": 993, "security": security,
+                                         "username": "me@example.com"})
+            page = self.client.get(reverse("cpanel:connection_edit", kwargs={"pk": c.pk})).content.decode()
+            code = page[page.index("import imaplib"):page.index("</code>", page.index("import imaplib"))]
+            self.assertIn(opener, code)
+            self.assertIn(f'# security "{security}"', code)
+            if security != "ssl":
+                self.assertNotIn("IMAP4_SSL", code)
+            self.assertEqual("box.starttls()" in code, starttls is not None)
+            self.assertNotIn("api.get(", code)
+
     def test_add_an_airtable_connection(self):
         resp = self.client.post(reverse("cpanel:connection_create"), {
             "provider": "airtable", "auth_kind": "api_key", "name": "airtable", "api_key": AIRTABLE_KEY,

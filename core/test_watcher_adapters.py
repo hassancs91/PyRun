@@ -655,6 +655,38 @@ class DbPollTests(_Fixture):
         with self.assertRaisesMessage(AdapterError, "More than 1 rows share the cursor value"):
             self.adapter.check(self._ctx(limit=1), config, {"cursor": at[0].isoformat()})
 
+    def test_a_group_past_the_fire_cap_left_this_hour_waits_for_the_next_hour(self):
+        # Test pass 7 F1: the runner's limit is the fire cap left this hour. A group of rows sharing
+        # a cursor value that doesn't fit what is left (but fits a whole hour) waits, without a failure.
+        rows = [{"id": 1, "batch": 1, "email": "a"}]
+        self._table(rows, columns=("id", "batch", "email"))
+        config = {**self.config, "query": "SELECT id, batch, email FROM t7_events", "cursor_column": "batch",
+                  "id_column": "id"}
+        watcher = self._watcher("db_poll", config=config, fire_cap_per_hour=3)
+        with _inline():
+            self.assertChecked(self._check(watcher), 0)
+            rows += [{"id": 2, "batch": 2, "email": "b"}, {"id": 3, "batch": 2, "email": "c"},
+                     {"id": 4, "batch": 3, "email": "d"}, {"id": 5, "batch": 3, "email": "e"}]
+            self.assertChecked(self._check(watcher), 2)  # the batch-2 pair; the batch-3 pair is held back
+            result = self._check(watcher)  # one run left this hour: the pair waits
+            self.assertChecked(result, 0)
+            watcher.refresh_from_db()
+            self.assertEqual((watcher.error_count, watcher.last_error, watcher.cursor),
+                             (0, "", {"cursor": "2"}))
+            # The next hour of the cap: the pair starts its runs together.
+            Watcher.objects.filter(pk=watcher.pk).update(
+                cap_window_start=timezone.now() - runner.CAP_WINDOW - datetime.timedelta(seconds=1))
+            self.assertChecked(self._check(watcher), 2)
+        self.assertCountEqual([run.event["event_id"] for run in self._runs()], ["2", "3", "4", "5"])
+        watcher.refresh_from_db()
+        self.assertEqual(watcher.cursor, {"cursor": "3"})
+        # A group bigger than the cap itself can never start together: a clear error naming the cap.
+        rows += [{"id": 6 + n, "batch": 4, "email": "f"} for n in range(4)]
+        ctx = CheckContext(watcher=watcher, workspace=self.ws, limit=1, timeout=5)
+        with self.assertRaisesMessage(AdapterError, "More than 3 rows share the cursor value '4', more than the "
+                                                    "watcher's fire cap (3 runs an hour) can start"):
+            self.adapter.check(ctx, config, {"cursor": "3"})
+
     def test_exactly_once_across_a_restart(self):
         rows = [{"id": 1, "email": "a@x.io", "created_at": None}]
         self._table(rows)
