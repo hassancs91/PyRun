@@ -135,8 +135,10 @@ def channel_inbound_view(request: HttpRequest, pk) -> HttpResponse:
     form = ChannelInboundForm(request.POST, channel=channel, workspace=request.workspace)
     if not form.is_valid():
         for field, errors in form.errors.items():
+            # The field's label ("Largest attachment (MB)"), not its form key.
+            label = form[field].label if field in form.fields else ""
             for error in errors:
-                messages.error(request, f"{field}: {error}")
+                messages.error(request, f"{label}: {error}" if label else str(error))
         return redirect("cpanel:channel_edit", pk=channel.pk)
 
     cd = form.cleaned_data

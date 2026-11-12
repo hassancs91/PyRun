@@ -18,8 +18,9 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from core.executor import EnvironmentNotFoundError, _validate_environment
-from core.models import Environment, GlobalSettings, Run, Script, User, Workspace, WorkspaceMembership
-from core.services import EncryptionService
+from core.models import Database, Environment, GlobalSettings, Run, Script, User, Workspace, WorkspaceMembership
+from core.services import DatabaseProvisionError, DatabaseService, EncryptionService
+from core.services.database_explorer import DatabaseUnavailable, QueryTimeout
 from core.services.setup_service import SetupService
 from core.views.decorators import DATA_SERVER_MISSING_MESSAGE
 
@@ -215,3 +216,72 @@ class SignedInMessagesTests(TestCase):
         self.assertNotIn("q.sqlite3", run.stderr)
         shown = [str(m) for m in get_messages(resp.wsgi_request)]
         self.assertEqual(shown, ["Failed to queue script. The server log has the details."])
+
+
+DB_URL = "postgresql://prov:pw@10.9.8.7:5432/pyrun_data"
+RAW = 'connection to server at "10.9.8.7", port 5432 failed: FATAL: password authentication failed (psycopg 3.2)'
+
+
+@override_settings(PYRUNNER_DATA_DB_URL=DB_URL)
+class DatabaseMessagesTests(TestCase):
+    """F7: a workspace Owner/Admin sees neutral text on the Databases pages, a superuser the detail."""
+
+    setUp = SignedInMessagesTests.setUp
+    get = SignedInMessagesTests.get
+
+    def shown(self, resp):
+        return [str(m) for m in get_messages(resp.wsgi_request)]
+
+    def post(self, user, name, data=None, **kwargs):
+        self.client.force_login(user)
+        return self.client.post(reverse(name, kwargs=kwargs or None), data or {}, follow=True)
+
+    def test_test_connection_hides_the_version_and_driver_text(self):
+        ok = (True, "Connected to 'pyrun_data' (PostgreSQL 16.4); pg_stat_statements available.")
+        with mock.patch.object(DatabaseService, "test_connection", return_value=ok):
+            self.assertEqual(self.shown(self.post(self.ws_admin, "cpanel:database_server_test")),
+                             ["Connected to the data server."])
+            self.assertIn("PostgreSQL 16.4", self.shown(self.post(self.admin, "cpanel:database_server_test"))[0])
+        with mock.patch.object(DatabaseService, "test_connection", return_value=(False, RAW)):
+            with self.assertLogs("core.views.databases", level="WARNING") as logs:
+                resp = self.post(self.ws_admin, "cpanel:database_server_test")
+            self.assertEqual(self.shown(resp), ["Could not connect to the data server. Ask your administrator."])
+            self.assertIn("password authentication failed", "".join(logs.output))
+            self.assertEqual(self.shown(self.post(self.admin, "cpanel:database_server_test")), [RAW])
+
+    def test_a_provisioning_failure_hides_the_server_text(self):
+        def fail(name, workspace, **kwargs):
+            Database.objects.create(
+                name=name, workspace=workspace, schema_name="db_x", role_name="db_x",
+                encrypted_password="x", status=Database.STATUS_ERROR, last_error=f"Provisioning failed: {RAW}",
+            )
+            raise DatabaseProvisionError(RAW)
+
+        with mock.patch.object(DatabaseService, "create_database", side_effect=fail),                 self.assertLogs("core.views.databases", level="WARNING"):
+            resp = self.post(self.ws_admin, "cpanel:database_create", {"name": "crm", "description": ""})
+        body = resp.content.decode()
+        self.assertNotIn("password authentication failed", body)
+        self.assertIn("Could not set up the database on the data server.", self.shown(resp)[0])
+        self.assertContains(resp, "The data server could not set up this database.")
+        database = Database.objects.get(name="crm")
+        self.assertContains(self.get(self.admin, "cpanel:database_detail", pk=database.pk), "password authentication failed")
+
+        with mock.patch.object(DatabaseService, "provision", side_effect=DatabaseProvisionError(RAW)),                 self.assertLogs("core.views.databases", level="WARNING"):
+            resp = self.post(self.ws_admin, "cpanel:database_retry", pk=database.pk)
+        self.assertNotIn("password authentication failed", resp.content.decode())
+
+    def test_a_read_failure_hides_the_server_text_but_a_timeout_says_so(self):
+        database = Database.objects.create(
+            name="crm", workspace=self.ws, schema_name="db_x", role_name="db_x",
+            encrypted_password="x", status=Database.STATUS_READY,
+        )
+        tables = "core.services.DatabaseExplorerService.tables"
+        with mock.patch(tables, side_effect=DatabaseUnavailable(RAW)),                 self.assertLogs("core.views.databases", level="WARNING"):
+            resp = self.get(self.ws_admin, "cpanel:database_detail", pk=database.pk)
+        self.assertNotIn("password authentication failed", resp.content.decode())
+        self.assertContains(resp, "Could not read the database. Ask your administrator.")
+        with mock.patch(tables, side_effect=DatabaseUnavailable(RAW)):
+            self.assertContains(self.get(self.admin, "cpanel:database_detail", pk=database.pk), "password authentication failed")
+        with mock.patch(tables, side_effect=QueryTimeout("Reading the database took longer than 15 seconds.")):
+            self.assertContains(self.get(self.ws_admin, "cpanel:database_detail", pk=database.pk),
+                                "took longer than 15 seconds")

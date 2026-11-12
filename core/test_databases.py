@@ -1049,10 +1049,12 @@ class ExplorerViewTests(TestCase):
 
         with mock.patch.object(
             self.svc, "tables", side_effect=DatabaseExplorerError("server gone")
-        ):
+        ), self.assertLogs("core.views.databases", level="WARNING"):
             resp = self.client.get(self._url("database_detail", self.db.pk))
         self.assertEqual(resp.status_code, 200)
-        self.assertIn("server gone", resp.content.decode())
+        # A workspace owner gets neutral text; the server's words are logged (F7).
+        self.assertNotIn("server gone", resp.content.decode())
+        self.assertIn("Could not read the database", resp.content.decode())
 
 
 # ---------------------------------------------------------------------------

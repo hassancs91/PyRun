@@ -35,6 +35,7 @@ from core.views.ownership import owned_block_message, owned_delete_blocked
 from core.services.database_explorer import (
     CSV_ROW_CAP,
     GRID_CELL_CHARS,
+    QueryTimeout,
     GRID_COUNT_CAP,
     grid_condition,
     grid_kind,
@@ -43,6 +44,32 @@ from core.services.database_explorer import (
 )
 
 logger = logging.getLogger(__name__)
+
+# What a workspace Owner/Admin who isn't a superuser sees instead of the data
+# server's own words (versions, driver errors, provisioning SQL errors). The
+# detail goes to the server log; superusers keep it on the page.
+CONNECTED_MESSAGE = "Connected to the data server."
+CONNECT_FAILED_MESSAGE = "Could not connect to the data server. Ask your administrator."
+PROVISION_FAILED_MESSAGE = (
+    "Could not set up the database on the data server. Ask your administrator, then retry."
+)
+CLEANUP_FAILED_MESSAGE = "ask your administrator"
+READ_FAILED_MESSAGE = "Could not read the database. Ask your administrator."
+
+
+def _server_detail(request: HttpRequest, detail: str, neutral: str, what: str) -> str:
+    """The data server's own text for a superuser; ``neutral`` (detail logged) for anyone else."""
+    if request.user.is_superuser:
+        return detail
+    logger.warning("%s (shown to %s as neutral text): %s", what, request.user.pk, detail)
+    return neutral
+
+
+def _explorer_error(request: HttpRequest, exc: Exception) -> str:
+    """A read failure for the page: a timeout says so; other server text is for superusers."""
+    if isinstance(exc, QueryTimeout):
+        return str(exc)
+    return _server_detail(request, str(exc), READ_FAILED_MESSAGE, "Database read failed")
 
 
 def _require_manage(request: HttpRequest) -> None:
@@ -99,7 +126,7 @@ def _detail_context(request: HttpRequest, database: Database, **extra) -> dict:
         try:
             tables = DatabaseExplorerService.tables(database)
         except DatabaseExplorerError as e:
-            tables_error = str(e)
+            tables_error = _explorer_error(request, e)
 
     context = {
         "database": database,
@@ -196,9 +223,13 @@ def database_server_test_view(request: HttpRequest) -> HttpResponse:
 
     ok, detail = DatabaseService.test_connection()
     if ok:
-        messages.success(request, detail)
+        shown = detail if request.user.is_superuser else CONNECTED_MESSAGE
+        messages.success(request, shown)
     else:
-        messages.error(request, detail)
+        messages.error(
+            request,
+            _server_detail(request, detail, CONNECT_FAILED_MESSAGE, "Data server test failed"),
+        )
     return redirect("cpanel:database_list")
 
 
@@ -236,7 +267,13 @@ def database_create_view(request: HttpRequest) -> HttpResponse:
                     .filter(name=form.cleaned_data["name"])
                     .first()
                 )
-                messages.error(request, f"Provisioning failed: {e}")
+                messages.error(
+                    request,
+                    _server_detail(
+                        request, f"Provisioning failed: {e}", PROVISION_FAILED_MESSAGE,
+                        "Database provisioning failed",
+                    ),
+                )
                 if failed is not None:
                     return redirect("cpanel:database_detail", pk=failed.pk)
                 return redirect("cpanel:database_list")
@@ -309,7 +346,13 @@ def database_retry_view(request: HttpRequest, pk) -> HttpResponse:
     try:
         DatabaseService.provision(database)
     except DatabaseProvisionError as e:
-        messages.error(request, f"Provisioning failed: {e}")
+        messages.error(
+            request,
+            _server_detail(
+                request, f"Provisioning failed: {e}", PROVISION_FAILED_MESSAGE,
+                "Database provisioning failed",
+            ),
+        )
     else:
         messages.success(request, f'Database "{database.name}" provisioned.')
     return redirect("cpanel:database_detail", pk=database.pk)
@@ -404,7 +447,7 @@ def database_table_view(request: HttpRequest, pk, table: str) -> HttpResponse:
         columns = DatabaseExplorerService.columns(database, table)
         indexes = DatabaseExplorerService.indexes(database, table)
     except DatabaseExplorerError as e:
-        messages.error(request, f"Could not read the table: {e}")
+        messages.error(request, f"Could not read the table: {_explorer_error(request, e)}")
         return redirect("cpanel:database_detail", pk=pk)
 
     grid, conditions = _table_grid(request, columns)
@@ -415,7 +458,7 @@ def database_table_view(request: HttpRequest, pk, table: str) -> HttpResponse:
             page=grid.page_number, per_page=grid.page_size,
         )
     except DatabaseExplorerError as e:
-        grid_error = str(e)
+        grid_error = _explorer_error(request, e)
         grid.set_rows([], 0)
     else:
         grid.page_number = result.page
@@ -459,7 +502,7 @@ def database_table_csv_view(request: HttpRequest, pk, table: str) -> HttpRespons
         database, _info = _resolve_table(request, pk, table)
         columns = DatabaseExplorerService.columns(database, table)
     except DatabaseExplorerError as e:
-        messages.error(request, f"Could not export the table: {e}")
+        messages.error(request, f"Could not export the table: {_explorer_error(request, e)}")
         return redirect("cpanel:database_detail", pk=pk)
     grid, conditions = _table_grid(request, columns)
     try:
@@ -467,7 +510,7 @@ def database_table_csv_view(request: HttpRequest, pk, table: str) -> HttpRespons
             database, table, columns, conditions=conditions, sort=grid.sort
         )
     except DatabaseExplorerError as e:
-        messages.error(request, f"Could not export the table: {e}")
+        messages.error(request, f"Could not export the table: {_explorer_error(request, e)}")
         url = reverse("cpanel:database_table", kwargs={"pk": pk, "table": table})
         return redirect(f"{url}?{grid.querystring}" if grid.querystring else url)
 
@@ -509,17 +552,21 @@ def database_delete_view(request: HttpRequest, pk) -> HttpResponse:
     try:
         DatabaseService.deprovision(database)
     except DatabaseProvisionError as e:
+        # The server's own words for a superuser; "(ask your administrator)" otherwise.
+        cause = _server_detail(
+            request, str(e), CLEANUP_FAILED_MESSAGE, "Database deprovisioning failed"
+        )
         if not delete_anyway:
             messages.error(
                 request,
-                f"Server cleanup failed, database kept: {e} — fix the data "
+                f"Server cleanup failed, database kept: {cause} — fix the data "
                 'server and retry, or tick "delete anyway" to remove only '
                 "PyRun's record.",
             )
             return redirect("cpanel:database_detail", pk=database.pk)
         messages.warning(
             request,
-            f"Server cleanup failed ({e}); the schema/role may still exist "
+            f"Server cleanup failed ({cause}); the schema/role may still exist "
             "on the data server.",
         )
 

@@ -110,9 +110,15 @@ class SettingTests(_MediaBase):
         self.ch.refresh_from_db()
         self.assertEqual((self.ch.download_media, self.ch.media_max_mb), (True, 5))
         # Out of range: refused, nothing changes.
-        self.client.post(reverse("cpanel:channel_inbound", args=[self.ch.pk]), {**data, "media_max_mb": "101"})
+        resp = self.client.post(
+            reverse("cpanel:channel_inbound", args=[self.ch.pk]), {**data, "media_max_mb": "101"}, follow=True
+        )
         self.ch.refresh_from_db()
         self.assertEqual(self.ch.media_max_mb, 5)
+        # The message names the field by its label, not its form key (2.5 test pass 8).
+        shown = [str(m) for m in resp.context["messages"]]
+        self.assertIn("Largest attachment (MB): Ensure this value is less than or equal to 100.", shown)
+        self.assertFalse([m for m in shown if "media_max_mb" in m])
         # Unticked: off again, the cap kept.
         self.client.post(reverse("cpanel:channel_inbound", args=[self.ch.pk]),
                          {k: v for k, v in data.items() if k not in ("download_media", "media_max_mb")})

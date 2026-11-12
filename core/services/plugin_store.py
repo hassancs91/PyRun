@@ -222,6 +222,10 @@ def updates_available() -> list:
 # Downloads and installs
 # --------------------------------------------------------------------------- #
 
+# How ``_net.get`` starts its "over max_bytes" error.
+_TOO_LARGE = "The response is larger than"
+
+
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -229,7 +233,16 @@ def _sha256(data: bytes) -> str:
 def download(entry) -> bytes:
     """The entry's zip: size-capped, sha256 checked against the index."""
     cap = entry.size or MAX_ZIP_BYTES
-    data = _get(entry.download_url, max_bytes=cap, timeout=DOWNLOAD_TIMEOUT)
+    try:
+        data = _get(entry.download_url, max_bytes=cap, timeout=DOWNLOAD_TIMEOUT)
+    except StoreError as exc:
+        # The fetch stops at the index's size; say so in bytes, as for a short download
+        # (not "larger than 0.0401 MB").
+        if entry.size and str(exc).startswith(_TOO_LARGE):
+            raise StoreError(
+                f"The download of '{entry.slug}' is larger than the {entry.size} bytes the store index says."
+            ) from exc
+        raise
     if entry.size and len(data) != entry.size:
         raise StoreError(
             f"The download of '{entry.slug}' is {len(data)} bytes; the store index says {entry.size}."

@@ -296,7 +296,8 @@ class InstallTests(_StoreBase):
     def test_sha256_or_size_mismatch_installs_nothing(self):
         for overrides, fragment in (
             ({"sha256": "0" * 64}, "does not match the sha256"),
-            ({"size": 10}, "larger than"),
+            # In bytes against the index, not "larger than 9.54e-06 MB" (2.5 test pass 8).
+            ({"size": 10}, "is larger than the 10 bytes the store index says"),
         ):
             with self.subTest(overrides=overrides):
                 plugin_store._memo[0] = None
