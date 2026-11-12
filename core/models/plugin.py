@@ -119,6 +119,26 @@ class Plugin(models.Model):
     previous_version = models.CharField(max_length=50, blank=True, default="")
     previous_checksum = models.CharField(max_length=64, blank=True, default="")
 
+    # Signing (2.5 T43): what the installed folder's MANIFEST.sha256 + plugin.sig
+    # proved (core/plugins/trust). ``pinned_publisher`` is set the first time a
+    # signed version is installed and stays: from then on an update must be
+    # signed by a key of that publisher (a new key id of the same publisher is a
+    # rotation; unsigned or another publisher is refused).
+    class Trust(models.TextChoices):
+        VERIFIED = "verified", "Verified"
+        UNSIGNED = "unsigned", "Unsigned"
+
+    trust = models.CharField(max_length=20, choices=Trust.choices, default=Trust.UNSIGNED)
+    signed_by = models.CharField(
+        max_length=100, blank=True, default="",
+        help_text="Publisher whose key signed the installed version (blank when unsigned).",
+    )
+    signing_key_id = models.CharField(max_length=64, blank=True, default="")
+    pinned_publisher = models.CharField(
+        max_length=100, blank=True, default="",
+        help_text="Once installed signed, updates must be signed by this publisher.",
+    )
+
     installed_at = models.DateTimeField(auto_now_add=True)
     activated_at = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -135,6 +155,13 @@ class Plugin(models.Model):
     @property
     def is_active(self) -> bool:
         return self.status == self.Status.ACTIVE
+
+    @property
+    def verified_by_pyrun(self) -> bool:
+        """Signed with one of PyRun's own keys: the "Verified · PyRun" badge."""
+        from core.plugins.trust.keys import PYRUN_PUBLISHER
+
+        return self.trust == self.Trust.VERIFIED and self.signed_by == PYRUN_PUBLISHER
 
     # ------------------------------------------------------------- metadata
     # Plugin Platform v2 Stage 6: the manifest (plugin.json) is the single carrier

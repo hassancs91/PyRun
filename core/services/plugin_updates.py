@@ -47,6 +47,7 @@ from django.conf import settings
 from django.utils import timezone
 
 from core.models import Plugin, PluginUpdate
+from core.services import plugin_trust
 from core.services.plugin_doctor import semver_key
 from core.services.plugin_service import PluginInstallError, PluginService
 
@@ -295,6 +296,8 @@ def _update(plugin, uploaded_file, *, user, source, initiated_by, attempt):
         manifest = PluginService._read_manifest(staged, slug)
         new_version = str(manifest.get("version") or "")
         attempt["to_version"] = new_version
+        # Signature, publisher pin and trust policy (2.5 T43), on the staged copy.
+        trust = plugin_trust.check(staged, slug, manifest, plugin=plugin)
         problem = version_problem(plugin.version, new_version, slug)
         if problem:
             raise PluginInstallError(problem)
@@ -336,6 +339,7 @@ def _update(plugin, uploaded_file, *, user, source, initiated_by, attempt):
             plugin.save(update_fields=[
                 "name", "version", "manifest", "checksum",
                 "previous_version", "previous_checksum", "updated_at",
+                *plugin_trust.apply(plugin, trust),
             ])
             row = PluginUpdate.objects.create(
                 plugin=plugin,
@@ -402,6 +406,17 @@ def rollback_problem(plugin):
     return None
 
 
+def _kept_trust(plugin, kept):
+    """Trust of the kept folder (it was live here, so its __pycache__ is skipped).
+
+    The publisher pin is not applied: the kept folder already passed it (or was
+    installed before the pin). The trust policy is.
+    """
+    manifest = PluginService._read_manifest(kept, plugin.slug)
+    trust = plugin_trust.check(kept, plugin.slug, manifest, include_generated=False, pin=False)
+    return manifest, trust
+
+
 def rollback(plugin, *, user=None, initiated_by=PluginUpdate.InitiatedBy.USER):
     """Put the previous version's folder and row back. Returns the PluginUpdate row."""
     problem = rollback_problem(plugin)
@@ -419,7 +434,7 @@ def rollback(plugin, *, user=None, initiated_by=PluginUpdate.InitiatedBy.USER):
                 f"The kept folder of {plugin.previous_version} does not match the "
                 "checksum recorded when it was replaced, so it was not restored."
             )
-        manifest = PluginService._read_manifest(kept, slug)
+        manifest, trust = _kept_trust(plugin, kept)
         _swap_back(slug, kept)
 
         rolled_back = plugin.version
@@ -433,6 +448,7 @@ def rollback(plugin, *, user=None, initiated_by=PluginUpdate.InitiatedBy.USER):
         plugin.save(update_fields=[
             "name", "version", "manifest", "checksum",
             "previous_version", "previous_checksum", "updated_at",
+            *plugin_trust.apply(plugin, trust),
         ])
         # Steps of the version just removed must never run.
         plugin.updates.filter(

@@ -514,6 +514,7 @@ class BackupService:
             "auto_cleanup_enabled": settings_obj.auto_cleanup_enabled,
             "schedules_paused": settings_obj.schedules_paused,
             "api_writes_enabled": settings_obj.api_writes_enabled,
+            "plugin_trust_policy": settings_obj.plugin_trust_policy,
         }
 
     @classmethod
@@ -1806,6 +1807,12 @@ class BackupService:
         settings_obj.schedules_paused = data.get("schedules_paused", False)
         # Only a literal true turns writes on; an older backup leaves them off.
         settings_obj.api_writes_enabled = data.get("api_writes_enabled") is True
+        # An older backup, or an unknown value, keeps the default (allow unsigned).
+        policy = data.get("plugin_trust_policy")
+        settings_obj.plugin_trust_policy = (
+            policy if policy in GlobalSettings.PluginTrustPolicy.values
+            else GlobalSettings.PluginTrustPolicy.ALLOW_UNSIGNED
+        )
         settings_obj.save()
 
     @classmethod

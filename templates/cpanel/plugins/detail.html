@@ -17,6 +17,7 @@
 {% else %}
 <span class="px-2 py-0.5 text-xs rounded-md bg-info/10 text-info">Installed</span>
 {% endif %}
+{% include "cpanel/plugins/_trust_badge.html" with show_unsigned=True %}
 {% endblock %}
 {% block subtitle %}{{ plugin.summary }}{% endblock %}
 {% block header_extra %}
@@ -177,6 +178,10 @@
                 <div>
                     <dt class="eyebrow text-faint font-normal mb-1">Version</dt>
                     <dd class="text-text font-mono">{{ plugin.version|default:"—" }}</dd>
+                </div>
+                <div>
+                    <dt class="eyebrow text-faint font-normal mb-1">Signature</dt>
+                    <dd class="text-text">{% if plugin.trust == 'verified' %}{{ plugin.signed_by }} <span class="font-mono text-xs text-faint">· key {{ plugin.signing_key_id }}</span>{% else %}None{% endif %}{% if plugin.pinned_publisher %}<span class="block text-xs text-faint mt-0.5">Updates must be signed by {{ plugin.pinned_publisher }}</span>{% endif %}</dd>
                 </div>
                 {% if plugin.manifest.min_pyrunner %}
                 <div>

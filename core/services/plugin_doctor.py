@@ -25,6 +25,9 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# One publisher pattern for plugin.json and signatures (2.5 T43).
+from core.plugins.trust.signing import PUBLISHER_RE
+
 PASS, WARN, FAIL = "pass", "warn", "fail"
 
 # A slug that shadows one of these would collide with a real app / URL root.
@@ -40,7 +43,6 @@ SEMVER_RE = re.compile(
 _SEMVER_PARTS_RE = re.compile(
     r"^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$"
 )
-PUBLISHER_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 # Icons are served via <img src>; bitmap + svg are safe in that context (svg is
 # never inlined). Keep the set small and explicit.
 ALLOWED_ICON_EXTS = {".png", ".svg", ".webp", ".jpg", ".jpeg"}
@@ -162,6 +164,7 @@ def run_doctor(path, *, installed_version=None) -> DoctorReport:
     _check_connections(folder, report)
     _check_triggers(folder, report)
     _check_lifecycle(folder, report)
+    _check_signature(folder, report)
     if installed_version is not None:
         _check_update(folder, report, installed_version)
     return report
@@ -815,6 +818,27 @@ def _check_lifecycle(folder: Path, report: DoctorReport):
     else:
         names = [f"{n}()" for n in ("reprovision", "on_update") if n in functions]
         report.add("lifecycle", PASS, "Update steps: " + ", ".join(names) + ".")
+
+
+def _check_signature(folder: Path, report: DoctorReport):
+    """MANIFEST.sha256 / plugin.sig (2.5 T43): when present they must check out,
+    exactly as an install would check them. An unsigned folder adds no finding.
+    ``__pycache__`` is skipped (an installed plugin's folder has one)."""
+    from core.plugins.trust.signing import MANIFEST_NAME, SIGNATURE_NAME, TrustError, verify_folder
+
+    if not (folder / MANIFEST_NAME).exists() and not (folder / SIGNATURE_NAME).exists():
+        return
+    try:
+        result = verify_folder(
+            folder, slug=folder.name, manifest=_manifest_dict(folder) or {}, include_generated=False,
+        )
+    except TrustError as exc:
+        report.add("signature", FAIL, f"{exc} Sign it again with manage.py plugin_sign.")
+        return
+    if result.verified:
+        report.add("signature", PASS, f"Signed by {result.publisher} (key {result.key_id}); files match {MANIFEST_NAME}.")
+    else:
+        report.add("signature", PASS, f"Files match {MANIFEST_NAME} (not signed).")
 
 
 def _check_update(folder: Path, report: DoctorReport, installed_version):

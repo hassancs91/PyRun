@@ -535,7 +535,8 @@ reads them by its tiers below.
   connections through `pyrunner_connections` (`docs/run-context.md`).
 - `plugins.list` returns `plugins`, each with `slug`, `name`, `version`, `status`
   (`active`, `installed`, `disabled`, `errored`), `source`, `summary`, `author`,
-  `installed_at` and `activated_at`.
+  `trust` (`verified` or `unsigned`), `signed_by` (the signing publisher, or
+  null), `installed_at` and `activated_at`.
 - `environments.list` returns `environments`, each with `id`, `name`,
   `description`, `python_version`, `default`, `active`, `requirements` (the
   saved requirements: PyRun stores the environment's `pip freeze` after every

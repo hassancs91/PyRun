@@ -67,7 +67,10 @@
                         <div class="w-9 h-9 rounded-lg bg-panel-hi border border-line-soft grid place-items-center text-lg flex-shrink-0 mt-0.5">{{ plugin.icon_fallback|default:"🧩" }}</div>
                         {% endif %}
                         <div class="min-w-0">
-                            <a href="{% url 'cpanel:plugin_detail' slug=plugin.slug %}" class="text-[13.5px] font-medium text-text hover:text-info transition-colors">{{ plugin.name }}</a>
+                            <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                <a href="{% url 'cpanel:plugin_detail' slug=plugin.slug %}" class="text-[13.5px] font-medium text-text hover:text-info transition-colors">{{ plugin.name }}</a>
+                                {% include "cpanel/plugins/_trust_badge.html" %}
+                            </div>
                             <div class="text-xs font-mono text-faint mt-0.5">{{ plugin.slug }}</div>
                             {% if plugin.summary %}
                             <p class="text-xs text-muted mt-1 line-clamp-2">{{ plugin.summary }}</p>
@@ -129,6 +132,18 @@
     </a>
 </section>
 {% endif %}
+{# Trust policy (2.5 T43, plan D10) #}
+<form method="post" action="{% url 'cpanel:plugin_trust_policy' %}" id="trust-policy" class="rounded-2xl border border-line bg-panel p-6">
+    {% csrf_token %}
+    <h3 class="text-base font-semibold text-text mb-1">Trust policy</h3>
+    <p class="text-sm text-muted mb-4">A plugin signed with PyRun's key shows <span class="text-ok">Verified · PyRun</span>: its files are exactly the ones PyRun signed. A zip whose signature or file hashes don't check out is always refused. With <span class="text-text">Signed plugins only</span>, unsigned plugins can't be installed, updated, rolled back to or activated; plugins already active keep running.{% if trust_policy == 'signed_only' and unsigned_count %} {{ unsigned_count }} installed plugin{{ unsigned_count|pluralize }} {{ unsigned_count|pluralize:"is,are" }} unsigned.{% endif %}</p>
+    <div class="flex flex-wrap items-center gap-3">
+        <select name="policy" aria-label="Trust policy" class="bg-ink border border-line rounded-lg px-3 py-2 text-sm text-text focus:outline-none focus:ring-2 focus:ring-ok/40">
+            {% for value, label in trust_policies %}<option value="{{ value }}"{% if value == trust_policy %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+        <button type="submit" class="text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">Save</button>
+    </div>
+</form>
 {# Delete confirmation modal (shared; populated per-row via data attributes) #}
 <div id="delete-modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-[60] p-4">
     <div class="bg-panel border border-line rounded-2xl p-6 max-w-md w-full">

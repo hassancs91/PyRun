@@ -80,6 +80,10 @@ class PluginService:
                 PluginService._safe_extract(zf, tmp_root)
                 src = Path(tmp_root) / slug
                 manifest = PluginService._read_manifest(src, slug)
+                # Signature (2.5 T43): before anything else reads the files.
+                from core.services import plugin_trust
+
+                trust = plugin_trust.check(src, slug, manifest)
                 too_old = PluginService.min_version_problem(manifest, slug)
                 if too_old:
                     raise PluginInstallError(too_old)
@@ -99,7 +103,7 @@ class PluginService:
             finally:
                 shutil.rmtree(tmp_root, ignore_errors=True)
 
-            plugin = Plugin.objects.create(
+            plugin = Plugin(
                 slug=slug,
                 name=manifest.get("name") or slug,
                 version=str(manifest.get("version") or "0.0.0"),
@@ -108,7 +112,9 @@ class PluginService:
                 manifest=manifest,
                 checksum=PluginService._checksum_dir(Path(settings.PLUGINS_DIR) / slug),
             )
-            logger.info("Plugin %r installed (status=INSTALLED)", slug)
+            plugin_trust.apply(plugin, trust)
+            plugin.save(force_insert=True)
+            logger.info("Plugin %r installed (status=INSTALLED, trust=%s)", slug, plugin.trust)
             return plugin
 
     @staticmethod
@@ -367,14 +373,17 @@ class PluginService:
         # already-active plugin stays active across upgrade regardless of new rules).
         from core.services.plugin_doctor import run_doctor
 
-        too_old = PluginService.min_version_problem(plugin.manifest, plugin.slug)
-        if too_old:
-            plugin.error_message = too_old
+        from core.services.plugin_trust import policy_problem
+
+        refused = (PluginService.min_version_problem(plugin.manifest, plugin.slug)
+                   or policy_problem(plugin.slug, plugin.trust))
+        if refused:
+            plugin.error_message = refused
             if plugin.status == Plugin.Status.ACTIVE:
                 plugin.status = Plugin.Status.ERRORED
             plugin.save(update_fields=["status", "error_message", "updated_at"])
-            logger.warning("Plugin %r refused: %s", plugin.slug, too_old)
-            return False, too_old
+            logger.warning("Plugin %r refused: %s", plugin.slug, refused)
+            return False, refused
 
         report = run_doctor(Path(settings.PLUGINS_DIR) / plugin.slug)
         if not report.ok:

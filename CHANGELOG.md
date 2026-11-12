@@ -607,6 +607,20 @@ begins tracking at the current release; earlier history is in the git log.
   the Docker entrypoint runs; run it yourself after a manual restart).
   Dev-mode plugins are not updated by upload. Brand Tracker 1.1.3 ships a
   `lifecycle.py`. docs/plugins.md has the details.
+- **Signed plugins and the Verified badge.** A plugin zip can carry a
+  `MANIFEST.sha256` (every file and its hash) and a `plugin.sig` (an Ed25519
+  signature over the manifest, slug, publisher, version and key id). On install
+  and update PyRun checks every file against the manifest and the signature
+  against the keys it trusts: a valid one marks the plugin **Verified**, and one
+  signed with PyRun's key shows **Verified · PyRun** in the plugin list and on
+  its page; no signature means **Unsigned**, still allowed by default; a
+  signature or hash that doesn't check out is refused. Once a plugin is
+  installed signed, its updates must be signed by the same publisher. The new
+  **Trust policy** on the Plugins page can switch to *Signed plugins only*. The
+  doctor checks the files of a signed folder too, and `plugins.list` reports
+  each plugin's `trust`. Maintainers build signed zips with
+  `manage.py plugin_sign <folder> --key <path> --key-id <id>`. docs/plugins.md
+  has the details.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

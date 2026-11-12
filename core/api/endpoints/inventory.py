@@ -331,8 +331,8 @@ def list_channels(ctx, params):
     title="List plugins",
     description=(
         "Plugins installed on this instance: name, version, status (active, installed, "
-        "disabled or errored), source, summary and author. A token must have been "
-        "created by a superuser."
+        "disabled or errored), source, summary, author and trust (verified, with the "
+        "signing publisher, or unsigned). A token must have been created by a superuser."
     ),
     input=EMPTY,
     permission="plugins:read",
@@ -351,6 +351,8 @@ def list_plugins(ctx, params):
                 "source": p.source,
                 "summary": p.summary,
                 "author": p.author,
+                "trust": p.trust,
+                "signed_by": p.signed_by or None,
                 "installed_at": iso(p.installed_at),
                 "activated_at": iso(p.activated_at),
             }

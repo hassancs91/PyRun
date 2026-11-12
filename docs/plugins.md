@@ -1319,6 +1319,7 @@ and run automatically at activation). Tier-1 is a **static lint** — file check
 | `requires_connections` malformed: not a list of objects, unknown provider, bad `key`, `scopes` that aren't scope names (or on a provider without OAuth), a too-long `label`, a duplicate key, more than 20 entries | fail |
 | `triggers.py` adapters: doesn't parse, a `TriggerAdapter` subclass without a literal valid `key` (or a duplicate, or `<slug>:<key>` over 80 characters), without a literal `title`, without its own `check`/`test`, a literal `config_schema` that isn't flat, unknown `providers` | fail |
 | `lifecycle.py` doesn't parse, or `reprovision` / `on_update` is async or can't be called with no argument / one argument | fail |
+| `MANIFEST.sha256` / `plugin.sig` present but a file changed, is missing or unlisted, or the signature doesn't check out (see [Signed plugins](#signed-plugins-and-the-verified-badge-pyrun-25)) | fail |
 | `triggers.py` defines no `TriggerAdapter` subclass | warn |
 | `lifecycle.py` defines neither `reprovision` nor `on_update` | warn |
 | On an update (or `plugin_doctor --update-from <version>`): the version is not higher, or there is no `CHANGELOG.md` | warn |
@@ -1368,7 +1369,9 @@ pre-release such as `1.2.0-rc.1` sorts before `1.2.0`). PyRun updates it in plac
 2. A version that is the same or lower is refused ("Upload a higher version").
 3. The **doctor** runs on the unpacked copy, with the update rules (version
    increase, `CHANGELOG.md`). A `fail` refuses the update.
-4. `min_pyrunner` and the SDK `api` must fit this PyRun.
+4. `min_pyrunner` and the SDK `api` must fit this PyRun, and the zip must pass
+   its [signature check](#signed-plugins-and-the-verified-badge-pyrun-25): a
+   plugin installed signed only updates with a zip signed by the same publisher.
 5. The live folder moves to `plugins/.previous/<slug>-<old version>/` and the new
    one takes its place. For an **active** plugin the new code must pass the
    isolated preflight; if it doesn't, the old folder goes straight back.
@@ -1420,7 +1423,66 @@ restores the row and asks for a restart. After that restart `reprovision()` runs
 (the old version's, if it has one), so provisioned code matches the files again;
 `on_update` doesn't run for a rollback. The removed version's files are deleted;
 upload it again to go forward. Only the latest previous version is kept, until
-the next successful update; deleting the plugin deletes it too.
+the next successful update; deleting the plugin deletes it too. Under the
+**Signed plugins only** policy you can't roll back to an unsigned version.
+
+## Signed plugins and the Verified badge (PyRun 2.5)
+
+A plugin zip can carry two more files in its top folder, next to `plugin.json`:
+
+- `MANIFEST.sha256`: every file of the plugin with its SHA-256, one
+  `<sha256>  <path>` line per file, sorted by path (the `sha256sum` format, so
+  `sha256sum -c MANIFEST.sha256` checks it too).
+- `plugin.sig`: JSON with `format` (1), `slug`, `publisher`, `version`, `key_id`
+  and `signature`, an Ed25519 signature over the manifest plus the slug,
+  publisher, version and key id.
+
+On install and update PyRun checks them on the unpacked copy, before anything
+reads the plugin:
+
+| The zip has | Result |
+| --- | --- |
+| Neither file | Installs as **Unsigned** (allowed by default). |
+| `MANIFEST.sha256` only | Every file must match it, and no file may be missing or unlisted; installs as Unsigned. |
+| Both, and they check out | Installs as **Verified**. Signed with PyRun's key, the plugin shows **Verified · PyRun** in the plugin list and on its page. |
+| A signature that doesn't check out | **Refused**: a file changed, missing or unlisted, a bad signature, a key id this PyRun doesn't trust or that was revoked, or a signature for another slug, version or publisher (`plugin.json`'s `publisher`, when set, must be the signing one). |
+
+PyRun trusts only its own keys, listed by key id in
+`core/plugins/trust/keys.py` (a new key id is how a key is rotated). Signatures
+from other publishers are refused for now; the format already carries the
+publisher and key id they will need.
+
+**Key pinning.** Once a slug is installed signed, every update must be signed by
+the same publisher (a new key id of that publisher is fine). An unsigned zip, or
+one signed by someone else, is refused and recorded under **Updates**. A
+rollback puts back a folder that was already installed here, so it isn't pinned.
+Deleting the plugin forgets the pin.
+
+**Trust policy.** Plugins → **Trust policy**: *Allow unsigned plugins* (the
+default) or *Signed plugins only*, which refuses installing, updating, rolling
+back to or activating an unsigned plugin. Plugins already active keep running.
+`plugins.list` (API, MCP, Py AI) reports each plugin's `trust` and `signed_by`.
+
+**The doctor** checks the files too: when a folder has `MANIFEST.sha256` or
+`plugin.sig`, a changed or missing file or a bad signature is a `fail`
+(`__pycache__` is skipped). So a signed plugin whose files were edited on the
+server can't be activated again until it is re-installed.
+
+**Signing (maintainers).** The private key stays offline, outside the repo and
+the image; `plugin_sign` refuses a key path inside the project.
+
+```bash
+# once: a new key pair, and the entry to add to core/plugins/trust/keys.py
+python manage.py plugin_sign --generate-key ~/keys/pyrun-2026.pem --key-id pyrun-2026
+
+# every release: dist/<slug>-<version>.zip with MANIFEST.sha256 and plugin.sig
+python manage.py plugin_doctor --path examples/brand_tracker
+python manage.py plugin_sign examples/brand_tracker --key ~/keys/pyrun-2026.pem --key-id pyrun-2026
+```
+
+The plugin folder isn't changed. `__pycache__`, `.pyc` files and hidden files or
+folders (names starting with `.`) are left out of the zip. `--publisher` names the
+publisher (default `pyrun`), `--out` the folder for the zip (default `dist/`).
 
 ---
 

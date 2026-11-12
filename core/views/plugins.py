@@ -20,7 +20,7 @@ from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from core.forms import PluginUploadForm
-from core.models import Plugin
+from core.models import GlobalSettings, Plugin
 from core.services import PluginInstallError, PluginService, plugin_updates
 from core.services.plugin_connections import states_for
 from core.views.decorators import superuser_required
@@ -56,8 +56,36 @@ def plugin_list_view(request: HttpRequest) -> HttpResponse:
         # Plugins that failed the guarded boot loader in settings (rare; the
         # preflight-on-boot normally quarantines first). Surfaced for visibility.
         "load_errors": getattr(settings, "PLUGIN_LOAD_ERRORS", {}),
+        # Signing (2.5 T43): the trust policy form.
+        "trust_policy": GlobalSettings.get_settings().plugin_trust_policy,
+        "trust_policies": GlobalSettings.PluginTrustPolicy.choices,
+        "unsigned_count": sum(1 for p in plugins if p.trust != Plugin.Trust.VERIFIED),
     }
     return render(request, "cpanel/plugins/list.html", context)
+
+
+@login_required
+@superuser_required
+@require_POST
+def plugin_trust_policy_view(request: HttpRequest) -> HttpResponse:
+    """Set the plugin trust policy: allow unsigned plugins, or signed only (plan D10)."""
+    policy = request.POST.get("policy", "")
+    if policy not in GlobalSettings.PluginTrustPolicy.values:
+        messages.error(request, "Unknown trust policy.")
+        return redirect("cpanel:plugin_list")
+    global_settings = GlobalSettings.get_settings()
+    global_settings.plugin_trust_policy = policy
+    global_settings.save(update_fields=["plugin_trust_policy", "updated_at"])
+    logger.warning("plugins.trust_policy %s by user=%s", policy, request.user.pk)
+    if policy == GlobalSettings.PluginTrustPolicy.SIGNED_ONLY:
+        messages.success(
+            request,
+            "Only signed plugins can now be installed, updated or activated. "
+            "Plugins already active keep running.",
+        )
+    else:
+        messages.success(request, "Unsigned plugins can be installed again.")
+    return redirect("cpanel:plugin_list")
 
 
 @login_required

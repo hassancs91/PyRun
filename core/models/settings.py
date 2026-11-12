@@ -51,6 +51,19 @@ class GlobalSettings(models.Model):
         help_text="Allow API and MCP tokens to call write endpoints and be granted write permissions.",
     )
 
+    # Plan D10 (2.5 T43): unsigned plugins install by default; signed_only
+    # refuses installing, updating, rolling back to or activating one.
+    class PluginTrustPolicy(models.TextChoices):
+        ALLOW_UNSIGNED = "allow_unsigned", "Allow unsigned plugins"
+        SIGNED_ONLY = "signed_only", "Signed plugins only"
+
+    plugin_trust_policy = models.CharField(
+        max_length=20,
+        choices=PluginTrustPolicy.choices,
+        default=PluginTrustPolicy.ALLOW_UNSIGNED,
+        help_text="Whether plugins without a valid signature may be installed and activated.",
+    )
+
     # Email notification settings
     email_backend = models.CharField(
         max_length=20,
