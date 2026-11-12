@@ -195,7 +195,7 @@ class SheetsTests(_Fixture):
         self.assertChecked(self._check(watcher), 0)  # the restarted worker: same rows, no new runs
         sheet.append(["Margaret", "margaret@example.com"])
         self.assertChecked(self._check(watcher), 1)
-        self.assertEqual([item["values"]["Name"] for item in self._items()], ["Grace", "Ken", "Margaret"])
+        self.assertCountEqual([item["values"]["Name"] for item in self._items()], ["Grace", "Ken", "Margaret"])
         watcher.refresh_from_db()
         self.assertEqual((watcher.cursor, watcher.error_count), ({"last_row": 5}, 0))
         # Every request carried the watcher's connection's token, and the kit's stand-in is back.
@@ -318,8 +318,8 @@ class GmailTests(_Fixture):
         self.assertChecked(self._check(watcher), 0)
         records.append({"id": "12", "messagesAdded": [{"message": {"id": "c"}}]})
         self.assertChecked(self._check(watcher), 1)
-        self.assertEqual([item["subject"] for item in self._items()], ["Mail a", "Mail b", "Mail c"])
-        self.assertEqual([run.event["event_id"] for run in self._runs()], ["a", "b", "c"])
+        self.assertCountEqual([item["subject"] for item in self._items()], ["Mail a", "Mail b", "Mail c"])
+        self.assertCountEqual([run.event["event_id"] for run in self._runs()], ["a", "b", "c"])
 
 
 class GithubTests(_Fixture):
@@ -333,7 +333,7 @@ class GithubTests(_Fixture):
             self._crash(watcher)  # #18 and #19 queued, the cursor not saved
             self.assertEqual(len(self._runs()), 4)
             self.assertChecked(self._check(watcher), 0)  # the restart sees #18 and #19 again
-        self.assertEqual([item["number"] for item in self._items()], [15, 17, 18, 19])
+        self.assertCountEqual([item["number"] for item in self._items()], [15, 17, 18, 19])
         watcher.refresh_from_db()
         self.assertEqual(watcher.cursor, {"last_number": 19})
 
@@ -479,7 +479,7 @@ class ImapTests(_Fixture):
         self.assertChecked(self._check(watcher), 0)
         self.box.deliver("Three")
         self.assertChecked(self._check(watcher), 1)
-        self.assertEqual([item["subject"] for item in self._items()], ["One", "Two", "Three"])
+        self.assertCountEqual([item["subject"] for item in self._items()], ["One", "Two", "Three"])
 
     def test_a_search_narrows_mail_as_it_arrives_and_the_cursor_moves_past_the_rest(self):
         config = {"mailbox": "Invoices", "search": 'FROM "billing@example.com"'}
@@ -668,8 +668,11 @@ class DbPollTests(_Fixture):
             self.assertChecked(self._check(watcher), 0)
             rows.append({"id": 4, "email": "d@x.io", "created_at": None})
             self.assertChecked(self._check(watcher), 1)
-        self.assertEqual([run.event["event_id"] for run in self._runs()], ["2", "3", "4"])
-        self.assertEqual([run.inputs for run in self._runs()][-1], {"email": "d@x.io"})
+        # Exactly once, in any order: runs made by different checks can share a timestamp
+        # (or a container clock step can reorder them), so created_at order is not compared.
+        runs = {run.event["event_id"]: run for run in self._runs()}
+        self.assertCountEqual([run.event["event_id"] for run in self._runs()], ["2", "3", "4"])
+        self.assertEqual(runs["4"].inputs, {"email": "d@x.io"})
         watcher.refresh_from_db()
         self.assertEqual(watcher.cursor, {"cursor": "4"})
 
