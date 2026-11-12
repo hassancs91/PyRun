@@ -817,16 +817,6 @@ class ExplorerExecuteTests(TestCase):
         with mock.patch.object(self.svc, "_scoped_connect", return_value=conn):
             self.assertIsNone(self.svc.table_or_none(self.db, "no_such"))
 
-    def test_rows_quotes_identifier_and_pages(self):
-        plan = [("SELECT * FROM", ["id"], [(i,) for i in range(51)])]
-        conn = _FakeScopedConn(plan)
-        with mock.patch.object(self.svc, "_scoped_connect", return_value=conn):
-            result = self.svc.rows(self.db, "items", page=2, per_page=50)
-        text = conn.cur.executed[-1][0]
-        self.assertIn("items", text)
-        self.assertIn("OFFSET", text)
-        self.assertEqual(len(result.rows), 50)
-        self.assertTrue(result.truncated)  # doubles as has-next-page
 
 
 @override_settings(PYRUNNER_DATA_DB_URL=_SERVER_URL, ENCRYPTION_KEY=_TEST_KEY)
@@ -956,7 +946,7 @@ class ExplorerViewTests(TestCase):
                 self.svc,
                 "columns",
                 return_value=[
-                    {"name": "id", "type": "integer", "nullable": False, "default": ""}
+                    {"name": "id", "type": "integer", "nullable": False, "default": "", "primary": True}
                 ],
             ),
             mock.patch.object(self.svc, "indexes", return_value=[]),
@@ -1002,7 +992,7 @@ class ExplorerViewTests(TestCase):
         self.assertIn("pg_stat_statements is not installed", resp.content.decode())
 
     def test_table_page_renders_grid(self):
-        from core.services.database_explorer import QueryResult
+        from core.services.database_explorer import GridPage
 
         p_tables, p_columns, p_indexes = self._patch_view_data()
         with (
@@ -1011,8 +1001,8 @@ class ExplorerViewTests(TestCase):
             p_indexes,
             mock.patch.object(
                 self.svc,
-                "rows",
-                return_value=QueryResult(["id"], [(1,), (2,)], False),
+                "grid_page",
+                return_value=GridPage(rows=[(1,), (2,)], total=2),
             ),
         ):
             resp = self.client.get(self._url("database_table", self.db.pk, "items"))
@@ -1029,12 +1019,13 @@ class ExplorerViewTests(TestCase):
     def test_csv_export_streams_rows(self):
         from core.services.database_explorer import QueryResult
 
-        p_tables, _, _ = self._patch_view_data()
+        p_tables, p_columns, _ = self._patch_view_data()
         with (
             p_tables,
+            p_columns,
             mock.patch.object(
                 self.svc,
-                "csv_rows",
+                "grid_csv",
                 return_value=QueryResult(["id", "v"], [(1, "a"), (2, "b")], False),
             ),
         ):
@@ -1042,7 +1033,7 @@ class ExplorerViewTests(TestCase):
                 self._url("database_table_csv", self.db.pk, "items")
             )
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp["Content-Type"], "text/csv")
+        self.assertEqual(resp["Content-Type"], "text/csv; charset=utf-8")
         content = resp.content.decode()
         self.assertIn("id,v", content)
         self.assertIn("2,b", content)

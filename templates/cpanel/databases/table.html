@@ -11,7 +11,7 @@
 {% block heading_class %}font-mono{% endblock %}
 {% block subtitle %}{% if not table.row_exact %}~{% endif %}{{ table.row_estimate }} row{{ table.row_estimate|pluralize }} · {{ table.size_display }} · read-only view{% endblock %}
 {% block actions %}
-<a href="{% url 'cpanel:database_table_csv' pk=database.pk table=table.name %}" class="inline-flex items-center gap-2 text-[13px] px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">
+<a href="{% url 'cpanel:database_table_csv' pk=database.pk table=table.name %}{% if grid.querystring %}?{{ grid.querystring }}{% endif %}" title="The rows the grid shows (its filters and sort), up to {{ csv_cap }}" class="inline-flex items-center gap-2 text-[13px] px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">
     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
     Export CSV
 </a>
@@ -60,42 +60,18 @@
     </div>
 </section>
 
-{# Data grid #}
-<section class="rounded-2xl border border-line bg-panel overflow-hidden">
-    <div class="px-5 pt-4 pb-1 flex items-center justify-between">
-        <h2 class="text-sm font-medium text-text">Data <span class="text-xs text-faint font-normal">({% if row_end %}rows {{ row_start }}–{{ row_end }}, {% endif %}page {{ page }})</span></h2>
-        <div class="flex items-center gap-2">
-            {% if has_prev %}
-            <a href="?page={{ page|add:"-1" }}" class="text-[13px] px-3 py-1 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">← Prev</a>
-            {% endif %}
-            {% if has_next %}
-            <a href="?page={{ page|add:"1" }}" class="text-[13px] px-3 py-1 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Next →</a>
-            {% endif %}
-        </div>
+{# Data: the shared grid, read-only #}
+<div class="space-y-3">
+    <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <h2 class="text-sm font-medium text-text">Data</h2>
+        <p class="text-xs text-faint">Read-only: the console reads through this database's own role in a read-only session, so rows can't be edited here. Change them from a script (<code class="font-mono">pyrunner_db</code>) or an SQL client. Export CSV saves the rows below (filters and sort included), up to {{ csv_cap }}.</p>
     </div>
-    {% if grid.rows %}
-    <div class="overflow-x-auto">
-    <table class="w-full">
-        <thead>
-            <tr class="border-b border-line-soft text-left">
-                {% for col in grid.columns %}
-                <th class="px-4 py-2.5 eyebrow text-faint font-normal whitespace-nowrap">{{ col }}</th>
-                {% endfor %}
-            </tr>
-        </thead>
-        <tbody class="divide-y divide-line-soft">
-            {% for row in grid.rows %}
-            <tr class="hover:bg-panel-hi/50 transition-colors">
-                {% for cell in row %}
-                <td class="px-4 py-2 font-mono text-xs text-muted max-w-[320px] truncate" title="{{ cell }}">{{ cell|default_if_none:"∅" }}</td>
-                {% endfor %}
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    </div>
-    {% else %}
-    <p class="px-5 pb-4 text-sm text-muted">{% if page > 1 %}No rows on this page.{% else %}The table is empty.{% endif %}</p>
+    {% if grid_error %}
+    <div class="rounded-lg border border-fail/30 bg-fail/5 p-3 text-sm text-fail break-words">Could not read the rows: {{ grid_error }}</div>
     {% endif %}
-</section>
+    {% if count_capped %}
+    <div class="rounded-lg border border-warn/30 bg-warn/5 p-3 text-sm text-muted">More than {{ count_cap }} rows match, so the pages stop at {{ count_cap }}. Add a filter to narrow them down, or count and page them in SQL from a script.</div>
+    {% endif %}
+    {% include "cpanel/_grid.html" with grid=grid empty_text="The table is empty." %}
+</div>
 {% endblock %}

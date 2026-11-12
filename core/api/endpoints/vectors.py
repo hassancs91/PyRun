@@ -66,13 +66,27 @@ def resolve_collection(ctx, name):
     return collection
 
 
+def within_budget(collection, operation, deadline=None):
+    """``operation(handle)`` with at most CALL_SECONDS (or until ``deadline``) for provider and store calls.
+
+    Raises ``VectorError``. The console's search box runs ``search_points``
+    through this too, so it searches exactly as ``vectors.search`` does.
+    """
+    now = time.monotonic()
+    deadline = min(deadline or now + CALL_SECONDS, now + CALL_SECONDS)
+    with BudgetSession(deadline) as session:
+        return operation(VectorService.handle(collection, session=session))
+
+
+def search_points(query, k=5, flt=None):
+    """``vectors.search``'s operation: embed ``query`` with the collection's provider, then the k nearest points."""
+    return lambda handle: handle.search(query, k=k, filter=flt)
+
+
 def run(ctx, collection, operation):
     """``operation(handle)`` within the call's budget; a ``VectorError`` → ``ApiError``."""
-    now = time.monotonic()
-    deadline = min(ctx.deadline or now + CALL_SECONDS, now + CALL_SECONDS)
     try:
-        with BudgetSession(deadline) as session:
-            return operation(VectorService.handle(collection, session=session))
+        return within_budget(collection, operation, ctx.deadline)
     except VectorError as exc:
         ctx.check_budget()
         status = STATUS_FOR_CODE.get(exc.code, 500)
@@ -136,9 +150,7 @@ def list_collections(ctx, params):
 def search(ctx, params):
     collection = resolve_collection(ctx, params["collection"])
     results = run(
-        ctx,
-        collection,
-        lambda h: h.search(params["query"], k=params.get("k", 5), filter=params.get("filter")),
+        ctx, collection, search_points(params["query"], k=params.get("k", 5), flt=params.get("filter"))
     )
     return {"collection": collection.name, "results": results, "count": len(results)}
 

@@ -364,7 +364,7 @@ curl -H "Authorization: Bearer $PYRUN_TOKEN" -H "Content-Type: application/json"
 - `databases.tables` returns `tables`, each with `name`, `row_estimate`,
   `row_exact` (false: the planner's estimate) and `size_bytes`. With `table`, it
   returns that one table with its `columns` (`name`, `type`, `nullable`,
-  `default`).
+  `default`, and `primary`: whether the column is part of the primary key).
 - `databases.query` runs `sql` as the database's own role, so tables are named
   without a schema and nothing outside the database is reachable. It accepts one
   statement that starts with `SELECT`, `WITH`, `VALUES` or `TABLE` (a trailing

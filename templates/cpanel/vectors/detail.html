@@ -92,7 +92,7 @@
         <section class="rounded-2xl border border-line bg-panel p-5 space-y-4">
             <div>
                 <h2 class="text-sm font-medium text-text">Points</h2>
-                {% if sample %}<p class="text-xs text-muted mt-1">{% if collection.is_local %}The first {{ sample|length }} point{{ sample|length|pluralize }} by id.{% else %}{{ sample|length }} point{{ sample|length|pluralize }} from the server, sorted by id.{% endif %}</p>{% endif %}
+                {% if sample %}<p class="text-xs text-muted mt-1">{% if collection.is_local %}{% if browse_page == 1 %}The first {{ sample|length }} point{{ sample|length|pluralize }} by id.{% else %}Points {{ browse_first }}–{{ browse_last }} by id.{% endif %}{% else %}{% if browse_page > 1 %}Page {{ browse_page }}: {% endif %}{{ sample|length }} point{{ sample|length|pluralize }} from the server, sorted by id.{% endif %}</p>{% endif %}
             </div>
             {% if sample_error %}
             <div class="rounded-lg border border-warn/30 bg-warn/5 p-3 text-sm text-muted">Could not read points: {{ sample_error }}</div>
@@ -111,12 +111,21 @@
                         <tr class="hover:bg-panel-hi/50 transition-colors align-top">
                             <td class="px-4 py-2.5 font-mono text-xs text-info whitespace-nowrap">{{ item.id }}</td>
                             <td class="px-4 py-2.5 text-sm text-muted max-w-md">{{ item.text|default:"—"|truncatechars:160 }}</td>
-                            <td class="px-4 py-2.5 font-mono text-[11px] text-faint max-w-xs break-all">{{ item.payload_json|truncatechars:160 }}</td>
+                            <td class="px-4 py-2.5 font-mono text-[11px] text-faint max-w-xs break-all">{% if item.payload_full %}<details><summary class="cursor-pointer">{{ item.payload_json|truncatechars:160 }}</summary><pre class="mt-1 whitespace-pre-wrap break-all text-muted">{{ item.payload_full }}</pre></details>{% else %}{{ item.payload_json }}{% endif %}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
+            {% if browse_page > 1 or browse_next_qs %}
+            <nav class="flex items-center justify-between gap-3 text-[13px]" aria-label="Points pages">
+                {% if browse_page > 1 %}<a href="{% url 'cpanel:vector_detail' pk=collection.pk %}" class="px-3 py-1 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">← First page</a>{% else %}<span></span>{% endif %}
+                <span class="text-xs text-faint">Page {{ browse_page }}{% if collection.points_count %} · {{ collection.points_count }} point{{ collection.points_count|pluralize }} in all{% endif %}</span>
+                {% if browse_next_qs %}<a href="{% url 'cpanel:vector_detail' pk=collection.pk %}?{{ browse_next_qs }}" class="px-3 py-1 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Next page →</a>{% else %}<span></span>{% endif %}
+            </nav>
+            {% endif %}
+            {% elif browse_page > 1 %}
+            <p class="text-sm text-muted">No more points. <a href="{% url 'cpanel:vector_detail' pk=collection.pk %}" class="text-info hover:underline">Back to the first page</a></p>
             {% else %}
             <p class="text-sm text-muted">No points yet — scripts and plugins add them with <code class="font-mono text-info">add_texts()</code> / <code class="font-mono text-info">add_vectors()</code>.</p>
             {% endif %}

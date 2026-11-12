@@ -934,6 +934,29 @@ rows, with their ids. Big tables make big backups: **Settings → Backup** takes
 a file of up to 100 MB, and `python manage.py restore_backup <file>` on the
 server restores a larger one.
 
+## Databases and vectors in the console
+
+A managed **database**'s table page (Databases → a database → a table) shows the
+table's columns and indexes, then its rows in the same grid as Tables: filter by
+any column, sort by a column (the primary key by default; `json`, array and
+custom-type columns can't be sorted), and page through 50 rows at a time. Text
+filters ignore case, and `%` or `_` in a value match themselves. The grid is
+read-only: it reads through the database's own role in a read-only session, so
+change rows from a script (`pyrunner_db`) or an SQL client. Rows are counted up
+to 100 000 (past that the pages stop and the page says so); a text or JSON cell
+shows its first 300 characters; a read that runs over 15 seconds is stopped and
+the page shows why, keeping your filters so you can narrow them. **Export CSV**
+saves the rows the grid shows (its filters and sort, every page) up to 10 000,
+with full values: empty for NULL, `true`/`false`, arrays and objects as JSON.
+As with Tables, a cell starting with `=`, `+`, `-` or `@` isn't escaped, so open
+exports of untrusted data in a spreadsheet with care.
+
+A **vector collection**'s page lists its points with their text and payload, 20
+at a time (**Next page** and **First page**; a long payload opens in full). Its
+search box embeds the query with the collection's embedding provider and shows
+the k nearest points, exactly as the API's `vectors.search` does (the call is
+counted in the collection's usage).
+
 ---
 
 ## How it works

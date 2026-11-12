@@ -9,6 +9,7 @@ inspects, searches and deletes them.
 """
 
 import json
+from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -17,6 +18,7 @@ from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
+from core.api.endpoints.vectors import search_points, within_budget
 from core.forms import VectorCollectionForm
 from core.models import EmbeddingProvider, VectorCollection, WorkspaceMembership
 from core.services import VectorError, VectorService
@@ -24,6 +26,11 @@ from core.vectors.local_store import SOFT_LIMIT_POINTS
 from core.views.ownership import owned_block_message, owned_delete_blocked
 
 BROWSE_PAGE = 20
+# A point's payload: one line up to this many characters; a longer one opens in full (capped).
+PAYLOAD_PREVIEW_CHARS = 160
+PAYLOAD_FULL_CHARS = 4000
+# Point ids are at most 256 characters (the API's limit); a cursor is one.
+MAX_CURSOR_CHARS = 256
 
 
 def _require_manage(request: HttpRequest) -> None:
@@ -139,25 +146,50 @@ def vector_create_view(request: HttpRequest) -> HttpResponse:
     )
 
 
+def _payload_texts(item) -> None:
+    """``payload_json`` (one line) and, for a long payload, ``payload_full`` (indented, capped)."""
+    item["payload_json"] = json.dumps(item.get("payload") or {}, ensure_ascii=False)
+    if len(item["payload_json"]) > PAYLOAD_PREVIEW_CHARS:
+        full = json.dumps(item.get("payload") or {}, ensure_ascii=False, indent=2)
+        item["payload_full"] = full if len(full) <= PAYLOAD_FULL_CHARS else full[:PAYLOAD_FULL_CHARS] + "\n…"
+
+
+def _browse_position(request) -> tuple:
+    """(cursor, page number) from ``?after=<cursor>&n=<page>``; page 1 without a cursor."""
+    after = (request.GET.get("after") or "").strip()[:MAX_CURSOR_CHARS]
+    try:
+        number = max(1, int(request.GET.get("n") or 1))
+    except ValueError:
+        number = 1
+    return (after, number) if after else ("", 1)
+
+
 def _detail_context(request, collection, **extra) -> dict:
     size = VectorService.size_bytes(collection)
-    sample, sample_error = [], ""
+    after, page_number = _browse_position(request)
+    sample, sample_error, next_cursor = [], "", None
     if collection.is_ready:
         try:
             handle = VectorService.handle(collection)
-            sample, _ = handle.scroll(limit=BROWSE_PAGE)
+            sample, next_cursor = handle.scroll(cursor=after or None, limit=BROWSE_PAGE)
         except VectorError as e:
             sample_error = str(e)
     # Qdrant pages in its internal (UUID) order; show the page sorted by the user's id.
     sample = sorted(sample, key=lambda item: str(item.get("id", "")))
     for item in sample:
-        item["payload_json"] = json.dumps(item["payload"], ensure_ascii=False)
+        _payload_texts(item)
+    first = (page_number - 1) * BROWSE_PAGE + 1
+    next_qs = urlencode({"after": next_cursor, "n": page_number + 1}) if next_cursor else ""
     context = {
         "collection": collection,
         "size_bytes": size,
         "size_display": _size_display(collection),
         "sample": sample,
         "sample_error": sample_error,
+        "browse_page": page_number,
+        "browse_first": first,
+        "browse_last": first + len(sample) - 1,
+        "browse_next_qs": next_qs,
         "soft_limit": SOFT_LIMIT_POINTS,
         "over_soft_limit": collection.is_local and collection.points_count > SOFT_LIMIT_POINTS,
         "query": "",
@@ -202,9 +234,10 @@ def vector_search_view(request: HttpRequest, pk) -> HttpResponse:
             error = "Type a query to search."
         else:
             try:
-                results = VectorService.handle(collection).search(query, k=k, filter=flt)
+                # The same path as the vectors.search endpoint (embed, then top k, within its budget).
+                results = within_budget(collection, search_points(query, k=k, flt=flt))
                 for item in results:
-                    item["payload_json"] = json.dumps(item["payload"], ensure_ascii=False)
+                    _payload_texts(item)
             except VectorError as e:
                 error = str(e)
     collection.refresh_from_db()

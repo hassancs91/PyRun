@@ -8,7 +8,11 @@ Two connection paths, by design, plus the API's query path:
   inside a ``READ ONLY`` transaction — the viewer physically cannot write, and
   cannot see outside its schema, because Postgres enforces both. ``execute()``
   is the seam the deferred Stage-5 SQL console will reuse with
-  ``read_only=False``; the explorer itself only ever passes ``True``.
+  ``read_only=False``; the explorer itself only ever passes ``True``. The
+  table page's rows (2.5, T41) come from ``grid_page`` / ``grid_csv``: the
+  shared console grid's filters compiled to parameterised SQL
+  (``grid_condition``), a count capped at GRID_COUNT_CAP, then one page, in
+  one read-only session (``_read_session``) with the viewer timeout.
 
 - **Monitor (activity / sizes / slow queries)** connects as the PROVISIONER
   (``pg_stat_*`` needs cross-role visibility) but every query filters on the
@@ -31,8 +35,12 @@ with ``ok=False``/availability flags so the pages render with a banner, never a
 500.
 """
 
+import datetime
+import decimal
 import logging
+import math
 import re
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 from core.services.database_service import DatabaseService
@@ -50,11 +58,16 @@ _VIEWER_PAGE_RE = re.compile(
 )
 
 
+# Every statement of the table grid carries this comment, so the slow-query list
+# can leave the console's own browsing out (its WHERE/ORDER BY vary per filter).
+GRID_MARKER = "/* pyrun:grid */"
+
+
 def is_viewer_statement(query: str) -> bool:
     """Whether a pg_stat_statements entry is PyRun's own explorer traffic (U44):
     transaction/session statements, catalog reads and the table browser's pages."""
     q = " ".join((query or "").split()).lower()
-    if q.startswith(_VIEWER_PREFIXES):
+    if q.startswith(_VIEWER_PREFIXES) or GRID_MARKER in q:
         return True
     if any(marker in q for marker in _VIEWER_MARKERS):
         return True
@@ -65,6 +78,13 @@ GRID_PAGE_ROWS = 50
 # Tables up to this size with no planner estimate get an exact count(*) (U40).
 EXACT_COUNT_MAX_BYTES = 8 * 1024 * 1024
 CSV_ROW_CAP = 10000
+# The table grid counts matching rows up to this many; pages stop there.
+GRID_COUNT_CAP = 100_000
+# A text/JSON/other cell in the grid carries at most this many characters.
+GRID_CELL_CHARS = 300
+# A number filter's exponent bound: past it a float column overflows (a page error).
+_MAX_EXPONENT = 300
+_MAX_IN = 100
 LONG_RUNNING_SECONDS = 30
 
 
@@ -205,6 +225,159 @@ def read_only_statement(text) -> str:
     if denied:
         raise QueryRefused(f"{denied.group(1).lower()}() can't be called from a read-only query.")
     return text[: len(code)]
+
+
+def json_value(value):
+    """One column value as JSON.
+
+    Numbers, text, booleans and null stay as they are; ``numeric`` is text (no
+    precision lost), dates and times are ISO text, ``bytea`` is ``\\x`` + hex as
+    psql shows it, and anything else (uuid, interval, inet, ranges) its text.
+    """
+    if value is None or isinstance(value, (bool, int, str)):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else str(value)
+    if isinstance(value, decimal.Decimal):
+        return str(value)
+    if isinstance(value, (datetime.datetime, datetime.date, datetime.time)):
+        return value.isoformat()
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return "\\x" + bytes(value).hex()
+    if isinstance(value, (list, tuple)):
+        return [json_value(v) for v in value]
+    if isinstance(value, dict):
+        return {str(k): json_value(v) for k, v in value.items()}
+    return str(value)
+
+
+# ---------------------------------------------------------------- table grid
+#
+# The console's table view reads a page of rows with the grid's filters and
+# sort (core/grid.py). A column's Postgres type picks its grid kind, which picks
+# the filter operators (core.tables.query.OPS_BY_TYPE) and how it is compared:
+# numbers, dates, times and booleans as themselves; everything else as its text.
+
+_NUMBER_TYPES = {"smallint", "integer", "bigint", "numeric", "real", "double precision"}
+_DATETIME_TYPES = {"timestamp without time zone", "timestamp with time zone"}
+# Text-compared types that also have an ordering (so the column can be sorted).
+_SORTABLE_TEXT_TYPES = {
+    "text", "character varying", "character", "name", "uuid", "jsonb", "bytea", "money",
+    "inet", "cidr", "macaddr", "interval", "time without time zone", "time with time zone",
+}
+_TRUE = {"true", "yes", "1", "t", "y"}
+_FALSE = {"false", "no", "0", "f", "n"}
+
+
+def grid_kind(data_type: str) -> str:
+    """The grid kind (core.grid column type) for an ``information_schema`` data type."""
+    if data_type in _NUMBER_TYPES:
+        return "number"
+    if data_type == "boolean":
+        return "boolean"
+    if data_type == "date":
+        return "date"
+    if data_type in _DATETIME_TYPES:
+        return "datetime"
+    if data_type in ("json", "jsonb"):
+        return "json"
+    return "text"
+
+
+def grid_sortable(data_type: str) -> bool:
+    """Whether ORDER BY works on the type (``json``, arrays, geometry and custom types have no safe ordering)."""
+    return grid_kind(data_type) in ("number", "boolean", "date", "datetime") or data_type in _SORTABLE_TEXT_TYPES
+
+
+def _previewed(column: dict) -> bool:
+    """Whether the grid reads only the first GRID_CELL_CHARS of the column, as text."""
+    return grid_kind(column["type"]) in ("text", "json")
+
+
+def _like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _typed(column: dict, value: str):
+    """A filter value as the column's Python type; ValueError names the column and the value."""
+    name, data_type = column["name"], column["type"]
+    kind = grid_kind(data_type)
+    text = value.strip()
+    if kind == "number":
+        try:
+            number = decimal.Decimal(text)
+        except decimal.InvalidOperation:
+            number = None
+        if number is None or not number.is_finite() or abs(number.adjusted()) > _MAX_EXPONENT:
+            raise ValueError(f'"{name}" compares with a number; got "{value}".')
+        return number
+    if kind == "boolean":
+        if text.lower() in _TRUE | _FALSE:
+            return text.lower() in _TRUE
+        raise ValueError(f'"{name}" compares with true or false; got "{value}".')
+    if kind == "date":
+        try:
+            return datetime.date.fromisoformat(text)
+        except ValueError:
+            raise ValueError(f'"{name}" compares with a date (YYYY-MM-DD); got "{value}".') from None
+    if kind == "datetime":
+        from core.tables.columns import parse_datetime
+
+        moment = parse_datetime(text)
+        if moment is None:
+            raise ValueError(f'"{name}" compares with a date and time; got "{value}".')
+        # A zone-less column holds wall times; compare with the UTC wall time.
+        return moment if data_type == "timestamp with time zone" else moment.replace(tzinfo=None)
+    return value
+
+
+def grid_condition(column: dict, op: str, value: str = ""):
+    """One grid filter as ``(sql.Composable, params)`` on ``column`` (a ``columns()`` entry).
+
+    ``op`` is one of the column kind's grid operators (the grid checked it).
+    Text-compared columns compare their text (``"col"::text``), case-insensitive
+    for contains / starts with. "is not" also matches an empty cell, and a text
+    cell is empty when it is NULL or ''. Raises ValueError for a value that
+    doesn't fit the column.
+    """
+    from psycopg import sql
+
+    col = sql.Identifier(column["name"])
+    kind = grid_kind(column["type"])
+    as_text = kind in ("text", "json")
+    target = sql.SQL("{}::text").format(col) if as_text else col
+    if op in ("empty", "not_empty"):
+        if kind == "text":
+            clause = "({0} IS NULL OR {0}::text = '')" if op == "empty" else "({0} IS NOT NULL AND {0}::text <> '')"
+        else:
+            clause = "{0} IS NULL" if op == "empty" else "{0} IS NOT NULL"
+        return sql.SQL(clause).format(col), []
+    if op in ("contains", "prefix"):
+        pattern = _like(value)
+        pattern = f"%{pattern}%" if op == "contains" else f"{pattern}%"
+        return sql.SQL("{} ILIKE %s").format(target), [pattern]
+    if op == "in":
+        values = [v.strip() for v in value.split(",") if v.strip()]
+        if not values:
+            raise ValueError(f'"{column["name"]}" is one of needs values separated by commas.')
+        if len(values) > _MAX_IN:
+            raise ValueError(f'"{column["name"]}" is one of takes at most {_MAX_IN} values.')
+        return sql.SQL("{} = ANY(%s)").format(target), [[_typed(column, v) for v in values]]
+    typed = value if as_text else _typed(column, value)
+    operator = {"eq": "=", "ne": "IS DISTINCT FROM", "gt": ">", "gte": ">=", "lt": "<", "lte": "<="}[op]
+    return sql.SQL("{} " + operator + " %s").format(target), [typed]
+
+
+@dataclass
+class GridPage:
+    """One page of the table grid: ``rows`` (tuples in ``columns`` order), the
+    matching row count up to GRID_COUNT_CAP (``capped`` when more match), and
+    the page number actually read (a past-the-end page moves to the last)."""
+
+    rows: list = field(default_factory=list)
+    total: int = 0
+    capped: bool = False
+    page: int = 1
 
 
 class DatabaseExplorerService:
@@ -382,13 +555,21 @@ class DatabaseExplorerService:
 
     @classmethod
     def columns(cls, database, table_name: str) -> list:
+        """The table's columns in order: name, type, nullable, default, and
+        ``primary`` (part of the primary key)."""
         result = cls.execute(
             database,
             """
-            SELECT column_name, data_type, is_nullable, column_default
-            FROM information_schema.columns
-            WHERE table_schema = %s AND table_name = %s
-            ORDER BY ordinal_position
+            SELECT c.column_name, c.data_type, c.is_nullable, c.column_default,
+                   EXISTS (
+                       SELECT 1 FROM pg_index i
+                       JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+                       WHERE i.indisprimary AND a.attname = c.column_name
+                         AND i.indrelid = format('%%I.%%I', c.table_schema, c.table_name)::regclass
+                   )
+            FROM information_schema.columns c
+            WHERE c.table_schema = %s AND c.table_name = %s
+            ORDER BY c.ordinal_position
             """,
             (database.schema_name, table_name),
             row_cap=None,
@@ -399,8 +580,9 @@ class DatabaseExplorerService:
                 "type": dtype,
                 "nullable": nullable == "YES",
                 "default": default or "",
+                "primary": bool(primary and primary[0]),
             }
-            for name, dtype, nullable, default in result.rows
+            for name, dtype, nullable, default, *primary in result.rows
         ]
 
     @classmethod
@@ -415,41 +597,119 @@ class DatabaseExplorerService:
         return [{"name": n, "definition": d} for n, d in result.rows]
 
     @classmethod
-    def rows(
-        cls, database, table_name: str, *, page: int = 1, per_page: int = GRID_PAGE_ROWS
-    ) -> QueryResult:
-        """One page of a table's rows (unordered — a viewer, not a report).
+    @contextmanager
+    def _read_session(cls, database, timeout_ms=None):
+        """A cursor as the database's OWN role in a READ ONLY session with ``statement_timeout``.
 
-        The caller must have validated ``table_name`` via ``table_or_none``;
-        the identifier is quoted regardless, and the scoped role's search_path
-        pins resolution to the database's own schema.
+        Raises ``QueryTimeout`` when a statement runs past the timeout and
+        ``DatabaseExplorerError`` for any other server-side failure.
+        """
+        from psycopg.errors import QueryCanceled
+
+        timeout_ms = timeout_ms or VIEWER_TIMEOUT_MS
+        try:
+            with cls._scoped_connect(database) as conn:
+                conn.read_only = True
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT set_config('statement_timeout', %s, false)",
+                        (str(int(timeout_ms)),),
+                    )
+                    yield cur
+        except DatabaseExplorerError:
+            raise
+        except QueryCanceled as e:
+            raise QueryTimeout(
+                f"Reading the table took longer than {int(timeout_ms) / 1000:g} seconds and was "
+                "stopped. Filter on an indexed column, or sort by one."
+            ) from e
+        except Exception as e:
+            raise DatabaseExplorerError(str(e).strip()) from e
+
+    @staticmethod
+    def _grid_sql(table_name, columns, conditions, sort, *, preview):
+        """(select list, the table + WHERE, `` ORDER BY …`` or empty, the WHERE's params) for the grid."""
+        from psycopg import sql
+
+        select = sql.SQL(", ").join(
+            sql.SQL("left({}::text, {})").format(sql.Identifier(c["name"]), sql.Literal(GRID_CELL_CHARS + 1))
+            if preview and _previewed(c) else sql.Identifier(c["name"])
+            for c in columns
+        )
+        source = sql.Identifier(table_name)
+        params = []
+        if conditions:
+            source = sql.SQL("{} WHERE {}").format(
+                source, sql.SQL(" AND ").join(clause for clause, _ in conditions)
+            )
+            for _, values in conditions:
+                params.extend(values)
+        order = sql.SQL("")
+        by_name = {c["name"]: c for c in columns}
+        key = (sort or "").lstrip("-")
+        if key in by_name and grid_sortable(by_name[key]["type"]):
+            direction = sql.SQL("DESC" if sort.startswith("-") else "ASC")
+            # Qualified, so the name never reads one of the select list's outputs.
+            keys = [sql.SQL("{} {}").format(sql.Identifier(table_name, key), direction)]
+            # The primary key breaks ties, so a page boundary stays put.
+            primary = [c["name"] for c in columns if c.get("primary")]
+            if len(primary) == 1 and primary[0] != key:
+                keys.append(sql.Identifier(table_name, primary[0]))
+            order = sql.SQL(" ORDER BY {}").format(sql.SQL(", ").join(keys))
+        return select, source, order, params
+
+    @classmethod
+    def grid_page(
+        cls, database, table_name, columns, *, conditions=(), sort="", page=1, per_page=GRID_PAGE_ROWS
+    ) -> GridPage:
+        """One page of ``table_name`` for the console grid, in one read-only session.
+
+        ``columns`` are ``columns()`` entries (every column, in order);
+        ``conditions`` are ``grid_condition`` results (AND); ``sort`` is a
+        column name, ``-`` first for descending (ignored when the column can't
+        be sorted; no sort reads the table's stored order). Rows are counted up
+        to GRID_COUNT_CAP first, then one page is read; text and JSON cells
+        carry their first GRID_CELL_CHARS + 1 characters (more means cut).
+        The caller validated ``table_name`` via ``table_or_none``.
         """
         from psycopg import sql
 
-        page = max(1, int(page))
         per_page = max(1, min(int(per_page), GRID_PAGE_ROWS))
-        # LIMIT one past the page so ``truncated`` doubles as "has next page".
-        return cls.execute(
-            database,
-            sql.SQL("SELECT * FROM {} LIMIT {} OFFSET {}").format(
-                sql.Identifier(table_name),
-                sql.Literal(per_page + 1),
-                sql.Literal((page - 1) * per_page),
-            ),
-            row_cap=per_page,
-        )
+        select, source, order, params = cls._grid_sql(table_name, columns, conditions, sort, preview=True)
+        with cls._read_session(database) as cur:
+            cur.execute(
+                sql.SQL(GRID_MARKER + " SELECT count(*) FROM (SELECT 1 FROM {} LIMIT %s) AS matching").format(source),
+                [*params, GRID_COUNT_CAP + 1],
+            )
+            total = cur.fetchone()[0]
+            capped = total > GRID_COUNT_CAP
+            total = min(total, GRID_COUNT_CAP)
+            last = max(1, -(-total // per_page))
+            page = min(max(1, int(page)), last)
+            cur.execute(
+                sql.SQL(GRID_MARKER + " SELECT {} FROM {}{} LIMIT %s OFFSET %s").format(select, source, order),
+                [*params, per_page, (page - 1) * per_page],
+            )
+            rows = list(cur.fetchall())
+        return GridPage(rows=rows, total=total, capped=capped, page=page)
 
     @classmethod
-    def csv_rows(cls, database, table_name: str) -> QueryResult:
-        """Up to CSV_ROW_CAP rows for export (truncated flag tells the user)."""
+    def grid_csv(cls, database, table_name, columns, *, conditions=(), sort="") -> QueryResult:
+        """The grid's matching rows (its filters and sort, full values), up to CSV_ROW_CAP.
+
+        ``truncated`` says more rows matched. Same session rules as ``grid_page``.
+        """
         from psycopg import sql
 
-        return cls.execute(
-            database,
-            sql.SQL("SELECT * FROM {} LIMIT {}").format(
-                sql.Identifier(table_name), sql.Literal(CSV_ROW_CAP + 1)
-            ),
-            row_cap=CSV_ROW_CAP,
+        select, source, order, params = cls._grid_sql(table_name, columns, conditions, sort, preview=False)
+        with cls._read_session(database) as cur:
+            cur.execute(
+                sql.SQL(GRID_MARKER + " SELECT {} FROM {}{} LIMIT %s").format(select, source, order),
+                [*params, CSV_ROW_CAP + 1],
+            )
+            rows = list(cur.fetchall())
+        return QueryResult(
+            [c["name"] for c in columns], rows[:CSV_ROW_CAP], len(rows) > CSV_ROW_CAP
         )
 
     # ------------------------------------------------------------------

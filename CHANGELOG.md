@@ -576,6 +576,20 @@ begins tracking at the current release; earlier history is in the git log.
   and unchanged (all or nothing; keys the file doesn't name are kept). Format
   re-indents JSON without rounding long numbers, in Tables' JSON cells too.
   docs/run-context.md has the details.
+- **Database tables and vector points in the console.** A managed database's
+  table page now shows its rows in the same grid as Tables: filter by any
+  column (text, numbers, dates, times, yes/no; LIKE wildcards in a value are
+  plain text), sort by a column (the primary key by default), and page through
+  50 at a time. It stays read-only, as before: the console reads through the
+  database's own role in a read-only session, so there is no inline editing
+  (the page says so). Rows are counted up to 100 000, long text and JSON cells
+  show their first 300 characters, and a read that takes over 15 seconds is
+  stopped with a message in place of the rows. **Export CSV** now saves the
+  rows the grid shows (its filters and sort), up to 10 000. A vector
+  collection's page pages through all its points (20 at a time, with
+  **Next page**), shows a long payload in full on request, and its search box
+  runs the same search as the API's `vectors.search`. docs/run-context.md has
+  the details.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

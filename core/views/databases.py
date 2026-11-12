@@ -9,15 +9,19 @@ the detail page, then connect from code via the ``pyrunner_db`` helper.
 """
 
 import csv
+import json
+import re
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from core.forms import DatabaseForm
+from core.grid import Grid, GridColumn
 from core.models import Database, DatabaseGrant, Script, WorkspaceMembership
 from core.services import (
     DatabaseExplorerError,
@@ -26,7 +30,15 @@ from core.services import (
     DatabaseService,
 )
 from core.views.ownership import owned_block_message, owned_delete_blocked
-from core.services.database_explorer import GRID_PAGE_ROWS
+from core.services.database_explorer import (
+    CSV_ROW_CAP,
+    GRID_CELL_CHARS,
+    GRID_COUNT_CAP,
+    grid_condition,
+    grid_kind,
+    grid_sortable,
+    json_value,
+)
 
 
 def _require_manage(request: HttpRequest) -> None:
@@ -330,22 +342,72 @@ def _resolve_table(request: HttpRequest, pk, table: str):
     return database, info
 
 
+def _table_grid(request: HttpRequest, columns: list) -> tuple:
+    """(the read-only Grid for ``columns``, its filters compiled to SQL conditions).
+
+    A filter whose value doesn't fit its column is dropped and named in
+    ``grid.problems``. Sorted by the primary key when the table has a
+    one-column one, else in the table's stored order.
+    """
+    grid_columns = [
+        GridColumn(c["name"], c["name"], grid_kind(c["type"]), sortable=grid_sortable(c["type"]))
+        for c in columns
+    ]
+    primary = [c["name"] for c in columns if c["primary"]]
+    default_sort = primary[0] if len(primary) == 1 and grid_sortable(
+        next(c["type"] for c in columns if c["name"] == primary[0])
+    ) else ""
+    grid = Grid.from_request(request, grid_columns, default_sort=default_sort)
+    by_name = {c["name"]: c for c in columns}
+    conditions, kept = [], []
+    for item in grid.filters:
+        try:
+            conditions.append(grid_condition(by_name[item.column], item.op, item.value))
+        except ValueError as exc:
+            grid.problems.append(str(exc))
+        else:
+            kept.append(item)
+    grid.filters = kept
+    return grid, conditions
+
+
+def _grid_row(grid: Grid, row) -> object:
+    """One result row as a GridRow; a cut text cell ends with "…"."""
+    values = {c.key: json_value(v) for c, v in zip(grid.columns, row)}
+    grid_row = grid.make_row(None, values)
+    for cell in grid_row.cells:
+        if cell.column.type in ("text", "json") and isinstance(cell.value, str):
+            text = cell.value
+            cell.display = text[:GRID_CELL_CHARS] + "…" if len(text) > GRID_CELL_CHARS else text
+    return grid_row
+
+
 @login_required
 def database_table_view(request: HttpRequest, pk, table: str) -> HttpResponse:
-    """Read-only table browser: structure + one page of rows."""
+    """Read-only table browser: structure + the shared grid (filter, sort, pages)."""
     _require_manage(request)
     try:
         database, info = _resolve_table(request, pk, table)
-        try:
-            page = max(1, int(request.GET.get("page", 1)))
-        except (TypeError, ValueError):
-            page = 1
         columns = DatabaseExplorerService.columns(database, table)
         indexes = DatabaseExplorerService.indexes(database, table)
-        grid = DatabaseExplorerService.rows(database, table, page=page)
     except DatabaseExplorerError as e:
         messages.error(request, f"Could not read the table: {e}")
         return redirect("cpanel:database_detail", pk=pk)
+
+    grid, conditions = _table_grid(request, columns)
+    grid_error, capped = "", False
+    try:
+        result = DatabaseExplorerService.grid_page(
+            database, table, columns, conditions=conditions, sort=grid.sort,
+            page=grid.page_number, per_page=grid.page_size,
+        )
+    except DatabaseExplorerError as e:
+        grid_error = str(e)
+        grid.set_rows([], 0)
+    else:
+        grid.page_number = result.page
+        grid.set_rows([_grid_row(grid, row) for row in result.rows], result.total)
+        capped = result.capped
 
     return render(
         request,
@@ -356,34 +418,53 @@ def database_table_view(request: HttpRequest, pk, table: str) -> HttpResponse:
             "columns": columns,
             "indexes": indexes,
             "grid": grid,
-            "page": page,
-            "row_start": (page - 1) * GRID_PAGE_ROWS + 1,
-            "row_end": (page - 1) * GRID_PAGE_ROWS + len(grid.rows),
-            "has_prev": page > 1,
-            "has_next": grid.truncated,
+            "grid_error": grid_error,
+            "count_capped": capped,
+            "count_cap": GRID_COUNT_CAP,
+            "csv_cap": CSV_ROW_CAP,
         },
     )
 
 
+def _csv_text(value) -> str:
+    """One cell for the CSV file: empty for NULL, JSON for arrays/objects, true/false."""
+    value = json_value(value)
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (list, dict)):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
+
+
 @login_required
 def database_table_csv_view(request: HttpRequest, pk, table: str) -> HttpResponse:
-    """CSV export of a table (read-only, capped — the cap is stated in the UI)."""
+    """CSV export of the grid's rows (its filters and sort), capped at CSV_ROW_CAP (stated in the UI)."""
     _require_manage(request)
     try:
         database, _info = _resolve_table(request, pk, table)
-        result = DatabaseExplorerService.csv_rows(database, table)
+        columns = DatabaseExplorerService.columns(database, table)
     except DatabaseExplorerError as e:
         messages.error(request, f"Could not export the table: {e}")
         return redirect("cpanel:database_detail", pk=pk)
+    grid, conditions = _table_grid(request, columns)
+    try:
+        result = DatabaseExplorerService.grid_csv(
+            database, table, columns, conditions=conditions, sort=grid.sort
+        )
+    except DatabaseExplorerError as e:
+        messages.error(request, f"Could not export the table: {e}")
+        url = reverse("cpanel:database_table", kwargs={"pk": pk, "table": table})
+        return redirect(f"{url}?{grid.querystring}" if grid.querystring else url)
 
-    response = HttpResponse(content_type="text/csv")
-    response["Content-Disposition"] = (
-        f'attachment; filename="{database.name}_{table}.csv"'
-    )
+    filename = re.sub(r"[^A-Za-z0-9._-]+", "_", f"{database.name}_{table}") or "table"
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="{filename}.csv"'
     writer = csv.writer(response)
     writer.writerow(result.columns)
     for row in result.rows:
-        writer.writerow(row)
+        writer.writerow([_csv_text(v) for v in row])
     return response
 
 
