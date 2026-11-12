@@ -620,6 +620,18 @@ class ConsoleTests(_Console):
         resp = self.client.get(reverse("cpanel:table_list"))
         self.assertContains(resp, f'href="{reverse("cpanel:table_list")}"')
 
+    def test_grid_scroller_contains_the_sr_only_actions_label(self):
+        # 2.5 test pass (X.02): the editable grid's last header holds an
+        # absolutely positioned sr-only "Actions" label. Without a positioned
+        # scroller it escaped the overflow box and the whole page scrolled
+        # sideways at phone width (Tables grid, DataStore explorer).
+        resp = self.detail()
+        html = resp.content.decode()
+        self.assertIn('<span class="sr-only">Actions</span>', html)
+        scroller = html[:html.index('<table class="w-full min-w-max text-sm">')].rsplit("<div ", 1)[1]
+        self.assertIn("relative", scroller.split(">", 1)[0])
+        self.assertIn("overflow-x-auto", scroller.split(">", 1)[0])
+
 
 class GridTests(SimpleTestCase):
     def grid(self, query, **kwargs):

@@ -45,7 +45,8 @@ Read-only when ``grid.editable`` is false: no editors, no add/delete.
         {% for problem in grid.problems %}<p class="text-xs text-warn">{{ problem }}</p>{% endfor %}
     </div>
 
-    <div class="overflow-x-auto">
+    {# relative: keeps the header's absolute sr-only "Actions" label inside this scroller (no page-wide sideways scroll on a phone) #}
+    <div class="relative overflow-x-auto">
     <table class="w-full min-w-max text-sm">
         <thead>
             <tr class="border-b border-line-soft text-left">
