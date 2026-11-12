@@ -3,11 +3,15 @@ WhatsApp provider — the WhatsApp Business Cloud API (Meta), called directly.
 
 Outbound: free-form text inside WhatsApp's 24-hour customer-service window,
 and an approved template outside it (the channel's default template, with the
-message text as its ``{{1}}``) or whenever a script asks for one. Inbound: the
-webhook's GET verification challenge (``hub.verify_token``), the POST
-signature (``X-Hub-Signature-256``, HMAC-SHA256 of the body with the app
-secret), text, button and list replies, locations, contacts, reactions, and
-media as metadata only. Delivery callbacks (sent, delivered, read, failed)
+message text as its ``{{1}}``) or whenever a script asks for one; inside the
+window also a file by URL (image, document, audio, video) and interactive
+reply buttons or a list. Inbound: the webhook's GET verification challenge
+(``hub.verify_token``), the POST signature (``X-Hub-Signature-256``,
+HMAC-SHA256 of the body with the app secret), text, button and list replies,
+locations, contacts, reactions, and media as metadata (``download_media``
+fetches an attachment, used only when the channel's "Download media" setting
+is on; see ``core.services.channels.media``). Delivery callbacks (sent,
+delivered, read, failed)
 update the delivery ledger by the message id (``wamid``). DM-only: group
 messages are ignored.
 
@@ -26,6 +30,7 @@ from datetime import timedelta
 import requests
 
 from core.net_errors import describe_request_error
+from core.netguard import is_safe_endpoint_url
 
 from .base import (
     ChannelError,
@@ -41,6 +46,7 @@ logger = logging.getLogger(__name__)
 GRAPH_VERSION = "v23.0"
 GRAPH_URL = f"https://graph.facebook.com/{GRAPH_VERSION}"
 _TIMEOUT = 15  # seconds
+_DOWNLOAD_TIMEOUT = (10, 30)  # connect, read (seconds between bytes)
 
 # The customer-service window: free-form messages only within 24 hours of the
 # person's last message. PyRun keeps a margin so a send right at the edge (or
@@ -61,6 +67,30 @@ OUT_OF_WINDOW_MESSAGE = (
     "WhatsApp only accepts an approved template. Set a default template on the "
     "channel, or send a template."
 )
+OUT_OF_WINDOW_RICH_MESSAGE = (
+    "Not sent: files and buttons can only go to a number that messaged the channel "
+    "in the last 24 hours. Outside that window, send an approved template."
+)
+
+# Outbound files by URL: WhatsApp fetches the link itself.
+MEDIA_KINDS = ("image", "document", "audio", "video")
+URL_LIMIT = 2048
+CAPTION_LIMIT = 1024
+FILENAME_LIMIT = 240
+# Interactive messages (developers.facebook.com/docs/whatsapp/cloud-api/messages/interactive-messages).
+BODY_LIMIT = 1024
+HEADER_LIMIT = 60
+FOOTER_LIMIT = 60
+MAX_BUTTONS = 3
+BUTTON_TITLE_LIMIT = 20
+BUTTON_ID_LIMIT = 256
+MAX_LIST_ROWS = 10
+MAX_SECTIONS = 10
+LIST_BUTTON_LIMIT = 20
+SECTION_TITLE_LIMIT = 24
+ROW_ID_LIMIT = 200
+ROW_TITLE_LIMIT = 24
+ROW_DESCRIPTION_LIMIT = 72
 
 # Graph API error codes (developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes).
 # 0 and 190 (and HTTP 401) are a bad token; 10 and 200-299 a missing permission.
@@ -139,6 +169,160 @@ def template_param(text: str) -> str:
     return flat
 
 
+def _text(value, what: str, limit: int, *, required: bool = False) -> str:
+    """A string field of a media or interactive message, checked."""
+    if value is None:
+        value = ""
+    if not isinstance(value, str):
+        raise ValueError(f"The {what} must be a string.")
+    value = value.strip()
+    if required and not value:
+        raise ValueError(f"The {what} is required.")
+    if len(value) > limit:
+        raise ValueError(f"The {what} is longer than {limit} characters.")
+    return value
+
+
+def _keys(value: dict, what: str, allowed: set) -> None:
+    unknown = set(value) - allowed
+    if unknown:
+        raise ValueError(f"Unknown {what} keys: {', '.join(sorted(unknown))}.")
+
+
+def clean_media(value) -> dict:
+    """A file to send by URL, checked: ``{"kind", "url", "caption", "filename"}``.
+
+    ``kind`` is image, document, audio or video; WhatsApp downloads ``url``
+    itself (http or https). ``caption`` doesn't apply to audio, ``filename``
+    only to a document. Raises ValueError with a sentence for the caller.
+    """
+    if not isinstance(value, dict):
+        raise ValueError("'media' must be an object with kind and url.")
+    _keys(value, "media", {"kind", "url", "caption", "filename"})
+    kind = value.get("kind")
+    if kind not in MEDIA_KINDS:
+        raise ValueError(f"The media kind must be one of: {', '.join(MEDIA_KINDS)}.")
+    url = _text(value.get("url"), "media url", URL_LIMIT, required=True)
+    scheme, _, rest = url.partition("://")
+    if scheme.lower() not in ("http", "https") or not rest.split("/", 1)[0] or any(c.isspace() for c in url):
+        raise ValueError("The media url must be an http or https link WhatsApp can download.")
+    cleaned = {"kind": kind, "url": url}
+    caption = _text(value.get("caption"), "caption", CAPTION_LIMIT)
+    if caption:
+        if kind == "audio":
+            raise ValueError("Audio can't have a caption.")
+        cleaned["caption"] = caption
+    filename = _text(value.get("filename"), "filename", FILENAME_LIMIT)
+    if filename:
+        if kind != "document":
+            raise ValueError("Only a document has a filename.")
+        cleaned["filename"] = filename
+    return cleaned
+
+
+def _choices(items, what: str, *, id_limit: int, title_limit: int, description_limit: int = 0) -> list:
+    if not isinstance(items, list) or not all(isinstance(i, dict) for i in items):
+        raise ValueError(f"The {what}s must be a list of objects with id and title.")
+    cleaned = []
+    for item in items:
+        _keys(item, what, {"id", "title", "description"} if description_limit else {"id", "title"})
+        choice = {
+            "id": _text(item.get("id"), f"{what} id", id_limit, required=True),
+            "title": _text(item.get("title"), f"{what} title", title_limit, required=True),
+        }
+        if description_limit:
+            description = _text(item.get("description"), f"{what} description", description_limit)
+            if description:
+                choice["description"] = description
+        cleaned.append(choice)
+    return cleaned
+
+
+def clean_interactive(value) -> dict:
+    """Reply buttons or a list, checked.
+
+    ``{"type": "buttons", "body", "buttons": [{"id", "title"}], "header", "footer"}``
+    (1-3 buttons) or ``{"type": "list", "body", "button", "sections": [{"title",
+    "rows": [{"id", "title", "description"}]}], "header", "footer"}`` (up to 10
+    rows in all). The person's tap comes back as an inbound ``interactive``
+    message whose ``details.reply.id`` is the chosen id. Raises ValueError with
+    a sentence for the caller.
+    """
+    if not isinstance(value, dict):
+        raise ValueError("'interactive' must be an object with type, body and buttons or sections.")
+    kind = value.get("type")
+    if kind not in ("buttons", "list"):
+        raise ValueError("The interactive type must be 'buttons' or 'list'.")
+    common = {"type", "body", "header", "footer"}
+    _keys(value, "interactive", common | ({"buttons"} if kind == "buttons" else {"button", "sections"}))
+    cleaned = {"type": kind, "body": _text(value.get("body"), "body", BODY_LIMIT, required=True)}
+    for name, limit in (("header", HEADER_LIMIT), ("footer", FOOTER_LIMIT)):
+        text = _text(value.get(name), name, limit)
+        if text:
+            cleaned[name] = text
+    if kind == "buttons":
+        buttons = _choices(value.get("buttons"), "button", id_limit=BUTTON_ID_LIMIT, title_limit=BUTTON_TITLE_LIMIT)
+        if not 1 <= len(buttons) <= MAX_BUTTONS:
+            raise ValueError(f"Send 1 to {MAX_BUTTONS} buttons.")
+        for field_name in ("id", "title"):
+            if len({b[field_name] for b in buttons}) != len(buttons):
+                raise ValueError(f"Every button needs its own {field_name}.")
+        cleaned["buttons"] = buttons
+        return cleaned
+    cleaned["button"] = _text(value.get("button"), "list button", LIST_BUTTON_LIMIT, required=True)
+    sections = value.get("sections")
+    if not isinstance(sections, list) or not all(isinstance(sec, dict) for sec in sections):
+        raise ValueError("The list sections must be a list of objects with title and rows.")
+    if not 1 <= len(sections) <= MAX_SECTIONS:
+        raise ValueError(f"Send 1 to {MAX_SECTIONS} sections.")
+    cleaned["sections"] = []
+    for section in sections:
+        _keys(section, "section", {"title", "rows"})
+        title = _text(section.get("title"), "section title", SECTION_TITLE_LIMIT, required=len(sections) > 1)
+        rows = _choices(section.get("rows"), "row", id_limit=ROW_ID_LIMIT, title_limit=ROW_TITLE_LIMIT,
+                        description_limit=ROW_DESCRIPTION_LIMIT)
+        if not rows:
+            raise ValueError("Every section needs at least one row.")
+        cleaned["sections"].append({**({"title": title} if title else {}), "rows": rows})
+    ids = [row["id"] for sec in cleaned["sections"] for row in sec["rows"]]
+    if len(ids) > MAX_LIST_ROWS:
+        raise ValueError(f"A list has at most {MAX_LIST_ROWS} rows in all.")
+    if len(set(ids)) != len(ids):
+        raise ValueError("Every row needs its own id.")
+    return cleaned
+
+
+def rich_text(content: dict) -> str:
+    """The readable version of a cleaned media or interactive message (for the log)."""
+    media = _dict(content.get("media"))
+    if media:
+        return media.get("caption") or f"{media['kind'].capitalize()}: {media.get('filename') or media['url']}"
+    return _dict(content.get("interactive")).get("body", "")
+
+
+def _media_body(media: dict) -> dict:
+    part = {"link": media["url"]}
+    for key in ("caption", "filename"):
+        if media.get(key):
+            part[key] = media[key]
+    return {"type": media["kind"], media["kind"]: part}
+
+
+def _interactive_body(spec: dict) -> dict:
+    if spec["type"] == "buttons":
+        interactive = {"type": "button", "body": {"text": spec["body"]}, "action": {"buttons": [
+            {"type": "reply", "reply": {"id": b["id"], "title": b["title"]}} for b in spec["buttons"]
+        ]}}
+    else:
+        interactive = {"type": "list", "body": {"text": spec["body"]},
+                       "action": {"button": spec["button"], "sections": spec["sections"]}}
+    if spec.get("header"):
+        interactive["header"] = {"type": "text", "text": spec["header"]}
+    if spec.get("footer"):
+        interactive["footer"] = {"text": spec["footer"]}
+    return {"type": "interactive", "interactive": interactive}
+
+
 def _cut(text: str, limit: int) -> str:
     text = text or ""
     return text if len(text) <= limit else text[: limit - 1] + "…"
@@ -171,6 +355,8 @@ class WhatsAppProvider(ChannelProvider):
     provider_key = "whatsapp"
     supports_inbound = True
     supports_templates = True
+    supports_rich_content = True
+    supports_media_download = True
     registers_webhook = False
 
     credential_fields = (
@@ -374,12 +560,24 @@ class WhatsAppProvider(ChannelProvider):
             raise ChannelError(f"{target!s} isn't a WhatsApp number (country code and number, digits only).")
 
         auto = None
-        template = (msg.content or {}).get("template")
+        content = msg.content or {}
+        template = content.get("template")
         if template:
             try:
                 body = _template_body(clean_template(template))
             except ValueError as e:
                 raise ChannelError(str(e))
+        elif content.get("media") or content.get("interactive"):
+            # Files and buttons are free-form messages: inside the window only.
+            try:
+                if content.get("media"):
+                    body = _media_body(clean_media(content["media"]))
+                else:
+                    body = _interactive_body(clean_interactive(content["interactive"]))
+            except ValueError as e:
+                raise ChannelError(str(e))
+            if not self.window_open(channel, to):
+                raise ChannelError(OUT_OF_WINDOW_RICH_MESSAGE)
         elif self.window_open(channel, to):
             body = {"type": "text", "text": {"preview_url": False, "body": _cut(msg.text, TEXT_LIMIT)}}
         else:
@@ -407,6 +605,60 @@ class WhatsAppProvider(ChannelProvider):
         if auto:
             result["auto_template"] = auto
         return result
+
+    def download_media(self, channel, item: dict, max_bytes: int) -> tuple[bytes, str]:
+        """Fetch an inbound attachment: its link from ``GET /{media-id}``, then
+        the file with the same token.
+
+        WhatsApp's link expires about five minutes after it is issued, so this
+        runs while the message is dispatched. A file over ``max_bytes`` is
+        refused before (when WhatsApp gives its size) or while downloading. The
+        link must pass the SSRF guard and a redirect isn't followed, so the
+        token goes only where WhatsApp said.
+        """
+        creds = self._creds(channel)
+        media_id = _str(item.get("id"))
+        if not _ID_RE.match(media_id):
+            raise ChannelError("The attachment has no WhatsApp media id.")
+        info = self._request(creds, "GET", media_id)
+        cap = f"{max_bytes / (1024 * 1024):g} MB"
+        size = _int(info.get("file_size"))
+        if size is not None and size > max_bytes:
+            raise ChannelError(f"Not downloaded: the file is {size / (1024 * 1024):.1f} MB, over the {cap} cap.")
+        url = _str(info.get("url"))
+        if not url.lower().startswith("https://"):
+            raise ChannelError("WhatsApp gave no download link for the attachment.")
+        safe, why = is_safe_endpoint_url(url)
+        if not safe:
+            raise ChannelError(f"Not downloaded: the download link was refused ({why}).")
+        token = creds["access_token"].strip()
+        try:
+            resp = requests.get(
+                url, headers={"Authorization": f"Bearer {token}"}, timeout=_DOWNLOAD_TIMEOUT,
+                stream=True, allow_redirects=False,
+            )
+        except requests.RequestException as e:
+            text = describe_request_error(e, "WhatsApp", _DOWNLOAD_TIMEOUT[1]).replace(token, "<access token>")
+            raise ChannelError(text, retryable=True)
+        data = bytearray()
+        try:
+            if resp.status_code != 200:
+                raise ChannelError(
+                    f"Not downloaded: WhatsApp answered HTTP {resp.status_code} for the file "
+                    "(its link expires about five minutes after the message arrives).",
+                    retryable=resp.status_code >= 500,
+                )
+            for chunk in resp.iter_content(chunk_size=64 * 1024):
+                data.extend(chunk)
+                if len(data) > max_bytes:
+                    raise ChannelError(f"Not downloaded: the file is over the {cap} cap.")
+        except requests.RequestException as e:
+            text = describe_request_error(e, "WhatsApp", _DOWNLOAD_TIMEOUT[1]).replace(token, "<access token>")
+            raise ChannelError(text, retryable=True)
+        finally:
+            resp.close()
+        mime = _str(info.get("mime_type")) or _str(item.get("mime")) or "application/octet-stream"
+        return bytes(data), mime
 
     # --- inbound -------------------------------------------------------------
 
@@ -593,7 +845,8 @@ class WhatsAppProvider(ChannelProvider):
             if not emoji:
                 return None, {}, []  # a reaction taken back: nothing to act on
             return emoji, {"reaction": {"emoji": emoji, "message_id": _str(part.get("message_id"))}}, []
-        # Media: metadata only (downloading is a separate, opt-in step).
+        # Media: metadata only here; ``core.services.channels.media`` downloads
+        # it when the channel's "Download media" setting is on.
         item = {"kind": kind, "id": _str(part.get("id")), "mime": _str(part.get("mime_type")),
                 "caption": _str(part.get("caption"))}
         if kind == "document":

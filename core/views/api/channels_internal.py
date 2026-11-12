@@ -17,6 +17,9 @@ POST /internal/channels/send
     "reply_ref": {...},     # chat target override (e.g. {"chat_id": ...})
     "template": {...}       # WhatsApp only: {"name", "language", "components"};
                             # "text" is then optional (the log shows it)
+    "media": {...}          # WhatsApp only: {"kind", "url", "caption", "filename"}
+    "interactive": {...}    # WhatsApp only: reply buttons or a list
+                            # (at most one of template / media / interactive)
   }
 
 A chat send goes through the delivery ledger (``core.services.channels.ledger``)
@@ -47,14 +50,40 @@ logger = logging.getLogger(__name__)
 # daily_send_cap covers every run and kind).
 _RUN_SEND_LIMIT = 30
 _RUN_SEND_WINDOW = 60  # seconds
-# A template's name, language and components as JSON.
-_TEMPLATE_MAX_BYTES = 16 * 1024
+# A template's, file's or interactive message's JSON.
+_CONTENT_MAX_BYTES = 16 * 1024
 
 
 def _bad_request(message: str) -> JsonResponse:
     return JsonResponse(
         {"error": {"code": "BAD_REQUEST", "message": message}}, status=400
     )
+
+
+def _structured_content(channel, target: str, key: str, value):
+    """``({key: cleaned}, None)`` or ``(None, error sentence)``.
+
+    A template needs a provider with ``supports_templates``; a file or an
+    interactive message one with ``supports_rich_content``.
+    """
+    from core.services.channels import get_provider
+    from core.services.channels.whatsapp import clean_interactive, clean_media, clean_template
+
+    provider = get_provider(channel.provider)
+    flag, what, clean = {
+        "template": ("supports_templates", "templates", clean_template),
+        "media": ("supports_rich_content", "files", clean_media),
+        "interactive": ("supports_rich_content", "interactive messages", clean_interactive),
+    }[key]
+    if not getattr(provider, flag, False):
+        return None, f"Channel '{target}' ({channel.get_provider_display()}) doesn't send {what}"
+    try:
+        cleaned = clean(value)
+    except ValueError as e:
+        return None, str(e)
+    if len(json.dumps(cleaned)) > _CONTENT_MAX_BYTES:
+        return None, f"'{key}' is too large"
+    return {key: cleaned}, None
 
 
 @csrf_exempt
@@ -81,12 +110,14 @@ def send(request: HttpRequest) -> JsonResponse:
 
     target = (data.get("target") or "").strip()
     text = data.get("text")
-    template = data.get("template")
+    structured = [key for key in ("template", "media", "interactive") if data.get(key) is not None]
     if not target:
         return _bad_request("Missing 'target'")
-    if template is not None and target == "email":
-        return _bad_request("'template' is for a WhatsApp channel, not email")
-    if template is None and (not isinstance(text, str) or not text):
+    if len(structured) > 1:
+        return _bad_request(f"Send one of {' / '.join(structured)}, not several")
+    if structured and target == "email":
+        return _bad_request(f"'{structured[0]}' is for a WhatsApp channel, not email")
+    if not structured and (not isinstance(text, str) or not text):
         return _bad_request("Missing 'text'")
     if text is not None and not isinstance(text, str):
         return _bad_request("'text' must be a string")
@@ -133,20 +164,15 @@ def send(request: HttpRequest) -> JsonResponse:
         return _bad_request("'reply_ref' must be an object")
 
     content = None
-    if template is not None:
-        from core.services.channels import get_provider
-        from core.services.channels.whatsapp import clean_template
+    if structured:
+        content, error = _structured_content(channel, target, structured[0], data[structured[0]])
+        if error:
+            return _bad_request(error)
+        if not text:
+            from core.services.channels.whatsapp import rich_text
 
-        if not getattr(get_provider(channel.provider), "supports_templates", False):
-            return _bad_request(f"Channel '{target}' ({channel.get_provider_display()}) doesn't send templates")
-        try:
-            template = clean_template(template)
-        except ValueError as e:
-            return _bad_request(str(e))
-        if len(json.dumps(template)) > _TEMPLATE_MAX_BYTES:
-            return _bad_request("'template' is too large")
-        content = {"template": template}
-        text = text or f"Template {template['name']}"
+            template = content.get("template")
+            text = f"Template {template['name']}" if template else rich_text(content)
 
     # A reply answers an inbound message (pyrunner_notify.reply() passes its
     # reply_ref) and counts toward the channel's daily reply cap.

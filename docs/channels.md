@@ -24,10 +24,11 @@ itself. Inbound needs a publicly reachable HTTPS instance.
 
 ## WhatsApp
 
-A WhatsApp channel is one WhatsApp Business phone number. It sends text and
-approved templates, receives messages (text, button and list replies,
-locations, contacts, reactions; photos, documents, voice notes and videos as
-metadata), and shows each message's delivery: sent, delivered, read or
+A WhatsApp channel is one WhatsApp Business phone number. It sends text,
+approved templates, files by URL, reply buttons and lists, receives messages
+(text, button and list replies, locations, contacts, reactions; photos,
+documents, voice notes and videos as metadata, or downloaded when you turn
+that on), and shows each message's delivery: sent, delivered, read or
 failed. One-to-one chats only: group messages are ignored.
 
 ### Set it up in Meta
@@ -119,8 +120,50 @@ message it handles as read (the blue ticks).
 | `image`, `document`, `audio`, `video`, `sticker` | the caption, if any | none; `media`: `[{kind, id, mime, caption, filename (documents), sha256}]` |
 
 A reply to an earlier message adds `details.context`: `{message_id, from}`.
-Media are metadata only: PyRun doesn't download the file. Other message types
-(system notices, orders, unsupported ones) are ignored.
+Other message types (system notices, orders, unsupported ones) are ignored.
+
+### Inbound media: downloading attachments
+
+By default an attachment arrives as metadata only: PyRun doesn't download the
+file and writes nothing to disk. Turn on **Download media** in the channel's
+**Inbound** settings to have PyRun fetch images, documents, audio, video and
+stickers for the script handler. WhatsApp's download link expires about five
+minutes after the message arrives, so PyRun downloads the file as soon as it
+handles the message, before the run starts. Each `media` item then also has
+`size` (bytes) and one of:
+
+- `path`: the file in the run's own folder inside the script's working folder
+  (`.pyrun-media-<run id>/`). The run can read it; the folder is deleted when
+  the run ends, so copy the file elsewhere if you need to keep it.
+- `url`: when an assets storage connection is set (Services → Object Storage)
+  and it has no public base URL, the file is stored there instead (under
+  `apps/pyrun-channels/`) and `url` is a link valid for 24 hours. Stored files
+  are deleted after 30 days. A public connection isn't used for customers'
+  files: they get a `path`.
+
+**Largest attachment (MB)** (16 by default, up to 100) caps each file: a
+bigger one isn't downloaded. A file that can't be fetched (too big, an expired
+link, a rejected token) keeps its metadata and gets an `error` sentence; the
+run starts anyway. A Py AI channel never downloads: Py AI reads text only, so
+it is told the kind, name and type of what was attached.
+
+```python
+import os
+import shutil
+import urllib.request
+
+import pyrunner_notify
+import pyrunner_run
+
+os.makedirs("receipts", exist_ok=True)
+for item in pyrunner_run.event().get("media", []):
+    if item.get("error"):
+        pyrunner_notify.reply(f"I couldn't read that file: {item['error']}")
+    elif "path" in item:
+        shutil.copy(item["path"], f"receipts/{item['id']}")
+    else:
+        urllib.request.urlretrieve(item["url"], f"receipts/{item['id']}")
+```
 
 ```python
 import pyrunner_notify
@@ -169,6 +212,92 @@ reference). `text` is optional with a template; the message log shows
 "Template order_update" without it. A template is kept with the message, so
 a retry sends the same one. Sending a template to a Telegram channel is
 refused (HTTP 400).
+
+### Sending files, buttons and lists
+
+Inside the 24-hour window a script can also send a file WhatsApp downloads
+from a URL, up to three reply buttons, or a list of up to ten choices. All
+three go through the delivery ledger like text (a retry sends the same
+message) and are refused outside the window: the send fails with a message
+saying so, as there's no template to fall back to. `send()` and `reply()`
+take one of `template`, `media` or `interactive`:
+
+```python
+pyrunner_notify.reply(media={
+    "kind": "document",                 # image, document, audio or video
+    "url": "https://files.example.com/invoices/1042.pdf",
+    "filename": "invoice-1042.pdf",     # documents only
+    "caption": "Your invoice",          # not for audio
+})
+pyrunner_notify.reply(interactive={
+    "type": "buttons",                  # 1 to 3 buttons, titles up to 20 characters
+    "body": "How can we help?",
+    "buttons": [{"id": "track", "title": "Track my order"}, {"id": "human", "title": "Talk to a person"}],
+    "footer": "Acme support",           # optional, as is "header"
+})
+pyrunner_notify.reply(interactive={
+    "type": "list",                     # up to 10 rows in all, titles up to 24 characters
+    "body": "Which order?",
+    "button": "Choose",                 # the label of the button that opens the list
+    "sections": [{"title": "Recent", "rows": [
+        {"id": "order-1042", "title": "#1042", "description": "2 items, shipped"},
+        {"id": "order-1038", "title": "#1038", "description": "Delivered"},
+    ]}],
+})
+```
+
+The URL must be an http(s) link WhatsApp can reach (a presigned link works).
+The person's tap comes back as a new inbound `interactive` message whose
+`details.reply.id` is the id you gave. The message log shows the caption (or
+the file's kind and link) for a file and the body for buttons and lists.
+Telegram channels refuse both (HTTP 400).
+
+**A support flow.** One script linked to the channel (handler **Run a
+script**) answers every message: a greeting gets the menu, a tap on a button
+or a list row gets its answer, and a photo of a receipt (with **Download
+media** on) is saved.
+
+```python
+import os
+import shutil
+
+import pyrunner_notify
+import pyrunner_run
+
+MENU = {
+    "type": "buttons",
+    "body": "Hi! How can we help?",
+    "buttons": [{"id": "orders", "title": "My orders"}, {"id": "human", "title": "Talk to a person"}],
+}
+
+event = pyrunner_run.event()
+choice = (event.get("details") or {}).get("reply", {}).get("id", "")
+
+if event.get("media"):
+    item = event["media"][0]
+    if "path" in item:
+        os.makedirs("receipts", exist_ok=True)
+        shutil.copy(item["path"], f"receipts/{item['id']}")
+        pyrunner_notify.reply("Thanks, we got your receipt.")
+    else:
+        pyrunner_notify.reply("Sorry, we couldn't open that file.")
+elif choice == "orders":
+    pyrunner_notify.reply(interactive={
+        "type": "list", "body": "Which order?", "button": "Choose",
+        "sections": [{"rows": [{"id": "order-1042", "title": "#1042", "description": "Shipped"}]}],
+    })
+elif choice.startswith("order-"):
+    number = choice.removeprefix("order-")
+    pyrunner_notify.reply(media={
+        "kind": "document", "url": f"https://files.example.com/invoices/{number}.pdf",
+        "filename": f"invoice-{number}.pdf", "caption": "Here is your invoice.",
+    })
+elif choice == "human":
+    pyrunner_notify.send("Ops Alerts", f"WhatsApp support: {event['sender']['display_name']} wants a person.")
+    pyrunner_notify.reply("Someone from the team will answer here shortly.")
+else:
+    pyrunner_notify.reply(interactive=MENU)
+```
 
 ### Delivery status
 

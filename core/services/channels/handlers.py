@@ -8,8 +8,10 @@ synchronously, or ``None`` when the reply happens asynchronously — the script
 handler queues a Run that replies later via ``pyrunner_notify.reply()``.
 """
 
+import dataclasses
 import logging
 import re
+import uuid
 
 from .base import OutboundMessage
 
@@ -31,13 +33,18 @@ def _script_handler(channel, msg):
     """Run the linked script, passing the inbound message as INBOUND_* env.
 
     The run's event (``channel_event``) carries the same message, plus the
-    provider's raw payload, for ``pyrunner_run.event()``. Returns None: the script replies asynchronously via ``pyrunner_notify.reply()``.
+    provider's raw payload, for ``pyrunner_run.event()``; with the channel's
+    "Download media" setting on, its attachments are downloaded first and the
+    event's ``media`` items carry a ``path`` or ``url`` (``media.fetch_for_run``).
+    Returns None: the script replies asynchronously via ``pyrunner_notify.reply()``.
     """
     from core.models import Run, Script
     from core.services.maintenance import blocked_message
     from core.services.run_events import channel_event
     from core.services.script_inputs import ScriptInputsError, prepare_inputs
     from core.tasks import queue_script_run
+
+    from . import media as channel_media
 
     if not channel.inbound_target_id:
         return OutboundMessage(
@@ -61,7 +68,15 @@ def _script_handler(channel, msg):
             f"The linked script can't run from chat. {e.message}", reply_ref=msg.reply_ref
         )
 
+    # The id first: downloaded attachments go in a folder named after the run.
+    run_id = uuid.uuid4()
+    if msg.media:
+        msg = dataclasses.replace(
+            msg, media=channel_media.fetch_for_run(channel, msg, script_id=script.id, run_id=run_id)
+        )
+
     run = Run.objects.create(
+        id=run_id,
         script=script,
         workspace_id=script.workspace_id,
         status=Run.Status.PENDING,
@@ -81,6 +96,8 @@ def _script_handler(channel, msg):
     }
     queue_script_run(run, webhook_data=webhook_data)
     logger.info("Inbound message routed to script %s (run %s)", script.id, run.id)
+    if msg.media and (run.is_maintenance_skipped or run.is_skipped):
+        channel_media.discard(channel, script.id, run.id, msg.media)  # the run won't start
     if run.is_maintenance_skipped:
         return OutboundMessage(
             blocked_message(run, run.maintenance_block), reply_ref=msg.reply_ref
@@ -149,9 +166,17 @@ def _pyai_handler(channel, msg):
     if not (msg.text or "").strip():
         return OutboundMessage("Send me a question and I'll take a look.", reply_ref=msg.reply_ref)
 
+    # Py AI reads text only: an attachment is named, never downloaded.
+    from .media import describe
+
+    question = msg.text
+    attached = describe(msg.media)
+    if attached:
+        question = f"{question}\n\n{attached}"
+
     try:
         result = PyAIService.respond(
-            msg.text, workspace=channel.workspace, history=_channel_history(channel, msg),
+            question, workspace=channel.workspace, history=_channel_history(channel, msg),
             agent=agent, plain_text=True,
         )
     except PyAIError as e:

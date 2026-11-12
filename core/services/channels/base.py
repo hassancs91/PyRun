@@ -43,7 +43,8 @@ class InboundMessage:
     received_at: Optional[datetime] = None
     # Optional, for providers with typed messages (WhatsApp): the message's
     # type ("text", "interactive", "location", ...), its structured parts
-    # (``details``), any attachments as metadata (``media``) and the
+    # (``details``), any attachments as metadata (``media``; the script
+    # handler may download them, see ``media.py``) and the
     # provider's own message id. Empty for Telegram.
     message_type: str = ""
     details: dict = field(default_factory=dict)
@@ -125,6 +126,11 @@ class ChannelProvider:
     registers_webhook: bool = True
     # True when ``send`` takes ``OutboundMessage.content["template"]``.
     supports_templates: bool = False
+    # True when ``send`` takes ``content["media"]`` (a file by URL) and
+    # ``content["interactive"]`` (reply buttons, a list).
+    supports_rich_content: bool = False
+    # True when ``download_media`` can fetch an inbound attachment.
+    supports_media_download: bool = False
 
     def identity_for_fingerprint(self, creds: dict) -> str:
         """The stable credential identity (e.g. bot token) used for the
@@ -196,6 +202,15 @@ class ChannelProvider:
         and carries on). Default: nothing.
         """
         return None
+
+    def download_media(self, channel, item: dict, max_bytes: int) -> tuple[bytes, str]:
+        """Fetch one inbound attachment (an ``InboundMessage.media`` item).
+
+        Returns ``(data, mime_type)``; raises ChannelError with a sentence for
+        the run (too large, expired, refused). Only called when
+        ``supports_media_download`` is True.
+        """
+        raise ChannelError("This provider can't download attachments.")
 
     def set_inbound_webhook(self, channel, public_url: str) -> Optional[str]:
         """Register ``public_url`` as the provider's webhook for this channel.

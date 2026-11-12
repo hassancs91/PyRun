@@ -3792,6 +3792,23 @@ class ChannelInboundForm(forms.Form):
         label="Daily reply cap",
         help_text="Max replies to incoming messages per day (0 = unlimited). Run notifications and plain script sends don't count.",
     )
+    # Shown for providers that can download attachments (WhatsApp).
+    download_media = forms.BooleanField(
+        required=False,
+        widget=forms.CheckboxInput(attrs={"class": CHECK_CLASS}),
+        label="Download media",
+        help_text="Off: the script gets attachments as metadata only. On: images, documents, audio, video "
+        "and stickers are downloaded when the message arrives and the script gets a file path (or a 24-hour "
+        "link when a private assets storage connection is set). Py AI is only told what was attached.",
+    )
+    media_max_mb = forms.IntegerField(
+        required=False,
+        min_value=1,
+        max_value=100,
+        widget=forms.NumberInput(attrs={"class": INPUT_CLASS, "min": 1, "max": 100}),
+        label="Largest attachment (MB)",
+        help_text="Bigger files are not downloaded; the script gets their metadata and an error.",
+    )
 
     def __init__(self, *args, channel=None, workspace=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -3822,6 +3839,8 @@ class ChannelInboundForm(forms.Form):
             )
             self.fields["inbound_access"].initial = channel.inbound_access
             self.fields["daily_reply_cap"].initial = channel.daily_reply_cap
+            self.fields["download_media"].initial = channel.download_media
+            self.fields["media_max_mb"].initial = channel.media_max_mb
 
     def clean(self):
         cleaned = super().clean()

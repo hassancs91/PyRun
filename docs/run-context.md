@@ -105,7 +105,7 @@ the kind.
 | `manual` | **Run now**, or **Re-run with same inputs** | `user` (`{id, email}`; API and MCP callers reading the run get `{id}` only); `rerun_of` (the id of the run it copies) for a re-run |
 | `schedule` | the script's schedule | `schedule_id`, `run_mode` (`interval`, `daily`, `cron`...), `fired_at` |
 | `webhook` | a call to the script's webhook URL | `method`, `path`, `remote_ip`, `query` (each name maps to a list of values), `content_type`, `headers`; for a POST, `body_size`, `body` (the raw text) and, when the body is JSON, `body_json`. See [Webhook calls](#webhook-calls) |
-| `channel` | a chat message to a channel linked to the script | `channel` (its name), `channel_id`, `provider`, `text`, `sender`, `reply_ref`, `raw` (the provider's own payload); a WhatsApp message also has `message_type`, `message_id` and, when it has them, `details` and `media` (see [WhatsApp inbound](channels.md#inbound-subscribe-the-webhook)) |
+| `channel` | a chat message to a channel linked to the script | `channel` (its name), `channel_id`, `provider`, `text`, `sender`, `reply_ref`, `raw` (the provider's own payload); a WhatsApp message also has `message_type`, `message_id` and, when it has them, `details` and `media` (see [WhatsApp inbound](channels.md#inbound-subscribe-the-webhook)); with the channel's **Download media** on, each `media` item also has `size` and a `path` or `url` to the file, or an `error` (see [Inbound media](channels.md#inbound-media-downloading-attachments)) |
 | `watcher` | a [watcher](scheduling.md#watchers) that saw a new item | `watcher` (`{id, name, adapter}`), `event_id` (the item's id at the source), `item` (the item as the source gave it) |
 | `plugin` | a plugin (`ScriptAPI.queue_run`) | `plugin`, `script_key`; `user` when the plugin passed one |
 | `api` | `scripts.run` over the API or MCP; or code that created the run itself | `token_id` (the API token that started it) and `via` (`rest` or `mcp`) for `scripts.run`; none otherwise |
@@ -598,6 +598,11 @@ many attempts it took, its status and the provider's message id.
   sends an approved template; plain text outside WhatsApp's 24-hour window
   goes out as the channel's default template (see
   [Sending: the 24-hour window and templates](channels.md#sending-the-24-hour-window-and-templates)).
+  Inside the window, `media={"kind", "url", "caption", "filename"}` sends a
+  file by URL and `interactive={"type": "buttons" | "list", ...}` sends reply
+  buttons or a list; `reply()` takes the same `template`, `media` and
+  `interactive` (see
+  [Sending files, buttons and lists](channels.md#sending-files-buttons-and-lists)).
 - **Caps.** A channel's **daily reply cap** counts replies only; notifications
   and plain script sends don't use it. Its **daily send cap** (on the
   channel's settings, 0 = none) counts notifications, replies and script sends

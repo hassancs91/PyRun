@@ -111,6 +111,7 @@ def channel_edit_view(request: HttpRequest, pk) -> HttpResponse:
             "supports_inbound": getattr(provider, "supports_inbound", False),
             "supports_discovery": callable(getattr(provider, "discover_chat_ids", None)),
             "registers_webhook": getattr(provider, "registers_webhook", True),
+            "supports_media_download": getattr(provider, "supports_media_download", False),
             "webhook_url": webhook_url,
             "members": channel.members.all(),
             "message_log": ledger.display_rows(
@@ -141,6 +142,9 @@ def channel_inbound_view(request: HttpRequest, pk) -> HttpResponse:
     channel.daily_reply_cap = cd.get("daily_reply_cap") or 0
 
     provider = ChannelService.provider_for(channel)
+    if getattr(provider, "supports_media_download", False):
+        channel.download_media = cd.get("download_media", False)
+        channel.media_max_mb = cd.get("media_max_mb") or channel.media_max_mb
 
     if channel.inbound_enabled:
         channel.ensure_inbound_token()

@@ -146,6 +146,21 @@
                     {{ inbound_form.daily_reply_cap }}
                     <p class="mt-1.5 text-xs text-faint">{{ inbound_form.daily_reply_cap.help_text }}</p>
                 </div>
+                {% if supports_media_download %}
+                <div>
+                    <label class="flex items-center gap-2.5 cursor-pointer">
+                        {{ inbound_form.download_media }}
+                        <span class="text-sm text-text">{{ inbound_form.download_media.label }}</span>
+                    </label>
+                    <p class="mt-1.5 text-xs text-faint">{{ inbound_form.download_media.help_text }}</p>
+                </div>
+                <div>
+                    <label class="block text-[13px] font-medium text-text mb-1.5">{{ inbound_form.media_max_mb.label }}</label>
+                    {{ inbound_form.media_max_mb }}
+                    {% include "cpanel/_field_errors.html" with field=inbound_form.media_max_mb %}
+                    <p class="mt-1.5 text-xs text-faint">{{ inbound_form.media_max_mb.help_text }}</p>
+                </div>
+                {% endif %}
                 {% if webhook_url and channel.inbound_enabled %}
                 <div>
                     <label class="block text-[13px] font-medium text-text mb-1.5">{% if registers_webhook %}Webhook URL (registered with the provider){% else %}Callback URL (paste it into the provider's webhook settings){% endif %}</label>

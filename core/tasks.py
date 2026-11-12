@@ -488,19 +488,23 @@ def daily_housekeeping_task() -> dict:
     Today: ``ApiCall`` audit rows older than 30 days
     (``core.services.api_audit.RETENTION_DAYS``) and channel messages (the
     delivery ledger) older than 30 days
-    (``core.services.channels.ledger.RETENTION_DAYS``). One purge failing
-    doesn't stop the other.
+    (``core.services.channels.ledger.RETENTION_DAYS``), and leftover inbound
+    attachments (``core.services.channels.media.purge``: folders of runs that
+    never started, stored files past the same 30 days). One purge failing
+    doesn't stop the others.
 
     Returns:
         dict: Result with how many rows of each were deleted.
     """
     from core.services import api_audit
     from core.services.channels import ledger
+    from core.services.channels import media as channel_media
 
     result = {"success": True}
     for key, label, purge in (
         ("api_calls_deleted", "API audit row(s)", api_audit.purge),
         ("channel_messages_deleted", "channel message(s)", ledger.purge),
+        ("channel_media_deleted", "leftover channel attachment(s)", channel_media.purge),
     ):
         try:
             deleted = purge()

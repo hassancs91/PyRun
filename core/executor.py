@@ -1385,6 +1385,12 @@ def execute_run(run: Run, webhook_data: dict | None = None) -> None:
                     "Failed to delete library staging dir: %s", library_root
                 )
 
+        # Attachments downloaded for an inbound chat message live as long as
+        # the run (never raises).
+        from core.services.channels.media import remove_run_files
+
+        remove_run_files(run.script_id, run.id)
+
         # The run has ended, so nothing it was handed needs masking any more:
         # drop the recorded copies (never raises).
         from core.services.connections import forget_issued

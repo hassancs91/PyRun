@@ -232,7 +232,9 @@ def channel_event(channel, msg) -> dict:
 
     A typed message (WhatsApp) adds ``message_type``, ``message_id`` and, when
     it has them, ``details`` (a button reply, location, contacts, reaction)
-    and ``media`` (attachments as metadata); a Telegram event is unchanged.
+    and ``media`` (attachments: metadata, plus ``size`` and a ``path`` or
+    ``url`` when the channel downloads them, see
+    ``core.services.channels.media``); a Telegram event is unchanged.
     """
     typed = {}
     if getattr(msg, "message_type", ""):

@@ -19,6 +19,7 @@ import secrets
 import uuid
 
 from django.conf import settings
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 from .workspace import WorkspaceScopedManager
@@ -104,6 +105,17 @@ class Channel(models.Model):
         default=0,
         help_text="Max messages sent per day: notifications, replies and script "
         "sends together (0 = unlimited). Stops a runaway schedule.",
+    )
+    # Inbound attachments (providers with ``supports_media_download``): off =
+    # metadata only. See core.services.channels.media.
+    download_media = models.BooleanField(
+        default=False,
+        help_text="Download inbound attachments for the script that handles them.",
+    )
+    media_max_mb = models.PositiveIntegerField(
+        default=16,
+        validators=[MinValueValidator(1), MaxValueValidator(100)],
+        help_text="Largest attachment downloaded, in MB (1-100).",
     )
 
     # ---- status ----

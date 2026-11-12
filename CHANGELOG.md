@@ -528,6 +528,18 @@ begins tracking at the current release; earlier history is in the git log.
   delivered to read, or to failed with WhatsApp's reason. Setup walkthrough
   (business verification, test number, token, webhook, templates, limits) in
   the new Chat channels guide, docs/channels.md.
+- **WhatsApp files, buttons and lists.** A WhatsApp channel's new
+  **Download media** setting (off by default; **Largest attachment**, 16 MB
+  by default) downloads inbound images, documents, audio and video as soon as
+  the message arrives, and the script's run event lists each with `size` and
+  a `path` to the file (removed when the run ends) or, with a private assets
+  storage connection, a 24-hour `url` (stored files are deleted after 30
+  days); a file that can't be fetched gets an `error`. Off, attachments stay
+  metadata only and nothing is written. Py AI is told what was attached.
+  Inside the 24-hour window, `pyrunner_notify.send()` and `reply()` send a
+  file by URL (`media={...}`), up to three reply buttons or a list
+  (`interactive={...}`) through the delivery ledger. docs/channels.md has a
+  support-bot example.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

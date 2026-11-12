@@ -72,6 +72,28 @@ TOKEN = "EAAG-test-system-user-token"
 APP_SECRET = "app-secret-123"
 VERIFY = "my-verify-token"
 ANN = "15550001111"
+# Where FakeWhatsApp serves inbound media files (WhatsApp's own is lookaside.fbsbx.com).
+MEDIA_HOST = "https://media.fake-whatsapp.test/whatsapp_business/attachments/"
+
+
+class _File:
+    """A streamed binary answer (a media download)."""
+
+    def __init__(self, status, data=b"", chunk=4):
+        self.status_code = status
+        self._data = data
+        self._chunk = chunk
+        self.closed = False
+
+    def iter_content(self, chunk_size=1):
+        for i in range(0, len(self._data), self._chunk):
+            yield self._data[i:i + self._chunk]
+
+    def json(self):
+        raise ValueError("not JSON")
+
+    def close(self):
+        self.closed = True
 
 
 class FakeWhatsApp:
@@ -80,17 +102,33 @@ class FakeWhatsApp:
 
     ``reply(...)`` queues answers in order; with the queue empty every call
     succeeds (a send gets the next ``wamid.N``). ``calls`` keeps
-    ``(method, path, json, headers)``.
+    ``(method, path, json, headers)``; a media download is
+    ``("DOWNLOAD", url, kwargs, headers)``. ``add_media(id, data, mime)``
+    makes ``GET /{id}`` answer a download link on ``MEDIA_HOST`` that serves
+    ``data`` (the SSRF guard passes that host only).
     """
 
     def __init__(self, test):
+        from core.netguard import is_safe_endpoint_url
+
         self.calls = []
         self._queue = []
         self._next = 0
+        self.media = {}
         for name in ("post", "get"):
             patcher = mock.patch(f"core.services.channels.whatsapp.requests.{name}", side_effect=getattr(self, f"_{name}"))
             patcher.start()
             test.addCleanup(patcher.stop)
+        guard = mock.patch(
+            "core.services.channels.whatsapp.is_safe_endpoint_url",
+            side_effect=lambda url: (True, "") if url.startswith(MEDIA_HOST) else is_safe_endpoint_url(url),
+        )
+        guard.start()
+        test.addCleanup(guard.stop)
+
+    def add_media(self, media_id, data, mime="image/jpeg", file_size=None):
+        self.media[media_id] = (data, mime, len(data) if file_size is None else file_size)
+        return self
 
     def reply(self, answer):
         self._queue.append(answer)
@@ -122,10 +160,20 @@ class FakeWhatsApp:
 
         return self._answer(ok)
 
-    def _get(self, url, params=None, headers=None, timeout=None):
+    def _get(self, url, params=None, headers=None, timeout=None, **kwargs):
+        if url.startswith(MEDIA_HOST):
+            self.calls.append(("DOWNLOAD", url, kwargs, headers))
+            media_id = url[len(MEDIA_HOST):].split("?")[0]
+            return self._answer(lambda: _File(200, self.media[media_id][0]) if media_id in self.media else _File(404))
         assert url.startswith(GRAPH_URL + "/"), url
         path = url[len(GRAPH_URL) + 1:]
         self.calls.append(("GET", path, params, headers))
+        if path in self.media:
+            data, mime, size = self.media[path]
+            return self._answer(lambda: _Resp(200, {
+                "messaging_product": "whatsapp", "url": f"{MEDIA_HOST}{path}?ext=1&hash=abc", "mime_type": mime,
+                "sha256": hashlib.sha256(data).hexdigest(), "file_size": size, "id": path,
+            }))
         if path.endswith("/phone_numbers"):
             return self._answer(lambda: _Resp(200, {"data": [{"id": "1"}, {"id": PNID}]}))
         return self._answer(lambda: _Resp(200, {"display_phone_number": "+1 555-010-0000", "verified_name": "PyRun Test", "id": PNID}))
