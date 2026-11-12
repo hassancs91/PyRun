@@ -630,6 +630,7 @@ class BackupService:
                 "is_verified": user.is_verified,
                 "is_staff": user.is_staff,
                 "is_superuser": user.is_superuser,
+                "notify_on_login": user.notify_on_login,
                 "date_joined": cls._serialize_datetime(user.date_joined),
             })
         return users
@@ -1885,6 +1886,16 @@ class BackupService:
 
         # Also handle None case
         user_map[None] = current_user if current_user else None
+
+        # Accounts are never created or changed by a restore, except one
+        # preference: the sign-in alert opt-in (2.5 T45) goes back onto the
+        # existing account with the same email. Older backups lack the key.
+        for user_data in users_data:
+            email = user_data.get("email")
+            if email and "notify_on_login" in user_data:
+                User.objects.filter(email__iexact=email).update(
+                    notify_on_login=bool(user_data["notify_on_login"])
+                )
 
         return user_map
 

@@ -142,16 +142,12 @@ class BrandingTests(TestCase):
         self.assertNotContains(resp, "PyRunner")
 
     def test_password_reset_subject_uses_brand(self):
-        from types import SimpleNamespace
         from unittest.mock import patch
 
         from core.email import send_password_reset_email
 
-        request = RequestFactory().get("/")
-        user = SimpleNamespace(email="someone@example.com")
-        token = SimpleNamespace(token="abc123")
         with patch("core.email._send_email", return_value=True) as send:
-            send_password_reset_email(request, user, token)
+            send_password_reset_email("someone@example.com", "https://pyrun.example/auth/reset-password/abc123/")
 
         _to, subject, text, html = send.call_args.args
         self.assertEqual(subject, "Reset Your PyRun Password")

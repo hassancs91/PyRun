@@ -25,6 +25,11 @@ class User(AbstractUser):
         default=False,
         help_text="Whether the user has verified their email via magic link",
     )
+    # Opt-in (2.5 T45): email the user after every successful sign-in.
+    notify_on_login = models.BooleanField(
+        default=False,
+        help_text="Email me when someone signs in to my account",
+    )
 
     # Use email as the username field
     USERNAME_FIELD = "email"

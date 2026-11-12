@@ -2,8 +2,11 @@
 Authentication views. Password-based login plus email-based password reset;
 invite onboarding uses a set-password flow (no passwordless login surface).
 """
+import hashlib
 import logging
 
+from axes.utils import reset as reset_login_attempts
+from django.contrib.auth.hashers import make_password
 from django.shortcuts import render, redirect
 from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
@@ -11,15 +14,28 @@ from django.contrib import messages
 from django.views.decorators.http import require_http_methods, require_POST
 from django.views.decorators.csrf import csrf_protect
 from django.http import HttpRequest, HttpResponse
+from django.utils import timezone
+from django_q.tasks import async_task
 
-from core.ratelimit import client_ip
+from core.ratelimit import client_ip, rate_limit_exceeded
 from core.models import User, UserInvite, PasswordResetToken
 from core.models.settings import GlobalSettings
-from core.email import send_password_reset_email
+from core.services import security_events
 from core.forms import ChangePasswordForm, PasswordLoginForm, SetPasswordForm
 from core.services import RecaptchaService, EncryptionService, EncryptionError
 
 logger = logging.getLogger(__name__)
+
+# Forgot-password throttle (fixed windows, core.ratelimit): requests per client
+# IP and per email address. A throttled request gets the same answer as any
+# other; only the email isn't sent.
+FORGOT_IP_LIMIT = 10
+FORGOT_EMAIL_LIMIT = 3
+FORGOT_WINDOW_SECONDS = 3600
+
+# The one answer to every forgot-password request, whether or not the account
+# exists, has a password, or was throttled.
+FORGOT_SENT_MESSAGE = "If an account exists with that email, a password reset link has been sent."
 
 
 @csrf_protect
@@ -60,21 +76,23 @@ def login_view(request: HttpRequest) -> HttpResponse:
                 user = authenticate(request, email=email, password=password)
                 if user is not None:
                     login(request, user)
+                    security_events.record("login_ok", request=request, user=user)
+                    _queue_login_notification(request, user)
                     messages.success(request, f"Welcome back, {user.email}!")
                     return redirect("cpanel:dashboard")
-                else:
-                    # Check if user exists to give appropriate error
-                    try:
-                        user_obj = User.objects.get(email=email)
-                        if not user_obj.has_usable_password():
-                            if email_enabled:
-                                error_message = "This account doesn't have a password set. Use \"Forgot your password?\" to set one."
-                            else:
-                                error_message = "This account doesn't have a password set. Please contact an administrator."
-                        else:
-                            error_message = "Invalid email or password."
-                    except User.DoesNotExist:
-                        error_message = "Invalid email or password."
+                # One message for every failure: a wrong password, an unknown
+                # email and an account without a password look the same (the
+                # forgot-password page says how to set a first password).
+                error_message = "Invalid email or password."
+                account = User.objects.filter(email=email).first()
+                if account is not None and not account.has_usable_password():
+                    # Django hashes the password for an unknown email but not
+                    # for an unusable one; hash once so the answer takes as long.
+                    make_password(password)
+                # A refused attempt on a locked account is recorded as a
+                # lockout by the django-axes signal instead.
+                if not getattr(request, "axes_locked_out", False):
+                    security_events.record("login_fail", request=request, user=account, email=email)
 
     return render(request, "auth/login.html", {
         "password_form": password_form,
@@ -96,6 +114,26 @@ def _verify_recaptcha(request: HttpRequest, settings: GlobalSettings) -> bool:
     # The left-most X-Forwarded-For entry is caller-controlled; use the same
     # proxy-aware address as the rate limits and lockout.
     return RecaptchaService.verify(secret, token, client_ip(request))
+
+
+def _queue_login_notification(request: HttpRequest, user: User) -> None:
+    """Queue the sign-in alert for a user who turned it on (sent by a task)."""
+    if not user.notify_on_login:
+        return
+    ip, user_agent = security_events.request_meta(request)
+    try:
+        async_task(
+            "core.services.security_events.send_login_notification",
+            user.pk,
+            ip,
+            user_agent[:255],
+            timezone.now().strftime("%Y-%m-%d %H:%M:%S UTC"),
+            request.build_absolute_uri("/"),
+            task_name="login-notification",
+        )
+    except Exception:
+        # The alert is best effort: the sign-in itself already succeeded.
+        logger.exception("Could not queue the sign-in alert for user %s", user.pk)
 
 
 @require_POST
@@ -189,6 +227,7 @@ def change_password_view(request: HttpRequest) -> HttpResponse:
             password = form.cleaned_data["password"]
             request.user.set_password(password)
             request.user.save()
+            security_events.record("password_change", request=request, user=request.user)
 
             # Keep the session valid after the hash change. login() without a
             # backend argument would crash here — with multiple auth backends
@@ -204,7 +243,22 @@ def change_password_view(request: HttpRequest) -> HttpResponse:
         "form": form,
         "has_password": request.user.has_usable_password(),
         "done_url": done_url,
+        "notify_on_login": request.user.notify_on_login,
     })
+
+
+@login_required
+@require_POST
+def login_notifications_view(request: HttpRequest) -> HttpResponse:
+    """Turn the signed-in user's sign-in alert emails on or off."""
+    enabled = request.POST.get("enabled") == "1"
+    request.user.notify_on_login = enabled
+    request.user.save(update_fields=["notify_on_login"])
+    if enabled:
+        messages.success(request, "Sign-in alerts are on: you get an email after every sign-in.")
+    else:
+        messages.success(request, "Sign-in alerts are off.")
+    return redirect("auth:change_password")
 
 
 @csrf_protect
@@ -225,20 +279,36 @@ def forgot_password_view(request: HttpRequest) -> HttpResponse:
             messages.error(request, "Please enter your email address.")
             return render(request, "auth/forgot_password.html")
 
-        # Always show success message to prevent email enumeration
-        messages.success(
-            request,
-            "If an account exists with that email, a password reset link has been sent."
-        )
+        # Same answer for every address, known or not. The lookup, the token
+        # and the email happen in a task, so the response time doesn't depend
+        # on whether the account exists either.
+        messages.success(request, FORGOT_SENT_MESSAGE)
 
-        # Only send email if user exists and has verified their account
-        try:
-            user = User.objects.get(email=email)
-            if user.is_verified:
-                token = PasswordResetToken.create_for_user(user)
-                send_password_reset_email(request, user, token)
-        except User.DoesNotExist:
-            pass
+        email_key = hashlib.sha256(email.encode("utf-8")).hexdigest()
+        # Count both budgets on every request (no short-circuit).
+        over_ip = rate_limit_exceeded(
+            f"pwreset:ip:{client_ip(request)}", FORGOT_IP_LIMIT, FORGOT_WINDOW_SECONDS
+        )
+        over_email = rate_limit_exceeded(
+            f"pwreset:email:{email_key}", FORGOT_EMAIL_LIMIT, FORGOT_WINDOW_SECONDS
+        )
+        throttled = over_ip or over_email
+        security_events.record(
+            "reset_request",
+            request=request,
+            user=User.objects.filter(email=email).first(),
+            email=email,
+            detail="throttled, no email sent" if throttled else "",
+        )
+        if throttled:
+            logger.warning("Forgot-password request throttled (ip=%s, email=%s)", over_ip, over_email)
+        else:
+            async_task(
+                "core.services.security_events.send_password_reset",
+                email,
+                request.build_absolute_uri("/"),
+                task_name="password-reset",
+            )
 
         return redirect("auth:login")
 
@@ -276,6 +346,10 @@ def reset_password_view(request: HttpRequest, token: str) -> HttpResponse:
             user = reset_token.consume()
             user.set_password(form.cleaned_data["password"])
             user.save()
+            # The link proves the mailbox (or an admin issued it): a lockout
+            # from the forgotten password shouldn't outlive the reset.
+            reset_login_attempts(username=user.email.lower())
+            security_events.record("reset", request=request, user=user)
 
             login(request, user, backend='django.contrib.auth.backends.ModelBackend')
             messages.success(request, "Password has been reset successfully.")

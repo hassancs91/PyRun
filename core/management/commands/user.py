@@ -32,6 +32,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from core.models import PasswordResetToken, User, UserInvite, WorkspaceMembership
+from core.services import security_events
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +133,7 @@ class Command(BaseCommand):
             )
             # Someone who lost their password has usually locked themselves out too.
             reset_login_attempts(username=user.email.lower())
+        security_events.record("password_change", user=user, detail="manage.py user reset-password")
 
         logger.info("CLI: password reset for %s", user.email)
         self.stdout.write(self.style.SUCCESS(f"Password updated for {user.email}."))

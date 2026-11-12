@@ -637,6 +637,22 @@ begins tracking at the current release; earlier history is in the git log.
   plugin now has an update policy (only *Manual* for now) and its page says
   where it came from. Maintainers build the index with
   `manage.py plugin_store_index`. docs/plugins.md has the details.
+- **Sign-in hardening and security events.** Forgot password now answers
+  every address the same way and sends the email from the background worker,
+  so neither the message nor the response time tells whether an account
+  exists; it allows 3 requests per email and 10 per client address per hour.
+  The sign-in page no longer says when an account has no password (the hint
+  to set a first one moved to the forgot-password page). Too many failed
+  sign-ins now show a styled "Too many sign-in attempts" page, and finishing
+  a password reset lifts the lockout. `SESSION_COOKIE_AGE` (seconds, default
+  two weeks) sets how long a sign-in lasts. Admins get **Reset link** on the
+  Users page: a single-use link, valid 24 hours, to hand over directly, which
+  works with email turned off. Each user can turn on **Sign-in alerts** (an
+  email after every sign-in, off by default) on the Change password page.
+  Sign-ins, failed sign-ins, lockouts, password changes and resets, reset
+  links and new API tokens are recorded with the IP and browser and listed
+  under **Users → Security**, kept for 90 days. Backups carry each user's
+  sign-in alert choice.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

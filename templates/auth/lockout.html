@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{# django-axes lockout page (AXES_LOCKOUT_TEMPLATE, 2.5 T45). Context from axes: failure_limit, cooloff_timedelta. #}
+
+{% block title %}Too many sign-in attempts - {{ instance_name }}{% endblock %}
+
+{% block header %}{% endblock %}
+{% block footer %}{% endblock %}
+
+{% block content %}
+<div class="min-h-screen flex items-center justify-center px-4 py-12">
+    <div class="w-full max-w-md">
+        <div class="text-center mb-10">
+            <div class="w-16 h-16 bg-warn/10 rounded-2xl grid place-items-center mx-auto mb-6">
+                <svg class="w-8 h-8 text-warn" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+            </div>
+            <h1 class="text-2xl font-semibold tracking-tight text-text mb-2">Too many sign-in attempts</h1>
+            <p class="text-muted">Sign-in for this account is paused from your network.</p>
+        </div>
+
+        <div class="bg-panel border border-line rounded-2xl p-8 space-y-4">
+            <p class="text-sm text-muted">
+                There were {{ failure_limit }} failed sign-in attempts in a row.
+                {% if cooloff_timedelta %}Try again in about {% widthratio cooloff_timedelta.total_seconds 60 1 %} minutes.{% else %}An administrator has to unlock the account.{% endif %}
+            </p>
+            <p class="text-sm text-muted">
+                Forgot your password? Reset it from the sign-in page (when email is set up), or ask an
+                administrator for a reset link. An administrator can also unlock you with
+                <code class="font-mono text-xs px-1.5 py-0.5 rounded bg-panel-hi text-text">manage.py user unlock &lt;email&gt;</code>.
+            </p>
+            <a href="{% url 'auth:login' %}" class="block w-full py-3 px-4 bg-panel-hi/40 hover:border-faint text-text border border-line font-medium rounded-lg transition-colors text-center">Back to sign in</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

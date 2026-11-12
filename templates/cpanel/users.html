@@ -9,6 +9,23 @@
 {% endblock %}
 
 {% block page %}
+{% include "cpanel/_users_tabs.html" %}
+{% if last_reset_url %}
+{# A reset link generated a moment ago: shown once, never stored in the page again. #}
+<div class="rounded-2xl border border-info/30 bg-info/10 p-6">
+    <div class="flex items-start gap-3">
+        <svg class="w-5 h-5 text-info mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+        <div class="flex-1 min-w-0">
+            <p class="text-sm text-info font-medium mb-1">Reset link for {{ last_reset_email }}</p>
+            <p class="text-sm text-muted mb-3">Give this link to the user directly. It works once and expires in {{ reset_link_hours }} hours; it isn't shown again. It replaces any earlier link for this user.</p>
+            <div class="relative">
+                <input type="text" value="{{ last_reset_url }}" readonly id="reset-link-input" aria-label="Password reset link" class="w-full px-4 py-3 pr-20 bg-ink border border-line-soft rounded-lg text-text font-mono text-xs focus:outline-none">
+                <button type="button" onclick="copyLink(document.getElementById('reset-link-input').value, this)" class="absolute right-2 top-1/2 -translate-y-1/2 text-[13px] px-3 py-1.5 rounded-md border border-line text-muted hover:text-text hover:border-faint transition-colors">Copy</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 {% if last_invite_url %}
 {# Recently created invite link #}
 <div class="rounded-2xl border border-ok/30 bg-ok/10 p-6">
@@ -114,6 +131,10 @@
                 <td data-label="Last login" class="px-3 sm:px-6 py-3.5 text-right text-xs text-faint whitespace-nowrap">{% if user.last_login %}{{ user.last_login|timesince }} ago{% else %}—{% endif %}</td>
                 <td class="tc-actions px-3 sm:px-6 py-3.5 text-right">
                     {% if user.pk != request.user.pk %}
+                    <form method="post" action="{% url 'cpanel:user_reset_link' pk=user.pk %}" class="inline">
+                    {% csrf_token %}
+                    <button type="submit" title="A single-use password reset link to hand over yourself (works with email off)" class="text-[13px] px-3 py-1.5 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Reset link</button>
+                    </form>
                     <form method="post" action="{% url 'cpanel:delete_user' pk=user.pk %}" class="inline">
                     {% csrf_token %}
                     <button type="submit" onclick="return confirm('Delete user {{ user.email|escapejs }}? This cannot be undone.{% if user.sole_owned %} They are the only owner of: {{ user.sole_owned|join:', '|escapejs }}; the delete will be refused until another member owns it.{% endif %}')" class="text-[13px] px-3 py-1.5 rounded-lg border border-fail/30 bg-fail/10 text-fail hover:bg-fail/20 transition-colors">Delete</button>

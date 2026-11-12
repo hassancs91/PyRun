@@ -180,6 +180,8 @@ from core.views.users import (
     invite_user_view,
     revoke_invite_view,
     delete_user_view,
+    user_reset_link_view,
+    user_security_view,
 )
 from core.views.logs import (
     logs_view,
@@ -530,6 +532,8 @@ urlpatterns = [
     path("users/invite/", invite_user_view, name="invite_user"),
     path("users/invite/<int:pk>/revoke/", revoke_invite_view, name="revoke_invite"),
     path("users/<int:pk>/delete/", delete_user_view, name="delete_user"),
+    path("users/<int:pk>/reset-link/", user_reset_link_view, name="user_reset_link"),
+    path("users/security/", user_security_view, name="user_security"),
 
     # Logs
     path("logs/", logs_view, name="logs"),

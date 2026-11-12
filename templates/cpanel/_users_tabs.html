@@ -1,0 +1,7 @@
+{# Users page tabs (2.5 T45): Accounts | Security. #}
+{% with u=request.resolver_match.url_name %}
+<nav class="inline-flex flex-wrap max-w-full gap-1 p-1 rounded-lg border border-line bg-panel" aria-label="User sections">
+    <a href="{% url 'cpanel:user_list' %}" class="px-3 py-1.5 text-sm rounded-md transition-colors {% if u == 'user_list' %}bg-panel-hi text-text font-medium{% else %}text-muted hover:text-text hover:bg-panel-hi/50{% endif %}"{% if u == 'user_list' %} aria-current="page"{% endif %}>Accounts</a>
+    <a href="{% url 'cpanel:user_security' %}" class="px-3 py-1.5 text-sm rounded-md transition-colors {% if u == 'user_security' %}bg-panel-hi text-text font-medium{% else %}text-muted hover:text-text hover:bg-panel-hi/50{% endif %}"{% if u == 'user_security' %} aria-current="page"{% endif %}>Security</a>
+</nav>
+{% endwith %}

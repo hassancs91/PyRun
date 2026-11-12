@@ -436,6 +436,21 @@ AXES_VERBOSE = False  # Don't log every access attempt
 # caller's failures locked that account for every visitor. Honors
 # RATELIMIT_TRUSTED_PROXY_DEPTH (set it to the number of proxies in front).
 AXES_CLIENT_IP_CALLABLE = "core.ratelimit.lockout_client_ip"
+# A console-styled "Too many sign-in attempts" page (HTTP 429) instead of axes'
+# plain text response.
+AXES_LOCKOUT_TEMPLATE = "auth/lockout.html"
+
+# How long a console sign-in lasts, in seconds. Default two weeks (Django's own
+# default); lower it on shared machines, e.g. 28800 for eight hours.
+try:
+    SESSION_COOKIE_AGE = int(os.environ.get("SESSION_COOKIE_AGE", "1209600"))
+except ValueError:
+    SESSION_COOKIE_AGE = 0
+if SESSION_COOKIE_AGE <= 0:
+    raise ImproperlyConfigured(
+        "SESSION_COOKIE_AGE must be a whole number of seconds above 0 "
+        "(default 1209600, two weeks)."
+    )
 
 
 # Internationalization

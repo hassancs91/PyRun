@@ -1,30 +1,26 @@
 """
-Email sending abstraction for authentication emails (password reset).
+Email sending abstraction for authentication emails (password reset, sign-in
+notifications).
 Supports multiple backends: Console (dev), Resend API (production).
 """
+import html
 import logging
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives, send_mail
-from django.urls import reverse
 
 logger = logging.getLogger(__name__)
 
 
-def send_password_reset_email(request, user, reset_token) -> bool:
+def send_password_reset_email(email: str, reset_url: str) -> bool:
     """
-    Send password reset email.
+    Send the password reset email with ``reset_url`` (an absolute link).
 
-    Args:
-        request: HttpRequest object (for building absolute URL)
-        user: User instance
-        reset_token: PasswordResetToken instance
+    Sent from a django-q task (``core.services.security_events``), so the
+    forgot-password request never waits on the mail server.
 
     Returns:
         bool: True if email sent successfully
     """
-    reset_path = reverse("auth:reset_password", kwargs={"token": reset_token.token})
-    reset_url = request.build_absolute_uri(reset_path)
-
     # Print URL directly to console in development
     if settings.DEBUG:
         print("\n" + "=" * 60)
@@ -66,7 +62,7 @@ PyRun - Python Script Automation
 <body>
     <div class="container">
         <h2>Reset Your Password</h2>
-        <p>You requested a password reset for your PyRun account ({user.email}).</p>
+        <p>You requested a password reset for your PyRun account ({html.escape(email)}).</p>
         <p style="margin: 30px 0;">
             <a href="{reset_url}" class="button">Reset Password</a>
         </p>
@@ -85,7 +81,75 @@ PyRun - Python Script Automation
 </body>
 </html>"""
 
-    return _send_email(user.email, subject, text_message, html_message)
+    return _send_email(email, subject, text_message, html_message)
+
+
+def send_login_notification_email(
+    email: str, when: str, ip: str, user_agent: str, change_password_url: str
+) -> bool:
+    """
+    Tell ``email`` that their account was just signed in to (opt-in per user,
+    Account → Sign-in alerts). ``user_agent`` is caller-controlled text, so
+    the HTML part escapes it like every other value.
+
+    Returns:
+        bool: True if email sent successfully
+    """
+    subject = "New sign-in to your PyRun account"
+    device = user_agent or "unknown"
+    address = ip or "unknown"
+
+    text_message = f"""Hi there!
+
+Your PyRun account ({email}) was just signed in to.
+
+When:    {when}
+IP:      {address}
+Browser: {device}
+
+If this was you, there is nothing to do.
+If it wasn't, change your password now:
+{change_password_url}
+
+You get this email because sign-in alerts are on for your account. Turn them
+off on the same page.
+
+---
+PyRun - Python Script Automation
+"""
+
+    e = html.escape
+    html_message = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; }}
+        .container {{ max-width: 600px; margin: 0 auto; padding: 40px 20px; }}
+        .footer {{ margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 14px; }}
+        td {{ padding: 2px 12px 2px 0; vertical-align: top; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>New sign-in</h2>
+        <p>Your PyRun account ({e(email)}) was just signed in to.</p>
+        <table>
+            <tr><td><strong>When</strong></td><td>{e(when)}</td></tr>
+            <tr><td><strong>IP</strong></td><td>{e(address)}</td></tr>
+            <tr><td><strong>Browser</strong></td><td>{e(device)}</td></tr>
+        </table>
+        <p>If this was you, there is nothing to do. If it wasn't,
+        <a href="{e(change_password_url)}">change your password now</a>.</p>
+        <div class="footer">
+            <p>You get this email because sign-in alerts are on for your account. Turn them off on the same page.</p>
+            <p><strong>PyRun</strong> - Python Script Automation</p>
+        </div>
+    </div>
+</body>
+</html>"""
+
+    return _send_email(email, subject, text_message, html_message)
 
 
 def _get_db_backend_and_from_email():

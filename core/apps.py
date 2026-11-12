@@ -24,6 +24,13 @@ class CoreConfig(AppConfig):
         # A revoked (deleted) API token's brain grants go with it (U65).
         self._register_token_grant_cleanup()
 
+        # A django-axes lockout becomes a security event (2.5 T45).
+        from axes.signals import user_locked_out
+
+        from core.services.security_events import on_axes_lockout
+
+        user_locked_out.connect(on_axes_lockout, dispatch_uid="core.security_events.lockout")
+
         # Use post_migrate signal to ensure heartbeat schedule exists after migrations
         # This avoids database access during app initialization
         from django.db.models.signals import post_migrate

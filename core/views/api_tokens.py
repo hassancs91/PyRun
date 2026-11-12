@@ -12,6 +12,7 @@ from django.views.decorators.http import require_POST
 
 from core.forms import APITokenForm
 from core.models import DataStore, APIToken, Plugin, PluginPublicPage
+from core.services import security_events
 
 
 def _token_scope(request):
@@ -75,6 +76,12 @@ def api_token_create_view(request: HttpRequest) -> HttpResponse:
             # resolves this workspace's datastores.
             token.workspace = request.workspace
             token.save()
+            security_events.record(
+                "token_create",
+                request=request,
+                user=request.user,
+                detail=f'"{token.name}" ({token.get_scope_display()})'[:255],
+            )
 
             # Store the token in session for one-time display
             request.session["new_api_token"] = raw_token

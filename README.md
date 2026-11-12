@@ -131,6 +131,28 @@ docker exec pyrunner python manage.py user reset-password you@example.com --gene
 
 Outside Docker, run the same commands as `python manage.py user ...`.
 
+From the console, an admin can also open **Users → Reset link** for an account:
+it makes a single-use password reset link (valid 24 hours) to hand over
+directly, and works with email turned off.
+
+### Sign-in security
+
+- **Lockout.** After `AXES_FAILURE_LIMIT` (default 5) failed sign-ins in a row
+  for one account from one address, that pair is locked for 15 minutes. Behind
+  a reverse proxy, set `RATELIMIT_TRUSTED_PROXY_DEPTH` so the lockout sees the
+  real client address.
+- **Forgot password** answers every address the same way and sends the email
+  from the background worker, so it can't be used to find out which accounts
+  exist. It allows 3 requests per email and 10 per client address per hour.
+  The worker must be running for the email to go out.
+- **Session length.** A console sign-in lasts `SESSION_COOKIE_AGE` seconds
+  (default `1209600`, two weeks).
+- **Sign-in alerts.** Each user can turn on an email after every sign-in, on
+  the Change password page (off by default; needs email set up).
+- **Security events.** Sign-ins, failed sign-ins, lockouts, password changes
+  and resets, reset links and new API tokens are listed under
+  **Users → Security** (admins only) and kept for 90 days.
+
 ## AI in your scripts
 
 PyRun can run AI directly inside your Python scripts so your automations can
