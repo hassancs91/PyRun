@@ -328,3 +328,20 @@ class PreviewTests(_Fixture, TestCase):
         self.assertContains(resp, "Cleanup completed. 5 runs deleted.")
         resp = self.client.get(reverse("cpanel:settings"))
         self.assertContains(resp, "Pending and running runs are never deleted")
+
+
+class RetentionDocsTests(TestCase):
+    def test_the_docs_promise_no_per_script_setting_the_console_lacks(self):
+        # Test pass 7 F5: docs/scheduling.md said "a script can override both",
+        # but no form or API sets Script.retention_*_override.
+        from pathlib import Path
+
+        from django.conf import settings
+
+        from core.forms import ScriptForm
+
+        guide = " ".join((Path(settings.BASE_DIR) / "docs" / "scheduling.md").read_text(encoding="utf-8").split())
+        exposed = {"retention_days_override", "retention_count_override"} & set(ScriptForm.base_fields)
+        if not exposed:
+            self.assertNotIn("a script can override", guide)
+            self.assertIn("no per-script retention setting", guide)

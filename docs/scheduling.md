@@ -381,7 +381,9 @@ mid-check never starts a second run for the same item.
   their own one-minute task, apart from the schedules.
 - **Most runs an hour** (default 60): new items past it wait for the next
   hour; none are lost.
-- A source that doesn't answer within 20 seconds counts as a failed check.
+- Each request to the source may take up to 20 seconds, and a check that
+  hasn't finished after 25 seconds is given up ("The check didn't finish
+  within 25 seconds."). Either way it counts as a failed check.
 - After a failed check the watcher waits twice as long each time (the
   interval doubled per failure, up to an hour). After **10 failures in a row**
   it turns itself off and its creator gets an email. Fix the cause, then turn
@@ -406,9 +408,10 @@ with `watchers.list` (never their settings, which can hold a key in a URL).
 ## Run history and retention
 
 Settings → Retention deletes old runs: a run is kept while it is newer than
-the retention days **or** among its script's last N runs (a script can
-override both). The cleanup runs daily when **Auto Cleanup** is on, and on
-**Run cleanup now**; **Preview** counts exactly what that would delete.
+the retention days **or** among its script's last N runs. The cleanup runs
+daily when **Auto Cleanup** is on, and on **Run cleanup now**; **Preview**
+counts exactly what that would delete. The settings apply to every script
+(the console has no per-script retention setting).
 
 - A run that is pending (queued for a worker, waiting its turn under the
   Queue policy, or a retry waiting for its time) or running is never

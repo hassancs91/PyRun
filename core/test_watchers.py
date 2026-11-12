@@ -425,6 +425,38 @@ class GuardTests(_Fixture):
         finally:
             release.set()
 
+    def test_the_docs_name_the_request_timeout_and_the_check_cutoff(self):
+        # Test pass 7 F4: the docs said 20 s while a hung check failed with
+        # "didn't finish within 25 seconds". Both numbers come from the code.
+        from pathlib import Path
+
+        from django.conf import settings
+
+        from core.triggers.adapters import ADAPTER_TIMEOUT_SECONDS
+
+        release = threading.Event()
+
+        class Slow(Adapter):
+            key = "slow"
+
+            def check(self, ctx, config, state):
+                release.wait(5)
+                return [], None
+
+        cutoff = ADAPTER_TIMEOUT_SECONDS + runner.CHECK_GRACE_SECONDS
+        guide = " ".join((Path(settings.BASE_DIR) / "docs" / "scheduling.md").read_text(encoding="utf-8").split())
+        self.assertIn(f"up to {ADAPTER_TIMEOUT_SECONDS:g} seconds", guide)
+        try:
+            with self.assertRaises(TimeoutError) as caught:
+                # Waits only a fraction of a second: the budget is shifted down.
+                runner._call_adapter(Slow(), CheckContext(timeout=-runner.CHECK_GRACE_SECONDS + 0.2), {}, None)
+        finally:
+            release.set()
+        # The real message for the real timeout, as the docs quote it.
+        real = str(caught.exception).replace("0.2 seconds", f"{cutoff:g} seconds")
+        self.assertIn(f"after {cutoff:g} seconds", guide)
+        self.assertIn(f'("{real}")', guide)
+
     def test_a_crash_in_the_runner_frees_the_claim(self):
         watcher = self._marked()
         with _tasks(), mock.patch("core.tasks.queue_script_run", side_effect=RuntimeError("bug")):

@@ -52,6 +52,9 @@ TICK_BUDGET_SECONDS = 45
 MAX_CHECKS_PER_TICK = 200
 # Longest error text kept on the watcher.
 ERROR_MAX_CHARS = 1000
+# The runner waits this long past the adapter's own timeout before it gives a
+# check up (docs/scheduling.md names both numbers).
+CHECK_GRACE_SECONDS = 5
 CAP_WINDOW = datetime.timedelta(hours=1)
 
 # Outcomes of check_watcher.
@@ -162,9 +165,9 @@ def _call_adapter(adapter, ctx, config, cursor):
 
     thread = threading.Thread(target=target, name=f"watcher-{adapter.key}", daemon=True)
     thread.start()
-    thread.join(ctx.timeout + 5)
+    thread.join(ctx.timeout + CHECK_GRACE_SECONDS)
     if thread.is_alive():
-        raise TimeoutError(f"The check didn't finish within {ctx.timeout + 5:g} seconds.")
+        raise TimeoutError(f"The check didn't finish within {ctx.timeout + CHECK_GRACE_SECONDS:g} seconds.")
     if "error" in box:
         raise box["error"]
     return box["result"]
