@@ -1470,19 +1470,21 @@ class BackupService:
             "created_by_email": metadata.get("created_by_email", "Unknown"),
             "counts": counts,
             "warnings": warnings,
-            "tokens_removed": cls.tokens_removed_by_restore(),
+            "tokens_removed": cls.tokens_removed_by_restore(with_tables="tables" in backup_data),
         }
 
     @staticmethod
-    def tokens_removed_by_restore() -> list:
+    def tokens_removed_by_restore(with_tables=True) -> list:
         """API tokens a restore deletes on THIS instance (F61).
 
         Backups don't carry API tokens and a restore leaves the token table
-        alone, but it deletes every Brain, DataStore and Script first, and a
-        token bound to a brain or a script, or scoped to one store, goes with it
+        alone, but it deletes every Brain, DataStore and Script first (and every
+        Table when the backup has tables), and a token bound to a brain, a
+        script or a table, or scoped to one store, goes with it
         (FK cascade) — even when the restored row comes back with the same id.
         Unbound tokens survive. The preview names them so a same-instance rollback doesn't
-        silently break the connectors using them.
+        silently break the connectors using them. ``with_tables`` False (a
+        backup without a tables section leaves tables alone) skips table-bound tokens.
         """
         from django.db.models import Q
 
@@ -1491,8 +1493,9 @@ class BackupService:
         rows = (
             APIToken.objects.filter(
                 Q(brain__isnull=False) | Q(datastore__isnull=False) | Q(script__isnull=False)
+                | (Q(table__isnull=False) if with_tables else Q(pk__in=[]))
             )
-            .select_related("brain", "datastore", "script")
+            .select_related("brain", "datastore", "script", "table")
             .order_by("name")
         )
 
@@ -1501,6 +1504,8 @@ class BackupService:
                 return f"brain {token.brain.name}"
             if token.script_id:
                 return f"script {token.script.name}"
+            if token.table_id:
+                return f"table {token.table.name}"
             return f"data store {token.datastore.name}"
 
         return [{"name": token.name, "bound_to": bound_to(token)} for token in rows]

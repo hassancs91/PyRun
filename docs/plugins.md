@@ -678,6 +678,47 @@ page, cursor = docs.scroll(limit=100)
   collections it owns, points included. Declare them in `plugin.json` as
   `"provisions": {"vector_collections": 1}` (needs `"api": "2.6"`).
 
+### Tables — typed rows (PyRun 2.5)
+
+For records your plugin and its scripts share (leads, orders, a sync log), use a
+[table](run-context.md#tables): typed columns, rows anyone in the workspace can
+browse and edit on the **Tables** page, no SQL.
+
+```python
+from core.plugins.api import TableAPI, TableError
+
+leads = TableAPI(OWNER).provision("leads", [
+    {"key": "email", "type": "text", "required": True},
+    {"key": "score", "type": "number"},
+    {"key": "source", "type": "text", "default": "web"},
+])
+leads.insert({"email": "ana@example.com", "score": 7})
+hot = leads.rows(where={"score": {"$gte": 5}}, order="-created_at", limit=50)
+leads.import_csv("/path/to/leads.csv", dry_run=True)
+```
+
+- `provision(key, columns, *, name=None, description=None, remove_missing=False)`
+  makes the table once and returns its handle; calling it again (every `ready()`)
+  returns the same table, found by your plugin and `key`, so a rename on the
+  Tables page doesn't break it. It is named `"<owner>:<key>"` with the slug
+  `"<owner>-<key>"`; `key` uses lowercase letters, digits, `-` and `_`.
+- Changed columns are applied the way the console's editor applies them: new
+  columns are added, a changed type converts every value (refused whole, with a
+  `TableError`, if one doesn't convert), a newly required column is refused while
+  rows lack it. A column missing from your list is **kept** unless you pass
+  `remove_missing=True`, which deletes its values.
+- The handle has the same methods as the scripts' `pyrunner_tables` helper:
+  `insert`, `rows`, `get`, `update`, `upsert`, `delete`, `count`, `import_csv`,
+  `export_csv` (plus `model`, `name`, `slug`, `columns`). Errors raise
+  `TableError` with a stable `code`. `TableAPI(OWNER).get(key)`, `.list()` and
+  `.delete(key)` find, list and delete your tables.
+- Your plugin's scripts open the table with `table("<owner>-<key>")`; other
+  scripts get "not found". On the Tables page it carries your plugin's pill:
+  members can edit its rows (and import CSV), not its columns. API tokens with
+  `tables:read` see it too.
+- Deleting your plugin with *remove data* deletes its tables, rows included.
+  Declare them as `"provisions": {"tables": 1}`.
+
 ---
 
 ## Brains (SDK 2.7)

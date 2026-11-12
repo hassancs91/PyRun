@@ -20,8 +20,8 @@ class APIToken(models.Model):
     - ``datastore``  — a single datastore (the FK).
     - ``datastores`` — all datastores in the token's workspace (legacy "global").
     - ``plugin``     — one plugin's declared API resources (``plugin_slug``).
-    - ``api``        — registry permissions, with an optional brain, script or
-                       datastore binding (at most one).
+    - ``api``        — registry permissions, with an optional brain, script,
+                       datastore or table binding (at most one).
 
     Historically named ``DataStoreAPIToken`` (the alias survives in
     ``core.models``); the table name is pinned so the rename touched no SQL.
@@ -49,6 +49,8 @@ class APIToken(models.Model):
         ("datastores:read", "Read datastores (entries and their values)"),
         ("datastores:write", "Write datastore entries (set and delete)"),
         ("databases:read", "Read databases (tables, and read-only SELECT queries)"),
+        ("tables:read", "Read tables (columns, and rows with filters)"),
+        ("tables:write", "Write table rows (insert, update and delete)"),
         ("vectors:read", "Read vector collections (list, and similarity search)"),
         ("vectors:write", "Write vector points (upsert and delete)"),
         ("secrets:read_names", "Read secret names and the scripts that get them (never values)"),
@@ -133,6 +135,10 @@ class APIToken(models.Model):
     # deleted must never fall back to seeing every script.
     script = models.ForeignKey("Script", on_delete=models.CASCADE, null=True, blank=True,
                                related_name="api_tokens")
+    # Optional binding to one table (2.5): the token then reaches that table
+    # only. CASCADE, like the other bindings.
+    table = models.ForeignKey("Table", on_delete=models.CASCADE, null=True, blank=True,
+                              related_name="api_tokens")
 
     # Tenancy Stage 3: the workspace this token acts in. A global (no-datastore)
     # token lists/resolves only this workspace's datastores (a single-store token
@@ -213,6 +219,13 @@ class APIToken(models.Model):
                 ),
                 name="apitoken_scope_datastore_fk",
             ),
+            # A table binding is a Unified API token's sole binding.
+            models.CheckConstraint(
+                condition=models.Q(table__isnull=True)
+                | models.Q(scope="api", brain__isnull=True, script__isnull=True,
+                           datastore__isnull=True),
+                name="apitoken_table_binding",
+            ),
             # scope="plugin" ⇔ plugin_slug non-empty.
             models.CheckConstraint(
                 condition=(
@@ -288,6 +301,13 @@ class APIToken(models.Model):
                 )
             if self.workspace_id != self.datastore.workspace_id:
                 raise ValidationError({"datastore": "Unknown datastore."})
+        if self.table_id:
+            if self.brain_id or self.script_id or self.datastore_id:
+                raise ValidationError(
+                    {"table": "Bind a token to one brain, script, datastore or table, not more."}
+                )
+            if self.workspace_id != self.table.workspace_id:
+                raise ValidationError({"table": "Unknown table."})
         self._refuse_write_grants()
 
     @staticmethod

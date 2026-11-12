@@ -19,6 +19,9 @@ class CallContext:
     # The one datastore a bound token may reach (APIToken.datastore_id; a
     # legacy single-store token's store); None = any in ``workspace``.
     datastore_id: object = None
+    # The one table a bound token may reach (APIToken.table_id); None = any
+    # in ``workspace``.
+    table_id: object = None
     # Py AI's tier for an in-process agent call (core.api.tools): "console" or
     # "channel"; the registry refuses an endpoint the tier may not call.
     # None for every other caller.
@@ -47,6 +50,7 @@ def token_context(token, *, transport="rest", deadline=None):
         tier=token.brain_tier,
         script_id=token.script_id,
         datastore_id=token.datastore_id,
+        table_id=token.table_id,
         transport=transport,
         deadline=deadline,
     )

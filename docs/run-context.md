@@ -869,6 +869,28 @@ A table holds at most **100 000 rows** (the operator can change it with
 code `row_cap` and the table's page says so; past that size, or for joins and
 SQL, use a managed **Database** (`pyrunner_db`). A row can hold 256 KB.
 
+**CSV.** `import_csv(path, mapping=None, dry_run=False)` imports a CSV file
+whose first line names the columns: headers match column keys by name (ignoring
+case, spaces and dashes; `id`, `created_at` and `updated_at` are skipped), or
+pass `mapping={"CSV header": "column_key"}` (headers you leave out are skipped).
+An empty cell is no value, a JSON column's cell is parsed as JSON. Every line is
+checked before anything is written: if one fails, nothing is imported and the
+report lists the first 20 errors with their line numbers (the header is line 1).
+It returns `{"rows", "inserted", "errors", "error_count", "mapping", "dry_run"}`;
+`dry_run=True` only checks and counts. The lines are then written in batches of
+500, each all or nothing, so a failure while writing (the row limit reached by
+another writer) leaves the earlier batches stored. `export_csv(path, where=,
+order=)` writes `id`, every column, `created_at` and `updated_at`, and returns
+how many rows it wrote; an export imports again unchanged. The table's page has
+the same **Import CSV** (with a column-mapping step and a dry run; up to 50 MB,
+all or nothing) and **Export CSV** (the rows the grid shows, every page).
+Values are exported as stored: a cell starting with `=`, `+`, `-` or `@` isn't
+escaped, so open exports from untrusted data in a spreadsheet with care.
+
+Tables are also reachable over the [API and MCP](api.md#tables) (`tables.*`; row
+writes only while API writes are on), and Py AI can read them (for example "how
+many leads were added this week?").
+
 A table made by a plugin is that plugin's: only its scripts can open it (others
 get `TableNotFound`, as for a missing table), its page shows the plugin's pill,
 and its columns can't be changed in the console. Every other table is open to

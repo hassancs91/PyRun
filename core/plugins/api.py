@@ -39,6 +39,7 @@ from typing import Optional
 # plugins can catch service errors through the SDK.
 from core.vectors.errors import VectorError  # noqa: F401 — part of the SDK surface
 from core.api.exceptions import ApiError as BrainError  # noqa: F401 — SDK surface
+from core.tables.errors import TableError  # noqa: F401 — SDK surface
 
 # Plugins declare the SDK version they target in plugin.json (e.g. "2.0"); bump
 # on a breaking change to the facade. The wrapped CORE services stay stable.
@@ -63,7 +64,8 @@ from core.api.exceptions import ApiError as BrainError  # noqa: F401 — SDK sur
 # PyRun 2.5 adds, before the one version bump at the end of its train:
 # ConnectionAPI (+ ConnectionView, ConnectionRequirement, ConnectionUnavailable)
 # and plugin.json ``requires_connections``; WatcherAPI, TriggerAdapter,
-# TriggerContext, TriggerError and the plugin's ``triggers.py`` adapters.
+# TriggerContext, TriggerError and the plugin's ``triggers.py`` adapters;
+# TableAPI, TableHandle and TableError (owned tables, provisioned by key).
 API_VERSION = "2.7"
 
 
@@ -1681,6 +1683,228 @@ class VectorAPI:
         if collection is None:
             return False
         VectorService.delete_collection(collection)
+        return True
+
+
+# --------------------------------------------------------------------------- #
+# Tables
+# --------------------------------------------------------------------------- #
+
+def _is_path(value):
+    return isinstance(value, str) or hasattr(value, "__fspath__")
+
+
+class TableHandle:
+    """The rows of one table: the same operations, arguments and results as the
+    worker-side ``pyrunner_tables`` helper, through the same ``TableService``
+    (values checked against the columns, the row cap, ``row_count``).
+
+    Errors raise ``TableError`` with a stable ``code`` (``invalid``,
+    ``unsupported_filter``, ``row_cap``, ``too_large``, ``row_not_found``).
+    ``model`` is the ``Table`` row, for display.
+    """
+
+    def __init__(self, table):
+        self._table = table
+
+    @property
+    def model(self):
+        return self._table
+
+    @property
+    def name(self):
+        return self._table.name
+
+    @property
+    def slug(self):
+        return self._table.slug
+
+    @property
+    def columns(self):
+        return [dict(c) for c in self._table.columns]
+
+    def insert(self, rows, *, user=None):
+        """One row (a dict; returns the stored row) or many (a list, all or
+        nothing; returns their ids)."""
+        from core.tables.service import TableService, serialize_row
+
+        if isinstance(rows, dict):
+            row = TableService.insert(self._table, [rows], user=user)[0]
+            return serialize_row(row, self._table.columns)
+        return [row.id for row in TableService.insert(self._table, list(rows), user=user)]
+
+    def rows(self, where=None, order=None, limit=100, offset=0):
+        from core.tables.service import TableService
+
+        return TableService.rows(self._table, where=where, order=order, limit=limit, offset=offset)
+
+    def get(self, row_id):
+        """The row with this id, or None."""
+        from core.tables.service import TableService, serialize_row
+
+        try:
+            return serialize_row(TableService.get_row(self._table, row_id), self._table.columns)
+        except TableError as exc:
+            if exc.code != "row_not_found":
+                raise
+            return None
+
+    def update(self, row_id, values):
+        from core.tables.service import TableService, serialize_row
+
+        row = TableService.update_row(self._table, row_id, values)
+        return serialize_row(row, self._table.columns)
+
+    def upsert(self, key, values, *, user=None):
+        from core.tables.service import TableService, serialize_row
+
+        row, _ = TableService.upsert(self._table, key, values, user=user)
+        return serialize_row(row, self._table.columns)
+
+    def delete(self, row_id):
+        """Delete one row; True if it existed."""
+        from core.tables.service import TableService
+
+        return TableService.delete_rows(self._table, [row_id]) == 1
+
+    def count(self, where=None):
+        from core.tables.service import TableService
+
+        return TableService.count(self._table, where=where)
+
+    def import_csv(self, source, mapping=None, dry_run=False, *, user=None):
+        """Import a CSV file (a path, or a seekable text file), all or nothing.
+
+        Same rules and report as the console's Import CSV (``core.tables.csv_io``).
+        """
+        from core.tables import csv_io
+
+        if _is_path(source):
+            with open(source, newline="", encoding="utf-8-sig") as handle:
+                return csv_io.import_csv(self._table, handle, mapping=mapping, dry_run=dry_run,
+                                         user=user)
+        return csv_io.import_csv(self._table, source, mapping=mapping, dry_run=dry_run, user=user)
+
+    def export_csv(self, target, where=None, order=None):
+        """Write the matching rows as CSV (a path, or a text file); returns how many."""
+        from core.tables import csv_io
+        from core.tables.service import TableService
+
+        queryset = TableService.queryset(self._table, where=where, order=order)
+        out = open(target, "w", newline="", encoding="utf-8") if _is_path(target) else target
+        try:
+            lines = 0
+            for line in csv_io.stream_csv(self._table, queryset):
+                out.write(line)
+                lines += 1
+            return lines - 1
+        finally:
+            if _is_path(target):
+                out.close()
+
+
+class TableAPI:
+    """Owner-scoped tables (``pyrunner_tables`` from scripts, the Tables page in
+    the console). ``provision(key, columns)`` makes the table once and returns
+    its handle; calling it again with the same columns returns the same table.
+
+        tables = TableAPI(OWNER)
+        leads = tables.provision("leads", [
+            {"key": "email", "type": "text", "required": True},
+            {"key": "score", "type": "number"},
+        ])
+        leads.insert({"email": "ana@example.com", "score": 7})
+
+    A plugin's table is found by its owner and key, so it survives a rename on
+    the Tables page. It is named ``"<owner>:<key>"`` with the slug
+    ``"<owner>-<key>"`` (``key`` uses lowercase letters, digits, ``-`` and
+    ``_``); the plugin's scripts open it with ``table("<owner>-<key>")``, and
+    only they can (any other script gets "not found"). The console lists it with
+    the plugin's pill: members can edit its rows, not its columns.
+
+    Re-provisioning with different columns changes the table the way the
+    console's editor does: a new column is added, a changed type converts every
+    value (refused whole if one doesn't convert), making a column required is
+    refused while rows lack it. A column missing from the list is KEPT unless
+    ``remove_missing=True`` (then its values are deleted). ``owner=None``
+    selects the user lane: the table is found by slug ``key``.
+
+    Deleting the plugin with "remove data" deletes the tables it owns, rows included.
+    """
+
+    def __init__(self, owner=None, workspace=None):
+        self.owner = owner
+        self._workspace = workspace
+
+    def _ws(self):
+        return _resolve_workspace(self._workspace)
+
+    def _qs(self):
+        from core.models import Table
+
+        qs = Table.objects.filter(workspace=self._ws())
+        if self.owner:
+            return qs.filter(owner_plugin=self.owner)
+        return qs.filter(owner_plugin__isnull=True)
+
+    def _find(self, key):
+        qs = self._qs()
+        return (qs.filter(owner_key=key) if self.owner else qs.filter(slug=key)).first()
+
+    def provision(self, key, columns, *, name=None, description=None, remove_missing=False,
+                  created_by=None):
+        """Ensure the table exists with ``columns``; returns its ``TableHandle``."""
+        from core.tables.columns import clean_columns
+        from core.tables.service import SLUG_RE, TableService
+
+        if not isinstance(key, str) or not SLUG_RE.match(key):
+            raise TableError(
+                "A table key uses lowercase letters, digits, - and _ (starting with a letter "
+                "or digit).",
+                "invalid",
+            )
+        wanted = clean_columns(columns)
+        table = self._find(key)
+        if table is None:
+            table = TableService.create_table(
+                workspace=self._ws(),
+                name=name or (f"{self.owner}:{key}" if self.owner else key),
+                slug=f"{self.owner}-{key}" if self.owner else key,
+                columns=wanted,
+                description=description or "",
+                created_by=created_by,
+                owner_plugin=self.owner,
+                owner_key=key if self.owner else None,
+            )
+            return TableHandle(table)
+        if not remove_missing:
+            keys = {c["key"] for c in wanted}
+            wanted += [c for c in table.columns if c["key"] not in keys]
+        changes = {}
+        if wanted != table.columns:
+            changes["columns"] = wanted
+        if description is not None and description != table.description:
+            changes["description"] = description
+        if changes:
+            TableService.update_table(table, **changes)
+        return TableHandle(table)
+
+    def get(self, key):
+        """The table's handle, or None."""
+        table = self._find(key)
+        return TableHandle(table) if table is not None else None
+
+    def list(self):
+        return [TableHandle(t) for t in self._qs().order_by("name")]
+
+    def delete(self, key):
+        """Delete the table and its rows. True when one was deleted."""
+        from core.tables.service import TableService
+
+        table = self._find(key)
+        if table is None:
+            return False
+        TableService.delete_table(table)
         return True
 
 

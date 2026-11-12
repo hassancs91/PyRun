@@ -1,0 +1,13 @@
+<div class="rounded-xl border {% if report.error_count %}border-fail/30 bg-fail/10{% else %}border-line-soft bg-ink{% endif %} p-4 space-y-2" role="status">
+    {% if report.error_count %}
+    <p class="text-sm text-text">{{ report.rows }} row{{ report.rows|pluralize }} checked; {{ report.error_count }} can't be imported, so nothing was written.</p>
+    <ul class="text-sm text-muted list-disc pl-5">
+        {% for e in report.errors %}<li>{% if e.line %}Line {{ e.line }}: {% endif %}{{ e.message }}</li>{% endfor %}
+    </ul>
+    {% elif report.dry_run %}
+    <p class="text-sm text-text">Dry run: {{ report.rows }} row{{ report.rows|pluralize }} would be imported. Choose the file again and untick Dry run to import.</p>
+    {% else %}
+    <p class="text-sm text-text">The file has no rows to import.</p>
+    {% endif %}
+    {% if report.mapping %}<p class="text-xs text-faint">Columns: {% for h, k in report.mapping.items %}{{ h }} → <span class="font-mono">{{ k }}</span>{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+</div>

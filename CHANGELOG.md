@@ -552,6 +552,19 @@ begins tracking at the current release; earlier history is in the git log.
   (`PYRUNNER_TABLE_ROW_CAP`); its page warns at 90% and, when full, points at
   managed Databases. Backups carry tables and their rows. docs/run-context.md
   has the details.
+- **Tables over the API, the plugin SDK and CSV.** New registry endpoints
+  `tables.list`, `tables.get` and `tables.rows` (`tables:read`; `rows` filters
+  with `where`, sorts and answers how many rows match) and `tables.insert`,
+  `tables.update`, `tables.delete` (`tables:write`, only while API writes are
+  on), over REST and MCP; a token can be bound to one table (migration 0093).
+  Py AI reads tables too ("how many leads were added this week?"). Plugins
+  provision their own tables with `TableAPI(OWNER).provision(key, columns)`
+  (idempotent; the handle has the helper's methods), shown with the plugin's
+  pill and deleted with the plugin's data. A table's page gets **Import CSV**
+  (a column-mapping step, a dry run, the whole file checked before anything is
+  written) and **Export CSV** (the grid's filters and sort, every page), and
+  `pyrunner_tables` gets `import_csv` and `export_csv`. docs/api.md,
+  docs/plugins.md and docs/run-context.md have the details.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

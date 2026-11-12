@@ -29,7 +29,7 @@ def api_token_list_view(request: HttpRequest) -> HttpResponse:
     """List the active workspace's API tokens."""
     tokens = list(
         APIToken.objects.filter(_token_scope(request))
-        .select_related("datastore", "created_by", "brain", "script")
+        .select_related("datastore", "created_by", "brain", "script", "table")
         .defer("script__code")
     )
     # An expired token is refused at auth whatever its switch says (U62).

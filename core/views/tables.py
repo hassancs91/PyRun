@@ -13,7 +13,7 @@ import json
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.http import HttpRequest, HttpResponse, JsonResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse, StreamingHttpResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
@@ -22,6 +22,7 @@ from django.views.decorators.http import require_POST
 
 from core.grid import Grid, GridColumn, display_value
 from core.models import Table
+from core.tables import csv_io
 from core.tables.columns import TYPE_LABELS, TYPES
 from core.tables.errors import TableError
 from core.tables.forms import TableForm
@@ -125,6 +126,18 @@ def table_delete_view(request: HttpRequest, pk) -> HttpResponse:
     return redirect("cpanel:table_list")
 
 
+def _filtered_rows(table, grid):
+    """The grid's rows (its filters and sort); a filter that doesn't fit is dropped with a note."""
+    try:
+        return TableService.queryset(table, conditions=[(f.column, f.op, f.value) for f in grid.filters],
+                                     order=grid.sort or "id")
+    except TableError as exc:
+        # A filter value that doesn't fit its column (text in a number filter).
+        grid.problems.append(exc.message)
+        grid.filters = []
+        return TableService.queryset(table, order=grid.sort or "id")
+
+
 @login_required
 def table_detail_view(request: HttpRequest, pk) -> HttpResponse:
     table = _table_or_404(request, pk)
@@ -132,16 +145,8 @@ def table_detail_view(request: HttpRequest, pk) -> HttpResponse:
         request, _grid_columns(table), default_sort="id", editable=True,
         add_url=reverse("cpanel:table_row_add", kwargs={"pk": table.pk}), csrf_token=get_token(request),
     )
-    try:
-        qs = TableService.queryset(table, conditions=[(f.column, f.op, f.value) for f in grid.filters],
-                                   order=grid.sort or "id")
-        total = qs.count()
-    except TableError as exc:
-        # A filter value that doesn't fit its column (text in a number filter).
-        grid.problems.append(exc.message)
-        grid.filters = []
-        qs = TableService.queryset(table, order=grid.sort or "id")
-        total = qs.count()
+    qs = _filtered_rows(table, grid)
+    total = qs.count()
     grid.clamp_page(total)
     rows = [
         grid.make_row(
@@ -152,8 +157,12 @@ def table_detail_view(request: HttpRequest, pk) -> HttpResponse:
         for row in qs[grid.offset:grid.offset + grid.page_size]
     ]
     grid.set_rows(rows, total)
+    query = request.GET.copy()
+    query.pop("page", None)
     return render(request, "cpanel/tables/detail.html", {
         "table": table, "grid": grid,
+        "export_url": reverse("cpanel:table_export", kwargs={"pk": table.pk})
+        + (f"?{query.urlencode()}" if query else ""),
         "add_columns": [dict(c, label=TYPE_LABELS[c["type"]]) for c in table.columns],
         "cap_percent": min(100, round(table.row_count * 100 / table.row_cap)) if table.row_cap else 0,
     })
@@ -236,3 +245,61 @@ def table_row_delete_view(request: HttpRequest, pk, row_id) -> HttpResponse:
     else:
         messages.error(request, f"Row {row_id} was already gone.")
     return _back(request, table)
+
+
+@login_required
+def table_export_view(request: HttpRequest, pk) -> HttpResponse:
+    """The grid's rows as CSV (its filters and sort; every page), streamed."""
+    table = _table_or_404(request, pk)
+    grid = Grid.from_request(request, _grid_columns(table), default_sort="id")
+    response = StreamingHttpResponse(csv_io.stream_csv(table, _filtered_rows(table, grid)),
+                                     content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="{table.slug}.csv"'
+    return response
+
+
+@login_required
+def table_import_view(request: HttpRequest, pk) -> HttpResponse:
+    """Import a CSV file: a header line, then one row per line; checked whole before anything is written.
+
+    POST ``file``; ``mapping`` (optional JSON: one column key or null per header
+    cell, as the page's mapping step sends it, or ``{"CSV header": "column key"}``;
+    without it headers match keys by name);
+    ``dry_run`` to check only. A request that accepts JSON gets the report as JSON.
+    """
+    table = _table_or_404(request, pk)
+    context = {"table": table, "columns_json": json.dumps([c["key"] for c in table.columns]),
+               "max_mb": csv_io.MAX_IMPORT_BYTES // (1024 * 1024)}
+    if request.method != "POST":
+        return render(request, "cpanel/tables/import.html", context)
+    wants_json = "application/json" in request.headers.get("Accept", "")
+    dry_run = bool(request.POST.get("dry_run"))
+    try:
+        upload = request.FILES.get("file")
+        if upload is None:
+            raise TableError("Choose a CSV file to import.", "invalid")
+        if upload.size > csv_io.MAX_IMPORT_BYTES:
+            raise TableError(f"The file is larger than {context['max_mb']} MB. Split it, or import it from a "
+                             "script with pyrunner_tables (no size limit there).", "too_large")
+        mapping = None
+        if request.POST.get("mapping"):
+            try:
+                mapping = json.loads(request.POST["mapping"])
+            except ValueError:
+                raise TableError("The column mapping isn't valid JSON.", "invalid") from None
+            if not isinstance(mapping, (dict, list)):
+                raise TableError("The column mapping must map CSV headers to column keys.", "invalid")
+        report = csv_io.import_csv(table, csv_io.open_text(upload.file), mapping=mapping, dry_run=dry_run,
+                                   user=request.user)
+    except TableError as exc:
+        if wants_json:
+            return JsonResponse({"error": exc.message}, status=400)
+        context["error"] = exc.message
+        return render(request, "cpanel/tables/import.html", context, status=400)
+    if wants_json:
+        return JsonResponse(report)
+    if report["inserted"]:
+        messages.success(request, f"Imported {report['inserted']} row{'s' if report['inserted'] != 1 else ''}.")
+        return redirect("cpanel:table_detail", pk=table.pk)
+    context["report"] = report
+    return render(request, "cpanel/tables/import.html", context)

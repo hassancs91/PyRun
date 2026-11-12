@@ -69,7 +69,12 @@
             <div>
                 <label for="id_script" class="block text-[13px] font-medium text-text mb-1.5">Bind to one script (optional)</label>
                 {{ form.script }}{% include "cpanel/_field_errors.html" with field=form.script %}
-                <p class="mt-1.5 text-xs text-faint">A bound token sees that script and its runs only. Bind to one brain, one script or one datastore (the Datastore field above), not more.</p>
+                <p class="mt-1.5 text-xs text-faint">A bound token sees that script and its runs only. Bind to one brain, one script, one datastore (the Datastore field above) or one table, not more.</p>
+            </div>
+            <div>
+                <label for="id_table" class="block text-[13px] font-medium text-text mb-1.5">Bind to one table (optional)</label>
+                {{ form.table }}{% include "cpanel/_field_errors.html" with field=form.table %}
+                <p class="mt-1.5 text-xs text-faint">A bound token reads and writes that table only (with the tables permissions).</p>
             </div>
         </div>
 

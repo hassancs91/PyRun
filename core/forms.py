@@ -2392,10 +2392,11 @@ class APITokenForm(forms.ModelForm):
     class Meta:
         model = APIToken
         fields = ["name", "scope", "datastore", "plugin_slug", "expires_at",
-                  "permissions", "kind", "brain", "brain_tier", "script"]
+                  "permissions", "kind", "brain", "brain_tier", "script", "table"]
         widgets = {
             "brain": forms.Select(attrs={"class": INPUT_CLASS}),
             "script": forms.Select(attrs={"class": INPUT_CLASS}),
+            "table": forms.Select(attrs={"class": INPUT_CLASS}),
             "brain_tier": forms.Select(attrs={"class": INPUT_CLASS}),
             "name": forms.TextInput(
                 attrs={
@@ -2448,6 +2449,11 @@ class APITokenForm(forms.ModelForm):
             archived_at__isnull=True
         ).order_by("name")
         self.fields["script"].empty_label = "Any script in this workspace"
+        # Binding to one table (2.5): the active workspace's tables.
+        from core.models import Table
+
+        self.fields["table"].queryset = Table.objects.for_workspace(workspace).order_by("name")
+        self.fields["table"].empty_label = "Any table in this workspace"
         self.fields["brain_tier"].required = False
         # Make datastore optional with a clear empty choice
         self.fields["datastore"].required = False
@@ -2495,7 +2501,7 @@ class APITokenForm(forms.ModelForm):
         cleaned["brain_tier"] = cleaned.get("brain_tier") or "public"
         if scope != APIToken.Scope.API:
             cleaned.update(permissions=[], kind="bearer", brain=None, brain_tier="public",
-                           script=None)
+                           script=None, table=None)
         elif cleaned["kind"] == "url":
             from core.models import GlobalSettings
 

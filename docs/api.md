@@ -77,7 +77,8 @@ until they are on again. A token without the permission gets 403 `forbidden`
 either way. MCP marks `run` and `write` tools with `readOnlyHint: false`. Settings
 lists the write endpoints this instance has: today
 [`datastores.set`, `datastores.delete`](#datastores),
-[`vectors.upsert` and `vectors.delete`](#vectors). Every write call is recorded
+[`vectors.upsert` and `vectors.delete`](#vectors), and
+[`tables.insert`, `tables.update` and `tables.delete`](#tables). Every write call is recorded
 in the token's [Activity](#running-and-stopping-scripts).
 
 ## Brain operations
@@ -423,6 +424,44 @@ Search a workspace's vector collections and, while
 - Points are returned as stored, like datastore values: they aren't masked.
   Errors keep the vector codes (`unsupported_filter`, `dimension_mismatch`,
   `embedding_failed` (502), `backend_unavailable` (503), `not_ready` (409)...).
+
+## Tables
+
+Read a workspace's [tables](run-context.md#tables) and, while
+[API writes](#endpoint-classes-and-api-writes) are on, insert, change and delete
+their rows. A table is named by its slug (or its name).
+
+| REST endpoint | Parameters | Permission |
+|---|---|---|
+| `tables.list` | None | `tables:read` |
+| `tables.get` | `table` | `tables:read` |
+| `tables.rows` | `table`; optional `where`, `order`, `limit` (1–1,000, default 100), `offset` | `tables:read` |
+| `tables.insert` | `table`, `rows` (1–1,000 objects of column: value) | `tables:write` |
+| `tables.update` | `table`, `id`, `values` (column: value; `null` empties a cell) | `tables:write` |
+| `tables.delete` | `table`, `ids` (up to 1,000) | `tables:write` |
+
+- `tables.list` returns `tables`, each with `name`, `slug`, `description`,
+  `columns` (`key`, `type`, `required`), `row_count`, `owner_plugin`,
+  `created_at` and `updated_at`; `tables.get` adds each column's `default` and
+  the table's `row_cap`.
+- `tables.rows` returns `rows` (each with `id`, every column, `created_at` and
+  `updated_at`, UTC) and `count`, how many rows match in all (`limit: 1` just
+  counts). `where` and `order` work as in `pyrunner_tables`:
+  `{"field": value}` or `{"field": {"$op": value}}` with `$eq`, `$ne`, `$gt`,
+  `$gte`, `$lt`, `$lte`, `$in`, `$contains`, `$prefix`, `$empty`, over the
+  column keys plus `id`, `created_at` and `updated_at`; `order` is a field,
+  `-field`, or a list. For example, rows added since Monday:
+  `{"table": "leads", "where": {"created_at": {"$gte": "2026-11-09"}}, "limit": 1}`.
+- Writes go through the same checks as the console and scripts: values are
+  converted to their column's type, unknown columns and missing required values
+  are refused (400 `invalid`), and rows past the table's row limit answer 409
+  `row_cap`. An insert is all or nothing. The writes take 30 calls a minute per
+  token and never create, change or delete a table or its columns: do that in the
+  console (or, for a plugin's table, in the plugin).
+- A token can be bound to one table on the token form: it then reaches that
+  table only (`table` may be left out) and gets 403 `forbidden` for any other.
+- Plugin tables are listed and writable here, as on the Tables page. Rows are
+  returned as stored, like datastore values: they aren't masked.
 
 ## Workspace inventory and health
 

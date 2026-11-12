@@ -433,8 +433,8 @@ class PluginService:
 
     @staticmethod
     def owned_resource_counts(slug: str) -> dict:
-        """Count Script/Secret/DataStore/Library rows owned by ``slug`` (for the
-        delete preview). Field-gated + best-effort, so it's safe on a pre-v2 schema.
+        """Count the rows ``slug`` owns, per kind (scripts, data stores, tables...), for the
+        delete preview. Field-gated + best-effort, so it's safe on a pre-v2 schema.
 
         Must list the same models as ``_cleanup_owned_resources`` — a preview that
         undercounts is a promise the delete then breaks.
@@ -445,7 +445,7 @@ class PluginService:
         still kept — just not as a number.
         """
         from core.models import (
-            Brain, Database, DataStore, Library, Script, Secret, VectorCollection,
+            Brain, Database, DataStore, Library, Script, Secret, Table, VectorCollection,
         )
 
         counts = {}
@@ -456,6 +456,7 @@ class PluginService:
             (Database, "databases"),
             (Library, "libraries"),
             (VectorCollection, "vector_collections"),
+            (Table, "tables"),
             (Brain, "brains"),
         ):
             try:
@@ -492,13 +493,14 @@ class PluginService:
         attachments, including to a USER script that had attached it — which is
         the point of remove_data.
         """
-        from core.models import Brain, DataStore, Library, Script, Secret
+        from core.models import Brain, DataStore, Library, Script, Secret, Table
 
         counts = {}
         for model, label in (
             (Script, "scripts"),
             (Secret, "secrets"),
             (DataStore, "datastores"),
+            (Table, "tables"),
             (Library, "libraries"),
             (Brain, "brains"),
         ):

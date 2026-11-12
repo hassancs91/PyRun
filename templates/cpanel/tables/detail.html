@@ -10,6 +10,8 @@
 {% block heading_badges %}{% include "cpanel/_owner_pill.html" with obj=table %}{% endblock %}
 {% block subtitle %}{{ table.description|default:"" }}{% endblock %}
 {% block actions %}
+<a href="{{ export_url }}" title="The rows the grid shows (its filters and sort), every page" class="text-[13px] px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Export CSV</a>
+{% if not table.at_cap %}<a href="{% url 'cpanel:table_import' pk=table.pk %}" class="text-[13px] px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Import CSV</a>{% endif %}
 <a href="{% url 'cpanel:table_edit' pk=table.pk %}" class="text-[13px] px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">Edit table</a>
 {% endblock %}
 
