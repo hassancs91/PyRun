@@ -4,7 +4,7 @@
     "publisher": "pyrun",
     "name": "SDK Showcase",
     "version": "1.3.0",
-    "api": "2.6",
+    "api": "2.8",
     "min_pyrunner": "1.13.0",
     "summary": "A live tour of the PyRun plugin SDK — every capability on one page.",
     "description": "Reference plugin that demonstrates each core.plugins.api surface (data stores, owner-scoped secrets, managed scripts, the run lifecycle, schedules, environments, vector collections) as small, isolated, annotated sections. Study one card, lift the pattern into your own plugin.",

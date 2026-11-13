@@ -61,12 +61,16 @@ from core.tables.errors import TableError  # noqa: F401 — SDK surface
 # Qdrant; worker scripts reach the same collections through the
 # pyrunner_vectors helper.
 # 2.7 (additive): BrainAPI — owned brains and grant-checked shared read handlers.
-# PyRun 2.5 adds, before the one version bump at the end of its train:
-# ConnectionAPI (+ ConnectionView, ConnectionRequirement, ConnectionUnavailable)
-# and plugin.json ``requires_connections``; WatcherAPI, TriggerAdapter,
-# TriggerContext, TriggerError and the plugin's ``triggers.py`` adapters;
-# TableAPI, TableHandle and TableError (owned tables, provisioned by key).
-API_VERSION = "2.7"
+# 2.8 (additive, PyRun 2.5; full list in docs/plugins.md "SDK changelog"):
+# ScriptAPI.upsert(inputs_schema=, concurrency_policy=); ScriptAPI.queue_run(
+# inputs=) and InputsError; RunView.inputs/result/progress/cancel_reason/
+# is_held/stop_requested_at; ScheduleAPI.sync(times=, weekdays=, month_days=)
+# and monthly mode; ConnectionAPI (+ ConnectionView, ConnectionRequirement,
+# ConnectionUnavailable) and plugin.json ``requires_connections``; WatcherAPI,
+# TriggerAdapter, TriggerContext, TriggerError and the plugin's ``triggers.py``
+# adapters; TableAPI, TableHandle and TableError (owned tables, provisioned by
+# key); the optional ``lifecycle.py`` update steps (reprovision, on_update).
+API_VERSION = "2.8"
 
 
 class AIProviderAPI:

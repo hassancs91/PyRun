@@ -84,7 +84,10 @@ class PluginService:
                 from core.services import plugin_trust
 
                 trust = plugin_trust.check(src, slug, manifest)
-                too_old = PluginService.min_version_problem(manifest, slug)
+                from core.services.plugin_updates import api_version_problem
+
+                too_old = (PluginService.min_version_problem(manifest, slug)
+                           or api_version_problem(manifest, slug))
                 if too_old:
                     raise PluginInstallError(too_old)
 
@@ -376,8 +379,10 @@ class PluginService:
         from core.services.plugin_doctor import run_doctor
 
         from core.services.plugin_trust import policy_problem
+        from core.services.plugin_updates import api_version_problem
 
         refused = (PluginService.min_version_problem(plugin.manifest, plugin.slug)
+                   or api_version_problem(plugin.manifest, plugin.slug)
                    or policy_problem(plugin.slug, plugin.trust))
         if refused:
             plugin.error_message = refused

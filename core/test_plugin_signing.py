@@ -24,6 +24,7 @@ import base64
 import hashlib
 import io
 import json
+import re
 import shutil
 import tempfile
 import zipfile
@@ -238,9 +239,32 @@ class SigningTests(SimpleTestCase):
             with self.subTest(kw=kw), self.assertRaises(TrustError):
                 sign_manifest(b"m", KEY, **args)
 
-    def test_no_real_key_ships(self):
-        self.assertEqual(keys.TRUSTED_KEYS, {})
+    def test_shipped_keys_are_public_keys_only(self):
+        # Holds whether TRUSTED_KEYS is empty or carries PyRun's real key: every
+        # entry is a well-formed Ed25519 PUBLIC key, and the module holds no
+        # private key material (PEM, or a 64-byte seed + public key pair).
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
         self.assertEqual(keys.PYRUN_PUBLISHER, "pyrun")
+        self.assertIsInstance(keys.TRUSTED_KEYS, dict)
+        for key_id, entry in keys.TRUSTED_KEYS.items():
+            with self.subTest(key_id=key_id):
+                self.assertIsInstance(key_id, str)
+                self.assertTrue(key_id.strip())
+                self.assertIsInstance(entry, keys.TrustedKey)
+                self.assertTrue(entry.publisher)
+                self.assertIsInstance(entry.revoked, bool)
+                raw = base64.b64decode(entry.public_key, validate=True)
+                self.assertEqual(len(raw), 32)
+                Ed25519PublicKey.from_public_bytes(raw)  # raises if it isn't one
+        source = Path(keys.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("PRIVATE KEY", source)
+        for literal in re.findall(r"[A-Za-z0-9+/]{40,}={0,2}", source):
+            try:
+                decoded = base64.b64decode(literal, validate=True)
+            except ValueError:
+                continue
+            self.assertNotEqual(len(decoded), 64, "a 64-byte key pair in keys.py")
 
 
 # --------------------------------------------------------------------------- #

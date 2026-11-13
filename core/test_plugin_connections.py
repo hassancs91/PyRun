@@ -125,7 +125,7 @@ class DoctorTests(SimpleTestCase):
         import json
 
         folder = self.b.make()
-        manifest = {"slug": "goodplug", "name": "X", "version": "1.0.0", "requires_connections": value}
+        manifest = {"slug": "goodplug", "name": "X", "version": "1.0.0", "api": "2.8", "requires_connections": value}
         (folder / "plugin.json").write_text(json.dumps(manifest), encoding="utf-8")
         return run_doctor(folder)
 

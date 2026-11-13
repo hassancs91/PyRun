@@ -110,7 +110,7 @@ reference:
 | `icon_fallback` | Emoji shown when there's no bundled icon (or it fails to load). |
 | `categories`, `keywords` | Lists of strings for discovery/filtering. |
 | `author`, `author_url`, `license`, `homepage`, `repository`, `documentation` | Authorship + support. `license` is an SPDX id (e.g. `MIT`). |
-| `api` | The `core.plugins.api` version you target (see `API_VERSION`). |
+| `api` | The lowest `core.plugins.api` version you use (see `API_VERSION` and the [SDK changelog](#sdk-changelog)). A plugin whose `api` is newer than this PyRun's SDK is refused at install, activation and update. |
 | `min_pyrunner`, `max_pyrunner` | Compatibility bounds. |
 | `provisions` | **Declares what the plugin creates** (resource counts + the secret keys it needs). Rendered before install/activation as a trust surface ("creates 1 script, 3 secrets, 1 schedule"). Counts are non-negative integers; `secret_keys` is a list of strings. |
 | `requires_connections` | **Declares the accounts the plugin signs in to** (PyRun 2.5): a list of `{provider, key, scopes, label}`. The plugin page offers Connect or a picker for each, with its status (see [Connections](#connections--accounts-on-outside-services-pyrun-25)). |
@@ -1321,6 +1321,7 @@ and run automatically at activation). Tier-1 is a **static lint** — file check
 | `requires_connections` malformed: not a list of objects, unknown provider, bad `key`, `scopes` that aren't scope names (or on a provider without OAuth), a too-long `label`, a duplicate key, more than 20 entries | fail |
 | `triggers.py` adapters: doesn't parse, a `TriggerAdapter` subclass without a literal valid `key` (or a duplicate, or `<slug>:<key>` over 80 characters), without a literal `title`, without its own `check`/`test`, a literal `config_schema` that isn't flat, unknown `providers` | fail |
 | `lifecycle.py` doesn't parse, or `reprovision` / `on_update` is async or can't be called with no argument / one argument | fail |
+| Manifest `api` too old for what it declares: `"vector_collections"` in `provisions` needs `2.6`, `"brains"` `2.7`; `requires_connections`, a `triggers.py` or `"tables"` need `2.8` | fail |
 | `MANIFEST.sha256` / `plugin.sig` present but a file changed, is missing or unlisted, or the signature doesn't check out (see [Signed plugins](#signed-plugins-and-the-verified-badge-pyrun-25)) | fail |
 | `triggers.py` defines no `TriggerAdapter` subclass | warn |
 | `lifecycle.py` defines neither `reprovision` nor `on_update` | warn |
@@ -1543,7 +1544,7 @@ each update's own.
       "slug": "brand_tracker", "publisher": "pyrun", "name": "Brand Tracker",
       "version": "1.1.3", "summary": "…", "description": "…",
       "categories": ["Marketing"], "icon_url": "https://…/icon.png",
-      "min_pyrunner": "2.5.0", "api": "2.7", "provisions": {"scripts": 1},
+      "min_pyrunner": "2.5.0", "api": "2.8", "provisions": {"scripts": 1},
       "download_url": "zips/brand_tracker-1.1.3.zip",
       "sha256": "…", "size": 48213, "signed": true,
       "changelog_url": "https://…", "homepage": "https://…",
@@ -1577,6 +1578,83 @@ categories, `min_pyrunner`, `api`, `homepage`, `changelog_url`, `icon_url`,
 size, and signs the index. Without `--base-url` the download URLs are the zip
 file names, relative to the index. One zip per plugin; the key path must be
 outside the project, as for `plugin_sign`.
+
+---
+
+## SDK changelog
+
+`core.plugins.api.API_VERSION` names the SDK a PyRun serves. Every change so far
+is additive: a plugin written for an older version keeps working on a newer
+one. Declare the lowest version whose features you use as `"api"` in
+`plugin.json`. Install, activation and update refuse a plugin whose `api` is
+newer than this PyRun's SDK ("needs plugin SDK 2.9; this PyRun has 2.8"). The
+doctor checks `api` only for what a manifest or file declares (the rows that
+name a manifest `api` in [the doctor table](#the-plugin-doctor)); a call to a
+newer SDK class or kwarg is up to you to declare.
+
+### 2.8 (PyRun 2.5)
+
+Scripts and runs:
+- `ScriptAPI.upsert(inputs_schema=...)`: the inputs the script declares (None
+  keeps them, `{}` clears them). See [Inputs and results](#inputs-and-results-pyrun-25).
+- `ScriptAPI.upsert(concurrency_policy=...)`: `"allow"`, `"skip"` or `"queue"`.
+  See [One run at a time](#one-run-at-a-time-pyrun-25).
+- `ScriptAPI.queue_run(key, inputs=...)` and the new exception `InputsError`
+  (a `ValueError` with `.message` and `.field_errors`; no run is created).
+- `RunView` gains `inputs`, `result` and `progress` (masked), `cancel_reason`
+  (`"concurrency_skip"`, `"maintenance"` or ""), `is_held` and
+  `stop_requested_at`; `as_dict()` carries them too.
+- `ScheduleAPI.sync(times=..., weekdays=..., month_days=...)`: several run times
+  a day, several weekdays, and the new `"monthly"` mode. The single-value
+  `time_str=` / `weekday=` still work. `sync` refuses any mode but manual while
+  the script declares a required input with no default.
+
+Connections:
+- `ConnectionAPI`, `ConnectionView`, `ConnectionRequirement`,
+  `ConnectionUnavailable`, and `requires_connections` in `plugin.json`. See
+  [Connections](#connections--accounts-on-outside-services-pyrun-25).
+
+Watchers:
+- `WatcherAPI`, `TriggerAdapter`, `TriggerContext`, `TriggerError`, and the
+  plugin's own adapters in `triggers.py`. See
+  [Watchers](#watchers--runs-when-something-new-shows-up-pyrun-25).
+
+Tables:
+- `TableAPI`, `TableHandle` and `TableError`, and `"tables"` in `provisions`.
+  See [Tables](#tables--typed-rows-pyrun-25).
+
+Updates:
+- The optional `lifecycle.py` with `reprovision()` and `on_update(from_version)`,
+  run once after an update's restart. See
+  [Updating a plugin](#updating-a-plugin-pyrun-25). Signing (`MANIFEST.sha256`,
+  `plugin.sig`, `publisher`) and the store need no SDK version.
+
+The doctor wants `"api": "2.8"` for `requires_connections`, a `triggers.py` and
+provisioned tables.
+
+### 2.7
+`BrainAPI`: owned brains and grant-checked shared read handlers
+([Brains](#brains-sdk-27)); `"brains"` in `provisions` needs `"api": "2.7"`.
+
+### 2.6
+`VectorAPI`: owned vector collections on the Local store or Qdrant;
+`"vector_collections"` in `provisions` needs `"api": "2.6"`.
+
+### 2.5
+`StorageAPI`: owned object storage under `apps/<owner>/` on the assets connection.
+
+### 2.4
+`LibraryAPI`: shared multi-module code attached to scripts.
+
+### 2.3
+The external API (`@resource`, `APIRequest`, `APIError`), public pages (`@page`,
+`PageRequest`, `PublicPageAPI`) and the read-only `ChannelAPI.list()`.
+
+### 2.2
+`DatabaseAPI`: owned managed Postgres databases.
+
+### 2.1
+`ScriptAPI.latest_run`, `runs`, `cancel_latest_run` and the `RunView` read-model.
 
 ---
 

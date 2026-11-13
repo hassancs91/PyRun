@@ -2,6 +2,7 @@
     "slug": "sales_dashboard",
     "name": "Sales Dashboard",
     "version": "1.0.0",
+    "api": "2.0",
     "min_pyrunner": "1.10.0",
     "description": "Reads orders saved by the 'Sales Collector' script (DataStore 'sales_data') and renders a dashboard."
 }

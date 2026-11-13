@@ -2,6 +2,7 @@
     "slug": "example_plugin",
     "name": "Example Plugin",
     "version": "1.0.0",
+    "api": "2.0",
     "min_pyrunner": "1.10.0",
     "description": "Reference plugin: pick an environment and run a snippet in its venv via run_in_environment."
 }

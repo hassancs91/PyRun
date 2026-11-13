@@ -70,6 +70,17 @@ _API_RESOURCES_MIN_SDK = (2, 3)
 # VectorAPI shipped in SDK 2.6.
 _VECTORS_MIN_SDK = (2, 6)
 _BRAINS_MIN_SDK = (2, 7)
+# PyRun 2.5's SDK surfaces (ConnectionAPI, TriggerAdapter/WatcherAPI, TableAPI)
+# shipped in SDK 2.8.
+_SDK_28 = (2, 8)
+
+
+def _needs_sdk_28(manifest, what):
+    """The refusal for a plugin that uses a 2.8 surface but declares an older ``api``, or None."""
+    api = (manifest or {}).get("api")
+    if _version_at_least(api, _SDK_28):
+        return None
+    return f'manifest "api" must be >= "2.8" to {what} (found {api!r}).'
 
 
 def semver_key(value):
@@ -309,6 +320,11 @@ def _check_metadata(folder: Path, report: DoctorReport):
                     and not _version_at_least(manifest.get("api"), _BRAINS_MIN_SDK)):
                 failures.append('manifest "api" must be >= "2.7" to provision brains '
                                 f"(found {manifest.get('api')!r}).")
+            tables = provisions.get("tables")
+            if isinstance(tables, int) and not isinstance(tables, bool) and tables > 0:
+                problem = _needs_sdk_28(manifest, "provision tables")
+                if problem:
+                    failures.append(problem)
             if "secret_keys" in provisions:
                 sk = provisions["secret_keys"]
                 if not isinstance(sk, list) or not all(isinstance(v, str) for v in sk):
@@ -665,6 +681,10 @@ def _check_connections(folder: Path, report: DoctorReport):
     if not manifest or "requires_connections" not in manifest:
         return
     failures, warnings = manifest_problems(manifest.get("requires_connections"))
+    if manifest.get("requires_connections"):
+        problem = _needs_sdk_28(manifest, "declare requires_connections")
+        if problem:
+            failures.append(problem)
     if failures:
         report.add("connections", FAIL, " ".join(failures))
     for warning in warnings:
@@ -769,6 +789,10 @@ def _check_triggers(folder: Path, report: DoctorReport):
     dev-mode plugin (never activated) is held to it too.
     """
     failures, warnings, keys = triggers_problems(folder)
+    if (folder / "triggers.py").exists():
+        problem = _needs_sdk_28(_manifest_dict(folder), "ship watcher adapters in triggers.py")
+        if problem:
+            failures.append(problem)
     if failures:
         report.add("triggers", FAIL, " ".join(failures))
     for warning in warnings:

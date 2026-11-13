@@ -671,6 +671,15 @@ begins tracking at the current release; earlier history is in the git log.
   restore puts them back only onto an existing same-email account that has
   none of its own, on a server with the same `ENCRYPTION_KEY`. New dependency:
   `segno` (pure Python) draws the QR code as an inline SVG.
+- **Plugin SDK 2.8.** One version for every plugin SDK addition of this
+  release: script inputs and concurrency policy, `queue_run(inputs=)`, run
+  results and progress on `RunView`, schedule time lists and monthly mode,
+  connections, watchers and `triggers.py`, tables, and `lifecycle.py` update
+  steps. The plugin guide has an SDK changelog listing each one. The doctor
+  wants `"api": "2.8"` for `requires_connections`, a `triggers.py` or
+  provisioned tables, and installing or activating a plugin whose `api` is
+  newer than this PyRun's SDK is refused (updates already were). Every example
+  plugin now declares the SDK version it needs.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The
