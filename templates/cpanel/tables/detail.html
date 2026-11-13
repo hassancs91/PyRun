@@ -49,7 +49,7 @@
 </div>
 
 {% if not table.at_cap %}
-<details class="rounded-2xl border border-line bg-panel group" {% if not grid.total %}open{% endif %}>
+<details class="rounded-2xl border border-line bg-panel group" {% if add_open %}open{% endif %}>
     <summary class="px-4 sm:px-6 py-3 cursor-pointer text-sm font-medium text-text select-none">Add a row</summary>
     <form method="post" action="{{ grid.add_url }}" class="px-4 sm:px-6 pb-5 pt-1 space-y-3">
         {% csrf_token %}
@@ -60,14 +60,14 @@
                 {% if c.type == "boolean" %}
                 <select name="c_{{ c.key }}" class="px-2.5 py-1.5 bg-ink border border-line rounded-lg text-text text-sm focus:outline-none focus:ring-2 focus:ring-ok/30">
                     <option value="">—</option>
-                    <option value="true" {% if c.default is True %}selected{% endif %}>Yes</option>
-                    <option value="false" {% if c.default is False %}selected{% endif %}>No</option>
+                    <option value="true" {% if c.value == "true" %}selected{% endif %}>Yes</option>
+                    <option value="false" {% if c.value == "false" %}selected{% endif %}>No</option>
                 </select>
                 {% elif c.type == "json" %}
-                <textarea name="c_{{ c.key }}" rows="3" spellcheck="false" placeholder='{"any": "JSON"}' class="px-2.5 py-1.5 bg-ink border border-line rounded-lg text-text text-sm font-mono placeholder-faint/60 focus:outline-none focus:ring-2 focus:ring-ok/30"></textarea>
+                <textarea name="c_{{ c.key }}" rows="3" spellcheck="false" placeholder='{"any": "JSON"}' class="px-2.5 py-1.5 bg-ink border border-line rounded-lg text-text text-sm font-mono placeholder-faint/60 focus:outline-none focus:ring-2 focus:ring-ok/30">{{ c.value }}</textarea>
                 {% else %}
                 <input name="c_{{ c.key }}" {% if c.type == "number" %}type="number" step="any"{% elif c.type == "date" %}type="date"{% elif c.type == "link" %}type="url" placeholder="https://"{% elif c.type == "datetime" %}type="text" placeholder="2026-11-12T09:30:00Z"{% else %}type="text"{% endif %}
-                       {% if c.default is not None %}value="{{ c.default }}"{% endif %}
+                       {% if c.value != "" %}value="{{ c.value }}"{% endif %}
                        class="px-2.5 py-1.5 bg-ink border border-line rounded-lg text-text text-sm placeholder-faint/60 focus:outline-none focus:ring-2 focus:ring-ok/30">
                 {% endif %}
             </label>

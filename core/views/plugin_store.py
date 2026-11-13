@@ -9,11 +9,10 @@ Refresh, on saving a new index URL, and when installing.
 """
 
 import logging
+from urllib.parse import urlsplit
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import ValidationError
-from django.core.validators import URLValidator
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_POST
@@ -93,6 +92,23 @@ def plugin_store_refresh_view(request: HttpRequest) -> HttpResponse:
     return redirect("cpanel:plugin_store")
 
 
+def _http_url_problem(url) -> str:
+    """'' for an http(s) URL with a host, else what to fix.
+
+    A single-label host (``http://store:8080/index.json``, a Docker network
+    name) is fine here (2.5 T52); whether the address may be reached at all
+    is the SSRF guard's call (``is_safe_endpoint_url``), as for any URL.
+    """
+    try:
+        parts = urlsplit(url)
+        parts.port  # noqa: B018 - raises ValueError on a bad port
+    except ValueError:
+        return "Enter an http:// or https:// URL."
+    if parts.scheme.lower() not in ("http", "https") or not parts.hostname or any(c.isspace() for c in url):
+        return "Enter an http:// or https:// URL."
+    return ""
+
+
 @login_required
 @superuser_required
 @require_POST
@@ -104,10 +120,7 @@ def plugin_store_settings_view(request: HttpRequest) -> HttpResponse:
         if len(url) > _URL_MAX:
             problem = f"The URL is longer than {_URL_MAX} characters."
         else:
-            try:
-                URLValidator(schemes=["http", "https"])(url)
-            except ValidationError:
-                problem = "Enter an http:// or https:// URL."
+            problem = _http_url_problem(url)
         if not problem:
             ok, why = is_safe_endpoint_url(url)
             problem = "" if ok else why

@@ -23,7 +23,7 @@ from django.views.decorators.http import require_POST
 from core.grid import Grid, GridColumn, display_value, json_cell_value, next_querystring
 from core.models import Table
 from core.tables import csv_io
-from core.tables.columns import TYPE_LABELS, TYPES
+from core.tables.columns import TYPE_LABELS, TYPES, coerce
 from core.tables.errors import TableError
 from core.tables.forms import TableForm
 from core.tables.service import TableService
@@ -145,6 +145,8 @@ def _filtered_rows(table, grid):
 @login_required
 def table_detail_view(request: HttpRequest, pk) -> HttpResponse:
     table = _table_or_404(request, pk)
+    # What was typed into a refused Add row form (table_row_add_view).
+    kept = request.session.pop(_kept_key(table), None)
     grid = Grid.from_request(
         request, _grid_columns(table), default_sort="id", editable=True,
         add_url=reverse("cpanel:table_row_add", kwargs={"pk": table.pk}), csrf_token=get_token(request),
@@ -167,7 +169,8 @@ def table_detail_view(request: HttpRequest, pk) -> HttpResponse:
         "table": table, "grid": grid,
         "export_url": reverse("cpanel:table_export", kwargs={"pk": table.pk})
         + (f"?{query.urlencode()}" if query else ""),
-        "add_columns": [dict(c, label=TYPE_LABELS[c["type"]]) for c in table.columns],
+        "add_columns": _add_columns(table, kept),
+        "add_open": not grid.total or kept is not None,
         "cap_percent": min(100, round(table.row_count * 100 / table.row_cap)) if table.row_cap else 0,
     })
 
@@ -177,29 +180,74 @@ def _back(request, table, next_qs=None) -> HttpResponse:
     return redirect(reverse("cpanel:table_detail", kwargs={"pk": table.pk}) + next_querystring(next_qs))
 
 
+def _kept_key(table) -> str:
+    return f"pyrun_table_add_{table.pk}"
+
+
+def _add_columns(table, kept):
+    """The Add row form's fields, each with the value to show: what was typed
+    before a refused submit (``kept``), else the column's default."""
+    columns = []
+    for c in table.columns:
+        if kept is not None:
+            value = kept.get(c["key"], "")
+        elif c.get("default") is None or c["type"] == "json":
+            value = ""
+        elif c["type"] == "boolean":
+            value = "true" if c["default"] else "false"
+        else:
+            value = str(c["default"])
+        columns.append(dict(c, label=TYPE_LABELS[c["type"]], value=value))
+    return columns
+
+
 @login_required
 @require_POST
 def table_row_add_view(request: HttpRequest, pk) -> HttpResponse:
-    """The grid's Add row form: one field ``c_<key>`` per column (empty = no value)."""
+    """The grid's Add row form: one field ``c_<key>`` per column (empty = no value).
+
+    Every bad column is reported at once, and a refused row comes back with
+    what was typed (kept in the session for the next page view).
+    """
     table = _table_or_404(request, pk)
-    values = {}
+    typed, values, errors, bad = {}, {}, [], set()
     for column in table.columns:
         name = f"c_{column['key']}"
         if name not in request.POST:
             continue
-        raw = request.POST.get(name, "")
+        raw = typed[column["key"]] = request.POST.get(name, "")
         if column["type"] == "json" and raw.strip():
             try:
                 raw = json.loads(raw)
             except ValueError as exc:
-                messages.error(request, f'Column "{column["key"]}": not valid JSON ({exc}).')
-                return _back(request, table)
-        if raw != "":
-            values[column["key"]] = raw
-    try:
-        row = TableService.insert(table, [values], user=request.user)[0]
-    except TableError as exc:
-        messages.error(request, exc.message)
+                errors.append(f'Column "{column["key"]}": not valid JSON ({exc}).')
+                bad.add(column["key"])
+                continue
+        if raw == "":
+            continue
+        try:
+            coerce(column, raw)
+        except TableError as exc:
+            errors.append(exc.message)
+            bad.add(column["key"])
+            continue
+        values[column["key"]] = raw
+    missing = [
+        c["key"] for c in table.columns
+        if c.get("required") and c.get("default") is None and c["key"] not in values
+        and c["key"] not in bad
+    ]
+    if missing:
+        errors.append(f"Required column{'s' if len(missing) > 1 else ''} without a value: {', '.join(missing)}.")
+    if not errors:
+        try:
+            row = TableService.insert(table, [values], user=request.user)[0]
+        except TableError as exc:
+            errors.append(exc.message)
+    if errors:
+        for error in errors:
+            messages.error(request, error)
+        request.session[_kept_key(table)] = typed
         return _back(request, table)
     messages.success(request, f"Row {row.id} added.")
     return _back(request, table, "?sort=-id")

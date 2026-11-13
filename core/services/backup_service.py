@@ -440,18 +440,12 @@ class BackupService:
         owner_keys = set()
         for row in rows:
             script = script_map.get(row.get("script_id"))
-            if script is None:
-                warnings.append(f'Watcher "{row.get("name")}": its script wasn\'t in the backup, so it was left out.')
+            left_out = cls._watcher_left_out(
+                row, script is not None, script.workspace_id if script else None, owner_keys,
+            )
+            if left_out:
+                warnings.append(left_out)
                 continue
-            if row.get("owner_plugin") and row.get("owner_key"):
-                owner = (script.workspace_id, row["owner_plugin"], row["owner_key"])
-                if owner in owner_keys:
-                    warnings.append(
-                        f'Watcher "{row.get("name")}": another watcher of the "{row["owner_plugin"]}" plugin '
-                        f'has its key "{row["owner_key"]}", so it was left out.'
-                    )
-                    continue
-                owner_keys.add(owner)
             enabled = bool(row.get("enabled", True))
             connection = None
             if row.get("connection_id"):
@@ -494,6 +488,38 @@ class BackupService:
             )
             restored += 1
         return restored, warnings
+
+    @staticmethod
+    def _watcher_left_out(row, has_script, workspace, owner_keys) -> str:
+        """Why the restore leaves watcher ``row`` out, or '' (its owner key is
+        then taken in ``owner_keys``). One rule for the restore and its preview
+        (2.5 T52), so the preview counts what comes back."""
+        if not has_script:
+            return f'Watcher "{row.get("name")}": its script wasn\'t in the backup, so it was left out.'
+        if row.get("owner_plugin") and row.get("owner_key"):
+            owner = (workspace, row["owner_plugin"], row["owner_key"])
+            if owner in owner_keys:
+                return (
+                    f'Watcher "{row.get("name")}": another watcher of the "{row["owner_plugin"]}" plugin '
+                    f'has its key "{row["owner_key"]}", so it was left out.'
+                )
+            owner_keys.add(owner)
+        return ""
+
+    @classmethod
+    def _preview_watchers(cls, backup_data) -> Tuple[int, List[str]]:
+        """How many watchers a restore of ``backup_data`` brings back, and the
+        warnings for the ones it leaves out (the restore's own rule)."""
+        script_ws = {str(s.get("id")): s.get("workspace_id") for s in backup_data.get("scripts", [])}
+        owner_keys, kept, warnings = set(), 0, []
+        for row in backup_data.get("watchers", []):
+            script_id = str(row.get("script_id"))
+            left_out = cls._watcher_left_out(row, script_id in script_ws, script_ws.get(script_id), owner_keys)
+            if left_out:
+                warnings.append(left_out)
+            else:
+                kept += 1
+        return kept, warnings
 
     @classmethod
     def _export_global_settings(cls) -> dict:
@@ -1466,6 +1492,7 @@ class BackupService:
             )
 
         datastores = backup_data.get("datastores", [])
+        watchers_kept, left_out = cls._preview_watchers(backup_data)
         counts = {
             "scripts": len(backup_data.get("scripts", [])),
             "workspaces": len(backup_data.get("workspaces", [])),
@@ -1491,7 +1518,7 @@ class BackupService:
             "oauth_clients": len(backup_data.get("oauth_clients", [])),
             # A restore replaces the watchers (an older backup without the
             # section restores none), so the preview names how many come back.
-            "watchers": len(backup_data.get("watchers", [])),
+            "watchers": watchers_kept,
             # Like watchers: an older backup without the section leaves tables alone.
             "tables": len(backup_data.get("tables", [])),
             "table_rows": sum(len(t.get("rows") or []) for t in backup_data.get("tables", [])),
@@ -1503,6 +1530,8 @@ class BackupService:
             "created_by_email": metadata.get("created_by_email", "Unknown"),
             "counts": counts,
             "warnings": warnings,
+            # What the restore will leave out, in its own words (2.5 T52).
+            "left_out": left_out,
             "tokens_removed": cls.tokens_removed_by_restore(with_tables="tables" in backup_data),
         }
 

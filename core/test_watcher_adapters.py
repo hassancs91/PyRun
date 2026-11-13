@@ -559,7 +559,13 @@ class ImapTests(_Fixture):
     def test_settings_are_validated(self):
         schema = ImapNewMessageAdapter.config_schema
         self.assertEqual(validate_config(schema, {"search": "UNSEEN\r\nA1 DELETE INBOX"})[1],
-                         {"search": "Doesn't have the expected form."})
+                         {"search": "Line breaks aren't allowed here."})
+        # 2.5 T52 (test pass 7): a line break is named as the problem; with
+        # something else wrong besides, the generic sentence stays.
+        self.assertEqual(validate_config(schema, {"mailbox": "INBOX\nA1 LOGOUT"})[1],
+                         {"mailbox": "Line breaks aren't allowed here."})
+        self.assertEqual(validate_config(schema, {"mailbox": "Reçu\nA1"})[1],
+                         {"mailbox": "Doesn't have the expected form."})
         self.assertEqual(validate_config(schema, {"mailbox": "Invoices", "search": "UNSEEN"}),
                          ({"mailbox": "Invoices", "search": "UNSEEN"}, {}))
 

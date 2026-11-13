@@ -170,7 +170,13 @@ def validate_config(schema: dict, config) -> tuple[dict, dict]:
             errors[name] = "Too short."
             continue
         if isinstance(value, str) and "pattern" in prop and not re.search(prop["pattern"], value):
-            errors[name] = "Doesn't have the expected form."
+            # Say so when the line breaks are what's wrong (an IMAP mailbox
+            # or search, 2.5 T52); otherwise the generic sentence.
+            unbroken = re.sub(r"[\r\n]", "", value)
+            if unbroken != value and re.search(prop["pattern"], unbroken):
+                errors[name] = "Line breaks aren't allowed here."
+            else:
+                errors[name] = "Doesn't have the expected form."
             continue
         cleaned[name] = value
     for name in schema.get("required", []):

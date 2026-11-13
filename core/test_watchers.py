@@ -1047,6 +1047,31 @@ class BackupTests(_Fixture):
         data.pop("watchers")
         self.assertEqual(BackupService.get_backup_preview(data)["counts"]["watchers"], 0)
 
+    def test_the_restore_preview_leaves_out_what_the_restore_leaves_out(self):
+        # 2.5 T52 (test pass 7): a plugin watcher with a duplicated owner key, or
+        # one whose script isn't in the backup, isn't counted, and the preview warns.
+        from core.services.backup_service import BackupService
+
+        self._watcher(name="First")
+        self._watcher(name="Second")
+        self._watcher(name="Orphan")
+        data = BackupService.create_backup(include_runs=False)
+        for row in data["watchers"]:
+            if row["name"] in ("First", "Second"):
+                row.update(owner_plugin="shop", owner_key="orders")
+            if row["name"] == "Orphan":
+                row["script_id"] = "00000000-0000-0000-0000-000000000000"
+        preview = BackupService.get_backup_preview(data)
+        self.assertEqual(preview["counts"]["watchers"], 1)
+        self.assertTrue(any('"shop" plugin' in w and "left out" in w for w in preview["left_out"]), preview)
+        self.assertTrue(any('"Orphan"' in w and "left out" in w for w in preview["left_out"]), preview)
+
+        result = BackupService.restore_backup(data, restore_runs=False, current_user=self.user)
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["counts"]["watchers"], preview["counts"]["watchers"])
+        left_out = sorted(w for w in result["warnings"] if "Watcher" in w)
+        self.assertEqual(left_out, sorted(preview["left_out"]))
+
     def test_an_older_backup_has_no_watchers(self):
         from core.services.backup_service import BackupService
 

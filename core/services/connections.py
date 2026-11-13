@@ -20,6 +20,7 @@ and the executor all go through here:
   path, an SMTP or an IMAP login) from the server, through the SSRF guard.
 """
 
+import hashlib
 import imaplib
 import json
 import logging
@@ -485,6 +486,20 @@ def _label(data, keys) -> str:
     return ""
 
 
+class CredentialsRefused(ValueError):
+    """The service answered HTTP 401 to a connection's credentials."""
+
+
+def _probe(preset, connection) -> str:
+    """One test of ``connection`` with its stored credentials; the account label."""
+    material = auth_material(preset, connection.auth_kind, connection.config, connection.get_credentials())
+    if connection.auth_kind == SMTP:
+        return _test_smtp(material["smtp"])
+    if preset.protocol == "imap":
+        return _test_imap(material["imap"])
+    return http_check(preset, connection.config, material)
+
+
 def http_check(preset, config, material) -> str:
     """GET the whoami (or test) path with the credentials; returns the account label.
 
@@ -506,7 +521,9 @@ def http_check(preset, config, material) -> str:
         with guarded_opener().open(request, timeout=TEST_TIMEOUT) as response:
             raw = response.read(_WHOAMI_MAX_BYTES)
     except urllib.error.HTTPError as e:
-        if e.code in (401, 403):
+        if e.code == 401:
+            raise CredentialsRefused(f"The service refused these credentials (HTTP {e.code}).") from None
+        if e.code == 403:
             raise ValueError(f"The service refused these credentials (HTTP {e.code}).") from None
         raise ValueError(f"The service answered HTTP {e.code}.") from None
     label = ""
@@ -562,14 +579,19 @@ def check_connection(connection) -> tuple[bool, str]:
         except ConnectionLookupError as e:
             return False, e.message
     try:
-        credentials = connection.get_credentials()
-        material = auth_material(preset, connection.auth_kind, connection.config, credentials)
-        if connection.auth_kind == SMTP:
-            label = _test_smtp(material["smtp"])
-        elif preset.protocol == "imap":
-            label = _test_imap(material["imap"])
-        else:
-            label = http_check(preset, connection.config, material)
+        try:
+            label = _probe(preset, connection)
+        except CredentialsRefused:
+            if connection.auth_kind != OAUTH2:
+                raise
+            # Like a script's call (2.5 T52): the service refused the access
+            # token, so refresh it (once a minute at most) and test again once.
+            token = connection.get_credentials().get("access_token") or ""
+            try:
+                connection = ensure_fresh(connection, refused=hashlib.sha256(token.encode("utf-8")).hexdigest())
+            except ConnectionLookupError as e:
+                return False, e.message
+            label = _probe(preset, connection)
     except Exception as e:
         message = _masked_error(str(e) or e.__class__.__name__, masks_for(connection))
         message = message[:LAST_ERROR_MAX_CHARS]

@@ -123,7 +123,8 @@ def backup_upload_view(request):
         return JsonResponse({
             "success": True,
             "preview": preview,
-            "warnings": validation_result["warnings"],
+            # Plus what the restore will leave out (2.5 T52: watchers).
+            "warnings": validation_result["warnings"] + preview["left_out"],
         })
 
     except Exception as e:
@@ -231,11 +232,13 @@ def backup_restore_view(request):
                 del request.session["pending_backup"]
 
             counts = result["counts"]
-            summary = [
-                f"Backup restored successfully! Imported: {counts.get('scripts', 0)} scripts, "
-                f"{counts.get('environments', 0)} environments, {counts.get('secrets', 0)} secrets, "
-                f"{counts.get('runs', 0)} runs."
-            ]
+            imported = (
+                f"{counts.get('scripts', 0)} scripts, {counts.get('environments', 0)} environments, "
+                f"{counts.get('secrets', 0)} secrets, {counts.get('runs', 0)} runs"
+            )
+            if "tables" in counts:  # a backup that carries Tables (2.5 T38)
+                imported += f", {counts['tables']} tables with {counts.get('table_rows', 0)} rows"
+            summary = [f"Backup restored successfully! Imported: {imported}."]
             if auto_backup_name:
                 summary.append(f"The previous data was saved first as {auto_backup_name}.")
             warnings = list(result.get("warnings") or [])

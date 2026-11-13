@@ -586,6 +586,38 @@ class ConsoleTests(_Console):
                              fetch_redirect_response=False)
         self.assertEqual(Table.objects.get(pk=self.table.pk).row_count, 1)
 
+    def test_add_row_reports_every_error_and_keeps_the_input(self):
+        # 2.5 T52 (test pass 8): one submit names every bad column, and the
+        # form comes back open with what was typed.
+        TableService.insert(self.table, [{"email": "seed@x"}])  # a grid with rows starts it closed
+        url = reverse("cpanel:table_row_add", args=[self.table.pk])
+        resp = self.client.post(url, {
+            "c_email": "", "c_score": "lots", "c_site": "not a link", "c_meta": "{bad",
+            "c_joined": "2026-05-06", "c_active": "false",
+        }, follow=True)
+        errors = [str(m) for m in resp.context["messages"] if m.level_tag == "error"]
+        self.assertEqual(len(errors), 4, errors)
+        joined = " ".join(errors)
+        for needle in ('"score"', '"site"', '"meta": not valid JSON', "Required column without a value: email"):
+            self.assertIn(needle, joined)
+        self.assertEqual(TableRow.objects.filter(table=self.table).count(), 1)
+        body = resp.content.decode()
+        self.assertIn('value="lots"', body)
+        self.assertIn('value="not a link"', body)
+        self.assertIn("{bad</textarea>", body)
+        self.assertIn('value="2026-05-06"', body)
+        self.assertIn('<option value="false" selected>', body)
+        self.assertRegex(body, r'<details[^>]*\bopen>\s*<summary[^>]*>Add a row')
+        # Shown once: the next view is the plain form again.
+        again = self.detail().content.decode()
+        self.assertNotIn('value="lots"', again)
+        self.assertNotRegex(again, r'<details[^>]*\bopen>\s*<summary[^>]*>Add a row')
+
+        # Fixed: the row goes in.
+        resp = self.client.post(url, {"c_email": "c@x", "c_score": "3", "c_meta": "{}"})
+        self.assertRedirects(resp, reverse("cpanel:table_detail", args=[self.table.pk]) + "?sort=-id")
+        self.assertEqual(TableRow.objects.filter(table=self.table).latest("id").data["score"], 3)
+
     @override_settings(PYRUNNER_TABLE_ROW_CAP=10)
     def test_cap_banners(self):
         TableService.insert(self.table, [{"email": f"{i}"} for i in range(9)])

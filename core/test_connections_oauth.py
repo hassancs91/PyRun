@@ -653,6 +653,27 @@ class RefreshTests(_ProviderMixin, _Fixture, TestCase):
         self.assertEqual(message, "Connected as robot@example.com.")
         self.assertEqual(self.st.refresh_calls, 1)
 
+    def test_the_test_button_refreshes_once_on_a_401(self):
+        # 2.5 T52 (test pass 6): a token the service no longer takes (not yet
+        # expired by its clock) is refreshed and tried again once, like a script's call.
+        from django.core.cache import cache
+
+        c = self._oauth(app=self.app, expires_in=3600)
+        self.st.access.discard("at-t24-old-0000")
+        self.addCleanup(cache.delete, f"pyrunner:oauth:refused:{c.pk}")
+        ok, message = svc.check_connection(Connection.objects.get(pk=c.pk))
+        self.assertTrue(ok, message)
+        self.assertEqual(message, "Connected as robot@example.com.")
+        self.assertEqual(self.st.refresh_calls, 1)
+        self.assertEqual(Connection.objects.get(pk=c.pk).status, "ok")
+
+        # Refused again right after: no second refresh within the minute, and the test fails.
+        self.st.access.clear()
+        ok, message = svc.check_connection(Connection.objects.get(pk=c.pk))
+        self.assertFalse(ok)
+        self.assertIn("HTTP 401", message)
+        self.assertEqual(self.st.refresh_calls, 1)
+
 
 @skipUnless(db_connection.vendor == "postgresql", "the row-lock path is Postgres's")
 class PostgresSingleFlightTests(_ProviderMixin, TransactionTestCase):

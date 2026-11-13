@@ -100,7 +100,12 @@ class RetentionService:
         finished = Run.objects.filter(
             script=script, status__in=Run.FINISHED_STATUSES
         )
-        to_delete = finished
+        # A retry still waiting (or running) points at its first attempt
+        # (``retry_of``): that run stays until the retries are done (2.5 T52).
+        waiting_retries = Run.objects.filter(
+            script=script, retry_of__isnull=False
+        ).exclude(status__in=Run.FINISHED_STATUSES).values("retry_of_id")
+        to_delete = finished.exclude(id__in=waiting_retries)
 
         # Keep runs newer than retention_days
         if days > 0:

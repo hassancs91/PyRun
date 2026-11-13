@@ -11,6 +11,16 @@ WhatsApp Business number on Meta's Cloud API, called directly: no Twilio, no
 unofficial bridge). How sends are recorded, retried and capped is the same
 for both: see [Chat messages and deliveries](run-context.md#chat-messages-and-deliveries).
 
+Delivery is **at least once**. A message being sent is leased to one worker;
+if that worker dies mid-send (after the chat service took the message but
+before PyRun recorded it), the message is sent again once the lease runs out,
+so a recipient can, rarely, get it twice.
+
+Each channel's inbound callback URL takes at most **60 requests a minute from
+one client address**; past that it answers `429` until the minute is over.
+Telegram and Meta retry those calls later, so on a very busy channel
+incoming messages and WhatsApp's status callbacks can arrive late.
+
 ---
 
 ## Telegram
@@ -301,7 +311,8 @@ else:
 
 ### Delivery status
 
-Each send is recorded with WhatsApp's message id. As Meta's status callbacks
+Each send is recorded with WhatsApp's message id (shown as **Message id** in
+the Message log and on the run's Deliveries card). As Meta's status callbacks
 arrive, the channel's **Message log** (and a run's **Deliveries** card) moves
 the message from *sent* to *delivered* to *read*; a late or repeated
 callback never moves it back. When WhatsApp reports a message **failed**

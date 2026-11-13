@@ -251,3 +251,37 @@ class RestoreToastTests(SettingsBase):
         self.assertIn("auto_backup_", texts[0])
         self.assertIn("4 items need attention", texts[1])
         self.assertIn("(4) w-four", texts[1])
+        self.assertNotIn("tables", texts[0])
+
+    def _restore(self, counts):
+        session = self.client.session
+        session["pending_backup"] = {"backup_metadata": {}}
+        session.save()
+        result = {"success": True, "counts": counts, "warnings": []}
+        with mock.patch.object(BackupService, "create_backup", return_value={}),                 mock.patch.object(BackupService, "serialize_backup", return_value=(b"x", "application/gzip")),                 mock.patch("core.views.backup.open", mock.mock_open(), create=True),                 mock.patch.object(BackupService, "restore_backup", return_value=result),                 mock.patch("core.tasks.queue_environment_rebuild"):
+            resp = self.client.post(reverse("cpanel:backup_restore"), {"confirm_delete": "on"})
+        return self.messages_of(resp)
+
+    def test_the_upload_preview_warns_about_what_the_restore_leaves_out(self):
+        # 2.5 T52: the preview's warnings include the watchers the restore drops.
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        left_out = ['Watcher "B": another watcher of the "shop" plugin has its key "k", so it was left out.']
+        with mock.patch.object(BackupService, "deserialize_backup", return_value={"backup_metadata": {}}), \
+                mock.patch.object(BackupService, "validate_backup",
+                                  return_value={"valid": True, "errors": [], "warnings": ["from validation"]}), \
+                mock.patch.object(BackupService, "get_backup_preview",
+                                  return_value={"counts": {"watchers": 1}, "warnings": [], "left_out": left_out}):
+            resp = self.client.post(
+                reverse("cpanel:backup_upload"),
+                {"backup_file": SimpleUploadedFile("b.json", b"{}", content_type="application/json")},
+            )
+        body = resp.json()
+        self.assertTrue(body["success"], body)
+        self.assertEqual(body["warnings"], ["from validation", *left_out])
+
+    def test_restore_summary_counts_tables_and_rows(self):
+        # 2.5 T52: a backup with Tables says how many tables and rows came back.
+        texts = self._restore({"scripts": 3, "environments": 1, "secrets": 2, "runs": 9,
+                               "tables": 2, "table_rows": 41})
+        self.assertIn("Imported: 3 scripts, 1 environments, 2 secrets, 9 runs, 2 tables with 41 rows.", texts[0])

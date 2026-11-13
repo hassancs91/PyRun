@@ -724,6 +724,34 @@ begins tracking at the current release; earlier history is in the git log.
   `triggers.py` fails the doctor's rule or fails to import, the plugin's page
   shows **Watcher types unavailable** with the reason; the traceback stays in
   the server log.
+- **Add a row names every mistake at once and keeps what you typed.** The
+  Tables grid's form reported only the first bad column and came back empty;
+  now each bad column gets its message and the form reopens with the values.
+- **The restore message counts tables.** After a restore of a backup with
+  Tables, the success message says how many tables and rows came back.
+- **The restore preview counts the watchers that come back.** A plugin's
+  watcher whose owner key another one already has, or one whose script isn't
+  in the backup, was counted in the preview but left out by the restore; the
+  preview now leaves it out too and shows the same warning.
+- **Run cleanup keeps a retry's first attempt while the retry waits.** A
+  count or age rule could delete the failed run a waiting retry belongs to.
+- **The plugin store URL can name a single-label host** such as
+  `http://store:8080/index.json` (a Docker network name). The address check
+  that guards every outgoing URL is unchanged.
+- **Message ids on deliveries.** A run's Deliveries card and a channel's
+  Message log show the id the chat service gave each message.
+- **A line break in an IMAP watcher's mailbox or search says so** ("Line
+  breaks aren't allowed here.") instead of "Doesn't have the expected form."
+- **Testing an OAuth connection refreshes a refused token once.** When the
+  service answers 401 to a token PyRun thought was still good, **Test**
+  refreshes it and tries again once, the way a script's call does.
+- **Faint text is easier to read.** The light grey used for help text,
+  timestamps and labels is darker in the light theme and lighter in the dark
+  one, at least 4.5:1 against the console's backgrounds.
+- **Docs:** the chat channels guide states the inbound callback's 60 requests a
+  minute per address and that sends are at least once; the scheduling guide
+  explains that integration watchers on one worker take turns and that a
+  watcher's settings are stored in a backup as plain text.
 
 ## [2.0.0] — October 23, 2026
 

@@ -78,7 +78,8 @@ class _Fixture:
         )
 
     def _unfinished(self, script, age):
-        """A held run, a waiting retry and a running run, all ``age`` old."""
+        """A held run, a waiting retry (and its failed first attempt, kept while
+        the retry waits: T52) and a running run, all ``age`` old."""
         running = self._run(script, age, status=Run.Status.RUNNING)
         held = self._run(script, age, status=Run.Status.PENDING, queued_behind=running.pk)
         first = self._run(script, age, status=Run.Status.FAILED)
@@ -88,7 +89,7 @@ class _Fixture:
         )
         self.assertTrue(held.is_held)
         self.assertTrue(retry.is_waiting_retry)
-        return [running, held, retry]
+        return [running, held, first, retry]
 
     def _ids(self, script):
         return set(Run.objects.filter(script=script).values_list("pk", flat=True))
@@ -114,8 +115,9 @@ class UnfinishedRunTests(_Fixture, TestCase):
 
         deleted = RetentionService.cleanup_runs_for_script(script, days=0, count=3)
 
-        # The FAILED first attempt of the retry is old and finished: it goes.
-        self.assertEqual(deleted, len(old) + 1)
+        # The FAILED first attempt of the retry is old and finished, but its
+        # retry still waits: it stays (T52).
+        self.assertEqual(deleted, len(old))
         self.assertEqual(self._ids(script), self._pks(unfinished + newest))
 
     def test_days_only_keeps_unfinished_runs_past_the_retention_days(self):
@@ -148,10 +150,30 @@ class UnfinishedRunTests(_Fixture, TestCase):
 
         RetentionService.cleanup_runs_for_script(script, days=0, count=2)
 
-        # The retry's FAILED first attempt is the newest finished run.
+        # The retry's FAILED first attempt is the newest finished run, so it
+        # is one of the 2; the newest older run is the other.
         kept = self._ids(script) - self._pks(unfinished)
-        self.assertEqual(len(kept), 2)
-        self.assertIn(older[0].pk, kept)
+        self.assertEqual(kept, {older[0].pk})
+
+    def test_a_waiting_retrys_first_attempt_stays_until_the_retries_are_done(self):
+        # 2.5 T52 (test pass 7): the count rule (and the age rule) spare it.
+        script = self._script()
+        first = self._run(script, 60 * DAY, status=Run.Status.FAILED)
+        retry = self._run(
+            script, HOUR, status=Run.Status.PENDING, attempt=2, retry_of=first,
+            next_attempt_at=self.now + datetime.timedelta(minutes=10),
+        )
+        newer = [self._run(script, i * DAY) for i in range(1, 4)]
+
+        self.assertEqual(RetentionService.cleanup_runs_for_script(script, days=0, count=1), 2)
+        self.assertEqual(self._ids(script), {first.pk, retry.pk, newer[0].pk})
+        retry.refresh_from_db()
+        self.assertEqual(retry.retry_of_id, first.pk)
+
+        # The retry ran and failed for good: the first attempt can go now.
+        Run.objects.filter(pk=retry.pk).update(status=Run.Status.FAILED, next_attempt_at=None)
+        self.assertEqual(RetentionService.cleanup_runs_for_script(script, days=0, count=1), 2)
+        self.assertFalse(Run.objects.filter(pk=first.pk).exists())
 
     def test_both_rules_off_keeps_everything(self):
         script = self._script()
@@ -291,7 +313,7 @@ class PreviewTests(_Fixture, TestCase):
         self.client.force_login(self.admin)
         self.a = self._script()
         self.b = self._script()
-        self.unfinished = self._unfinished(self.a, 50 * DAY)  # 3 in flight + 1 FAILED
+        self.unfinished = self._unfinished(self.a, 50 * DAY)  # 3 in flight + 1 FAILED (kept: T52)
         for i in range(4):
             self._run(self.a, (1 + i) * DAY)
             self._refused(self.a, (1 + i) * HOUR, Run.CancelReason.MAINTENANCE)
@@ -302,30 +324,31 @@ class PreviewTests(_Fixture, TestCase):
         stats = resp.json()["stats"]
         total = Run.objects.count()
         self.assertEqual(stats["total_runs"], total)
-        # a: the FAILED first attempt + 2 real + 2 refused; b: nothing.
-        self.assertEqual(stats["runs_to_delete"], 5)
-        self.assertEqual(stats["runs_to_keep"], total - 5)
+        # a: 2 real + 2 refused (the FAILED first attempt stays while its
+        # retry waits, T52); b: nothing.
+        self.assertEqual(stats["runs_to_delete"], 4)
+        self.assertEqual(stats["runs_to_keep"], total - 4)
         self.assertEqual(stats["runs_in_progress"], 3)
         rows = {row["script_id"]: row for row in stats["per_script"]}
-        self.assertEqual(rows[str(self.a.id)]["to_delete"], 5)
+        self.assertEqual(rows[str(self.a.id)]["to_delete"], 4)
         self.assertEqual(rows[str(self.b.id)]["to_delete"], 0)
 
         resp = self.client.post(reverse("cpanel:manual_cleanup"))
         self.assertEqual(resp.status_code, 302)
-        self.assertEqual(Run.objects.count(), total - 5)
+        self.assertEqual(Run.objects.count(), total - 4)
         self.assertTrue(set(Run.objects.values_list("pk", flat=True)) >= self._pks(self.unfinished))
         self.assertEqual(RetentionService.get_cleanup_stats()["runs_to_delete"], 0)
 
     def test_cleanup_reports_runs_not_the_rows_deleted_with_them(self):
         doomed = RetentionService.get_runs_to_delete_for_script(self.a).first()
         RunMask.objects.create(run=doomed, label="KEY", digest="0" * 64, value_encrypted="x")
-        self.assertEqual(cleanup_old_runs_task(), {"success": True, "deleted_count": 5})
+        self.assertEqual(cleanup_old_runs_task(), {"success": True, "deleted_count": 4})
         self.assertFalse(RunMask.objects.exists())
         self.assertIsNotNone(GlobalSettings.get_settings().last_cleanup_at)
 
     def test_manual_cleanup_message_counts_runs(self):
         resp = self.client.post(reverse("cpanel:manual_cleanup"), follow=True)
-        self.assertContains(resp, "Cleanup completed. 5 runs deleted.")
+        self.assertContains(resp, "Cleanup completed. 4 runs deleted.")
         resp = self.client.get(reverse("cpanel:settings"))
         self.assertContains(resp, "Pending and running runs are never deleted")
 

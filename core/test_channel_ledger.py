@@ -494,6 +494,17 @@ class PageTests(_Base):
         self.assertIn("Next attempt at", body)
         self.assertIn(reverse("cpanel:run_detail", args=[self.run.pk]), body)
 
+    def test_both_pages_show_the_provider_message_id(self):
+        # 2.5 T52 (test pass 7): the id the provider gave the message, for support.
+        ChannelMessage.objects.create(
+            channel=self.ch, direction="out", kind="script", text="hello", status="sent",
+            run=self.run, provider_message_id="wamid.T52-abc",
+        )
+        for page in (reverse("cpanel:run_detail", args=[self.run.pk]),
+                     reverse("cpanel:channel_edit", args=[self.ch.pk])):
+            body = self.client.get(page).content.decode()
+            self.assertIn('Message id <span class="font-mono">wamid.T52-abc</span>', body, page)
+
     def test_the_form_saves_the_send_cap(self):
         resp = self.client.post(reverse("cpanel:channel_edit", args=[self.ch.pk]), {
             "name": "Ops", "default_target": "555", "daily_send_cap": "40", "enabled": "on",

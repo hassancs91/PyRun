@@ -101,6 +101,7 @@
                     {% if d.hidden %}<p class="mt-1 text-xs text-faint">Text hidden: a secret it may contain couldn't be resolved.</p>{% elif d.text %}<p class="mt-1 text-sm text-text break-words">{{ d.text|truncatechars:300 }}</p>{% endif %}
                     {% if d.msg.error %}<p class="mt-1 text-xs {% if d.msg.status == 'sent' %}text-faint{% else %}text-fail{% endif %} break-words">{{ d.msg.error|truncatechars:300 }}</p>{% endif %}
                     {% if d.msg.status == 'retrying' and d.msg.next_attempt_at %}<p class="mt-1 text-xs text-warn">Next attempt at <span class="font-mono">{{ d.msg.next_attempt_at|date:"M d, H:i" }}</span></p>{% endif %}
+                    {% if d.msg.provider_message_id %}<p class="mt-1 text-xs text-faint break-all">Message id <span class="font-mono">{{ d.msg.provider_message_id }}</span></p>{% endif %}
                 </li>
                 {% endfor %}
             </ul>

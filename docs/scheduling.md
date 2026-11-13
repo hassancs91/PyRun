@@ -384,6 +384,12 @@ mid-check never starts a second run for the same item.
 - Each request to the source may take up to 20 seconds, and a check that
   hasn't finished after 25 seconds is given up ("The check didn't finish
   within 25 seconds."). Either way it counts as a failed check.
+- Watchers on an integration's source (Gmail, Slack, GitHub and the rest)
+  take turns within one worker: one integration check runs at a time. One
+  that waits more than 20 seconds for its turn is tried again later ("Another
+  integration check in this worker is still going") and counts as a failed
+  check, so many busy integration watchers on one worker can turn each other
+  off; spread their intervals or add workers.
 - After a failed check the watcher waits twice as long each time (the
   interval doubled per failure, up to an hour). After **10 failures in a row**
   it turns itself off and its creator gets an email. Fix the cause, then turn
@@ -400,7 +406,9 @@ mid-check never starts a second run for the same item.
 
 Watchers are included in backups with where each source was, so a restored
 watcher doesn't start runs for items it already handled. One whose connection
-didn't come back is restored turned off. API and MCP callers list watchers
+didn't come back is restored turned off. A watcher's settings are stored in
+the backup as plain text (a key in a watched URL's query is readable there:
+put it in a connection instead). API and MCP callers list watchers
 with `watchers.list` (never their settings, which can hold a key in a URL).
 
 ---
@@ -415,7 +423,8 @@ counts exactly what that would delete. The settings apply to every script
 
 - A run that is pending (queued for a worker, waiting its turn under the
   Queue policy, or a retry waiting for its time) or running is never
-  deleted, whatever the settings.
+  deleted, whatever the settings. Nor is the first attempt of a retry that is
+  still waiting or running: it goes once the retries are done.
 - The last N are the newest finished runs that actually ran. Runs refused
   before they started (**skipped: already running** and **skipped:
   maintenance window**) don't take those places: they keep their own last N,

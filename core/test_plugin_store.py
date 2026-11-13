@@ -539,6 +539,24 @@ class ConsoleTests(_StoreBase):
         self.assertContains(resp, "Store index URL cleared")
         self.assertEqual(GlobalSettings.get_settings().plugin_store_url, "")
 
+    def test_single_label_hosts_are_accepted(self):
+        # 2.5 T52 (test pass 8): a Docker network name like "store" has no dot.
+        url = reverse("cpanel:plugin_store_settings")
+        with mock.patch("core.views.plugin_store.is_safe_endpoint_url", return_value=(True, "")) as guard, \
+                mock.patch.object(plugin_store, "refresh", side_effect=plugin_store.StoreError("unreachable")):
+            resp = self.client.post(url, {"store_url": "http://store:8080/index.json"}, follow=True)
+        guard.assert_called_once_with("http://store:8080/index.json")
+        self.assertContains(resp, "Store index URL saved.")
+        self.assertEqual(GlobalSettings.get_settings().plugin_store_url, "http://store:8080/index.json")
+        for bad in ("http://", "http:///index.json", "http://store:port/x", "http://st ore/x"):
+            resp = self.client.post(url, {"store_url": bad}, follow=True)
+            self.assertContains(resp, "Enter an http:// or https:// URL", msg_prefix=bad)
+        # Install from URL: a single-label host goes through the same guard.
+        _Store.files["/my.zip"] = zip_bytes(demo_files())
+        port = self.server.server_address[1]
+        resp = self.client.post(reverse("cpanel:plugin_install_url"), {"url": f"http://localhost:{port}/my.zip"})
+        self.assertRedirects(resp, reverse("cpanel:plugin_detail", kwargs={"slug": SLUG}), fetch_redirect_response=False)
+
     def test_install_from_url_form(self):
         data = zip_bytes(demo_files())
         _Store.files["/my.zip"] = data
