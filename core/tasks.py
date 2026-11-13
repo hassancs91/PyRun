@@ -773,6 +773,7 @@ def scheduled_backup_task() -> dict:
             include_package_operations=False,
             include_datastores=settings.s3_backup_include_datastores,
             created_by_user=None,  # System backup
+            include_plugins=settings.s3_backup_include_plugins,
         )
 
         # Serialize to gzip

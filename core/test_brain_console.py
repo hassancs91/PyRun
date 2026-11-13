@@ -378,7 +378,7 @@ class BrainBackupTests(TestCase):
         excluded.include_in_backup = False
         excluded.save()
         data = self.backup()
-        self.assertEqual(data["backup_metadata"]["version"], "1.13.0")
+        self.assertEqual(data["backup_metadata"]["version"], "1.14.0")
         self.assertEqual(len(data["brains"]), 1)
         result = BackupService.restore_backup(data)
         self.assertTrue(result["success"], result["errors"])

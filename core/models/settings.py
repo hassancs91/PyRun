@@ -284,6 +284,10 @@ class GlobalSettings(models.Model):
         default=True,
         help_text="Include datastores in scheduled backups",
     )
+    s3_backup_include_plugins = models.BooleanField(
+        default=False,
+        help_text="Include installed plugins (with their files) in scheduled backups",
+    )
 
     # Backup tracking fields
     s3_backup_last_run_at = models.DateTimeField(

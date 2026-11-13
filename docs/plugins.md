@@ -1359,6 +1359,18 @@ even if new rules are added.
 If a plugin ever fails at boot, it's quarantined as `Errored` and skipped — the
 site still boots. Last resort: `PYRUNNER_DISABLE_PLUGINS=1` boots with zero plugins.
 
+**Backups (PyRun 2.5).** What a plugin owns (scripts, secrets, data stores,
+tables…) is always in a backup. The plugins themselves are only when the backup
+is made with **Include installed plugins** (Settings → Backup, off by default;
+the scheduled backup has the same option). Each plugin then goes in with its
+files, signature included. Restoring that backup installs the plugins this
+server doesn't have, through the same checks as an upload (archive limits,
+signature and the trust policy, `min_pyrunner`, `api`), as `Installed`: none is
+activated, so an admin activates each one (doctor + preflight + restart). A
+plugin already installed here is left as it is, even at another version, and a
+restore never removes one. Update history and the kept previous version are not
+in backups. Without the option, reinstall your plugins from their zips.
+
 ---
 
 ## Updating a plugin (PyRun 2.5)

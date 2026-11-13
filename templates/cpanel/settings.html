@@ -629,6 +629,10 @@
                     {% include "cpanel/_field_errors.html" with field=backup_create_form.max_runs %}
                 </div>
                 <div class="flex items-center gap-3">{{ backup_create_form.include_package_operations }}<label for="id_include_package_operations" class="text-sm text-muted">{{ backup_create_form.include_package_operations.label }}</label></div>
+                <div>
+                    <div class="flex items-center gap-3">{{ backup_create_form.include_plugins }}<label for="id_include_plugins" class="text-sm text-muted">{{ backup_create_form.include_plugins.label }}</label></div>
+                    <p class="mt-1 ml-8 text-xs text-faint">{{ backup_create_form.include_plugins.help_text }}</p>
+                </div>
             </div>
             <div class="p-4 bg-warn/10 border border-warn/30 rounded-lg mb-4">
                 <p class="text-sm text-warn">⚠ <strong>Important:</strong> Backup contains encrypted secrets. Keep your ENCRYPTION_KEY secure! The backup can only be restored with the same encryption key.</p>
@@ -717,6 +721,7 @@
                 <div class="pt-4 mt-4 border-t border-line-soft">
                     <p class="text-[13px] font-medium text-text mb-3">Backup contents</p>
                     <div class="flex items-center gap-3 mb-2">{{ backup_schedule_form.s3_backup_include_datastores }}<label for="id_s3_backup_include_datastores" class="text-sm text-muted">{{ backup_schedule_form.s3_backup_include_datastores.label }}</label></div>
+                    <div class="flex items-center gap-3 mb-2">{{ backup_schedule_form.s3_backup_include_plugins }}<label for="id_s3_backup_include_plugins" class="text-sm text-muted">{{ backup_schedule_form.s3_backup_include_plugins.label }}</label></div>
                     <div class="flex items-center gap-3 mb-2">{{ backup_schedule_form.s3_backup_include_runs }}<label for="id_s3_backup_include_runs" class="text-sm text-muted">{{ backup_schedule_form.s3_backup_include_runs.label }}</label></div>
                     <div class="ml-8">
                         <label class="block text-[13px] font-medium text-text mb-1.5">{{ backup_schedule_form.s3_backup_max_runs.label }}</label>
@@ -1122,7 +1127,7 @@ function showRestorePreview(preview, warnings) {
         ['Connections', 'connections'], ['OAuth apps', 'oauth_clients'], ['Watchers', 'watchers'],
         ['Data stores', 'datastores'], ['Data store entries', 'datastore_entries'],
         ['Databases', 'databases'], ['Vector collections', 'vector_collections'], ['Brains', 'brains'],
-        ['Tables', 'tables'], ['Table rows', 'table_rows'],
+        ['Tables', 'tables'], ['Table rows', 'table_rows'], ['Plugins', 'plugins'],
     ];
     kinds.forEach(([label, key]) => {
         html += '<div>• ' + label + ': <strong>' + escapeHtml(String(preview.counts[key] || 0)) + '</strong></div>';
@@ -1130,6 +1135,9 @@ function showRestorePreview(preview, warnings) {
     html += '</div>';
     if (preview.counts.databases) {
         html += '<p class="text-xs text-muted mt-2">Databases: each one\'s schema is dropped and re-created from the dump in the backup.</p>';
+    }
+    if (preview.counts.plugins) {
+        html += '<p class="text-xs text-muted mt-2">Plugins: the ones not installed here are installed, turned off; installed ones stay as they are.</p>';
     }
     html += '</div>';
 

@@ -36,6 +36,7 @@ def backup_create_view(request):
                     include_package_operations=form.cleaned_data.get("include_package_operations", False),
                     include_datastores=form.cleaned_data.get("include_datastores", True),
                     created_by_user=request.user,
+                    include_plugins=form.cleaned_data.get("include_plugins", False),
                 )
 
                 # Serialize with selected format
@@ -238,6 +239,8 @@ def backup_restore_view(request):
             )
             if "tables" in counts:  # a backup that carries Tables (2.5 T38)
                 imported += f", {counts['tables']} tables with {counts.get('table_rows', 0)} rows"
+            if "plugins" in counts:  # made with "Include installed plugins" (2.5 T47)
+                imported += f", {counts['plugins']} plugins installed"
             summary = [f"Backup restored successfully! Imported: {imported}."]
             if auto_backup_name:
                 summary.append(f"The previous data was saved first as {auto_backup_name}.")

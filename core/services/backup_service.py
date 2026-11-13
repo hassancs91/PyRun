@@ -29,6 +29,7 @@ from core.models import (
     MaintenanceWindow,
     OAuthClient,
     PackageOperation,
+    Plugin,
     Run,
     ScheduleHistory,
     Script,
@@ -149,7 +150,9 @@ class BackupService:
     # require an explicit retry; restoring a backup never starts paid AI work.
     # 1.12.0 — Optional Brain vector binding; transient reader jobs are omitted.
     # 1.13.0 — GitHub Brain sync configuration/baseline; jobs omitted, polling paused.
-    # Next (1.14.0, bumped once for the whole 2.5 train): ``inputs_schema`` on
+    # 1.14.0 — PyRun 2.5, one bump for the whole release. Every addition below
+    # is optional on restore: a 1.13.0 (2.0.0) backup restores with each 2.5
+    # feature off. ``inputs_schema`` on
     # scripts and ``inputs`` on runs. Older backups omit both; restore leaves
     # them NULL (no declared inputs), which is how every pre-2.5 script runs.
     # ``result`` and ``progress`` on runs (what pyrunner_run reported, stored
@@ -208,7 +211,22 @@ class BackupService:
     # its id, data, times and creator). A backup with the section replaces the
     # tables; one without it leaves this instance's tables alone. Row ids are
     # kept (scripts address rows by id); ``row_count`` is recounted.
-    BACKUP_VERSION = "1.13.0"
+    # On global settings: ``api_writes_enabled``, ``require_2fa`` (older
+    # backups: off), ``plugin_trust_policy`` and ``plugin_store_url`` (older
+    # backups: the defaults). On each user: ``notify_on_login`` and, for a
+    # confirmed enrolment, ``two_factor`` (applied only onto an account without
+    # an authenticator of its own, and only if the secret decrypts here).
+    # ``plugins`` only when the backup was made with "Include installed
+    # plugins" (off by default; ``backup_metadata.include_plugins``): each
+    # plugin row with its folder as a base64 zip. The restore installs the ones
+    # this server doesn't have through the zip installer, after the rows are
+    # committed, INSTALLED and never active; installed plugins are never
+    # changed or removed. A backup without the key leaves plugins alone.
+    # Not carried in 1.14.0, by choice: API tokens and their bindings, the API
+    # call log, rate-limit counters, per-run mask rows, a connection's refresh
+    # lock, channels and their messages, security events, the plugin store's
+    # cached index, plugin update history and kept previous versions.
+    BACKUP_VERSION = "1.14.0"
     MAX_BACKUP_SIZE_MB = 100
     # Default cap on a gzip backup's expanded size (F92, zip-bomb guard);
     # PYRUNNER_BACKUP_MAX_EXPANDED_MB overrides it. The default is above the
@@ -228,6 +246,7 @@ class BackupService:
         include_package_operations: bool = False,
         include_datastores: bool = True,
         created_by_user=None,
+        include_plugins: bool = False,
     ) -> dict:
         """
         Create a complete backup of the PyRun instance.
@@ -238,6 +257,7 @@ class BackupService:
             include_package_operations: Include package operation history
             include_datastores: Include datastores and their entries
             created_by_user: User creating the backup (for metadata)
+            include_plugins: Include installed plugins with their files (opt-in)
 
         Returns:
             dict: Backup data structure (ready to serialize to JSON)
@@ -252,6 +272,7 @@ class BackupService:
                 "include_runs": include_runs,
                 "include_run_history_count": max_runs if include_runs else 0,
                 "created_by_email": created_by_user.email if created_by_user else None,
+                "include_plugins": include_plugins,
             },
             "global_settings": cls._export_global_settings(),
             "workspaces": cls._export_workspaces(),
@@ -291,8 +312,146 @@ class BackupService:
         backup_data["connections"] = cls._export_connections()
         backup_data["watchers"] = cls._export_watchers()
         backup_data["tables"] = cls._export_tables()
+        # Opt-in (Settings -> Backup): without it the key is absent, as before 1.14.0.
+        if include_plugins:
+            backup_data["plugins"] = cls._export_plugins()
 
         return backup_data
+
+    # Installed plugins (opt-in, 1.14.0): the whole archive of one plugin must
+    # fit what the zip installer accepts, or a restore could never install it.
+    @classmethod
+    def _export_plugins(cls) -> List[dict]:
+        """Every plugin row, each with its folder as a base64 zip when it can be carried.
+
+        Only called when the backup was asked to include plugins. The zip holds
+        the files an install would have written (signature files included,
+        ``__pycache__``/``.pyc`` and symlinks left out), so the restore puts it
+        back through the zip installer like an upload. A dev-mode plugin, a
+        missing folder or one over the installer's limits is listed with
+        ``files_skipped_reason`` instead. Update history and the kept previous
+        version are not carried.
+        """
+        import zipfile
+
+        from core.plugins.trust.signing import TRUST_FILES, plugin_files
+        from core.services.plugin_service import MAX_MEMBERS, MAX_SINGLE_FILE, MAX_TOTAL_UNCOMPRESSED
+
+        rows = []
+        for plugin in Plugin.objects.order_by("slug"):
+            row = {
+                "slug": plugin.slug,
+                "name": plugin.name,
+                "version": plugin.version,
+                "source": plugin.source,
+                "status": plugin.status,
+                "update_policy": plugin.update_policy,
+                "checksum": plugin.checksum,
+            }
+            folder = Path(settings.PLUGINS_DIR) / plugin.slug
+            if getattr(settings, "DEV_PLUGIN", None) == f"plugins.{plugin.slug}":
+                row["files_skipped_reason"] = "it is loaded in dev mode from a local folder"
+            elif not folder.is_dir():
+                row["files_skipped_reason"] = "its folder is missing on the source server"
+            else:
+                root = folder.resolve()
+                names = plugin_files(folder, include_generated=False)
+                names += [name for name in TRUST_FILES if (folder / name).is_file()]
+                files, total, reason = [], 0, ""
+                for rel in sorted(names):
+                    path = folder / rel
+                    if path.is_symlink() or not path.resolve().is_relative_to(root):
+                        continue
+                    size = path.stat().st_size
+                    total += size
+                    if size > MAX_SINGLE_FILE or total > MAX_TOTAL_UNCOMPRESSED or len(files) >= MAX_MEMBERS:
+                        reason = "it is larger than a plugin upload may be"
+                        break
+                    files.append((rel, path))
+                if reason:
+                    row["files_skipped_reason"] = reason
+                else:
+                    buf = io.BytesIO()
+                    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                        for rel, path in files:
+                            zf.writestr(f"{plugin.slug}/{rel}", path.read_bytes())
+                    row["zip_b64"] = base64.b64encode(buf.getvalue()).decode("ascii")
+            rows.append(row)
+        return rows
+
+    @classmethod
+    def _import_plugins(cls, rows) -> Tuple[int, List[str]]:
+        """Install the backup's plugins that this server doesn't have; returns (installed, warnings).
+
+        Runs after the rows are committed (it writes files, which a rollback
+        can't undo). Each plugin goes through ``PluginService.install_from_zip``,
+        so every install check applies (archive limits, signature and the trust
+        policy, ``min_pyrunner``, SDK ``api``) and it comes back INSTALLED, never
+        active: an admin activates it, which runs the doctor and the preflight.
+        A plugin already installed here is left exactly as it is, and no
+        installed plugin is ever removed.
+        """
+        import zipfile
+
+        from core.plugins import is_valid_plugin_slug
+        from core.services.plugin_service import PluginInstallError, PluginService
+
+        if not isinstance(rows, list):
+            return 0, ["The backup's plugins section isn't readable; no plugin was installed."]
+        installed, warnings = 0, []
+        for row in rows:
+            row = row if isinstance(row, dict) else {}
+            slug = str(row.get("slug") or "")
+            if not is_valid_plugin_slug(slug):
+                warnings.append("A plugin in the backup has no valid name and was skipped.")
+                continue
+            label = f'Plugin "{row.get("name") or slug}"'
+            version = str(row.get("version") or "")
+            existing = Plugin.objects.filter(slug=slug).first()
+            if existing is not None:
+                if version and existing.version != version:
+                    warnings.append(
+                        f"{label}: this server already has version {existing.version or 'unknown'}, so the "
+                        f"backup's version {version} was not installed."
+                    )
+                continue
+            if not row.get("zip_b64"):
+                reason = row.get("files_skipped_reason") or "its files aren't in the backup"
+                warnings.append(f"{label} was not installed: {reason}. Upload its zip on the Plugins page.")
+                continue
+            try:
+                data = base64.b64decode(row["zip_b64"], validate=True)
+                with zipfile.ZipFile(io.BytesIO(data)) as zf:
+                    tops = {name.replace("\\", "/").lstrip("/").split("/")[0] for name in zf.namelist()}
+            except (ValueError, TypeError, zipfile.BadZipFile):
+                warnings.append(f"{label} was not installed: its files in the backup are damaged.")
+                continue
+            if tops != {slug}:
+                warnings.append(f"{label} was not installed: its files in the backup don't match its name.")
+                continue
+            source = row.get("source")
+            if source not in Plugin.Source.values:
+                source = Plugin.Source.UPLOAD
+            try:
+                plugin = PluginService.install_from_zip(io.BytesIO(data), source=source)
+            except PluginInstallError as exc:
+                warnings.append(f"{label} was not installed: {exc}")
+                continue
+            except Exception:
+                logger.exception("Restoring plugin %r from a backup failed", slug)
+                warnings.append(f"{label} was not installed: the install failed (details in the server log).")
+                continue
+            if row.get("update_policy") in Plugin.UpdatePolicy.values and row["update_policy"] != plugin.update_policy:
+                plugin.update_policy = row["update_policy"]
+                plugin.save(update_fields=["update_policy", "updated_at"])
+            installed += 1
+        if installed:
+            noun = "plugin is" if installed == 1 else "plugins are"
+            warnings.append(
+                f"{installed} {noun} installed from the backup but not active: activate each one on the "
+                "Plugins page."
+            )
+        return installed, warnings
 
     @classmethod
     def _export_tables(cls) -> List[dict]:
@@ -1522,6 +1681,8 @@ class BackupService:
             # Like watchers: an older backup without the section leaves tables alone.
             "tables": len(backup_data.get("tables", [])),
             "table_rows": sum(len(t.get("rows") or []) for t in backup_data.get("tables", [])),
+            # Only in a backup made with "Include installed plugins".
+            "plugins": len(backup_data.get("plugins") or []),
         }
 
         return {
@@ -1577,8 +1738,29 @@ class BackupService:
     # =====================================================================
 
     @classmethod
-    @transaction.atomic
     def restore_backup(
+        cls,
+        backup_data: dict,
+        restore_runs: bool = True,
+        current_user=None,
+    ) -> dict:
+        """Restore a backup: the rows in one transaction, then any plugins it carries.
+
+        Plugins are installed only after the rows are committed, since their
+        files can't be rolled back; see ``_import_plugins``. Returns the same
+        dict as ``_restore_rows``, with ``counts["plugins"]`` when the backup
+        has a plugins section.
+        """
+        result = cls._restore_rows(backup_data, restore_runs=restore_runs, current_user=current_user)
+        if result["success"] and "plugins" in backup_data:
+            installed, plugin_warnings = cls._import_plugins(backup_data["plugins"])
+            result["counts"]["plugins"] = installed
+            result["warnings"].extend(plugin_warnings)
+        return result
+
+    @classmethod
+    @transaction.atomic
+    def _restore_rows(
         cls,
         backup_data: dict,
         restore_runs: bool = True,

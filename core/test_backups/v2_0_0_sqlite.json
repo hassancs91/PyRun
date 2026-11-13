@@ -1,0 +1,617 @@
+{
+  "backup_metadata": {
+    "version": "1.13.0",
+    "pyrunner_version": "2.0.0",
+    "created_at": "2026-11-13T16:35:19.343162+00:00",
+    "instance_name": "t47 fixture (sqlite)",
+    "encryption_key_hash": "f52736664dce6f5c50b550dd2bcf67165fd5512479c037236fca62586e9a5cf9",
+    "include_runs": true,
+    "include_run_history_count": 1000,
+    "created_by_email": "admin@example.com"
+  },
+  "global_settings": {
+    "instance_name": "t47 fixture (sqlite)",
+    "timezone": "UTC",
+    "email_backend": "disabled",
+    "smtp_host": "",
+    "smtp_port": 587,
+    "smtp_username": "",
+    "smtp_password_encrypted": "",
+    "smtp_use_tls": true,
+    "smtp_from_email": "",
+    "resend_api_key_encrypted": "",
+    "resend_from_email": "",
+    "default_notification_email": "",
+    "retention_days": 0,
+    "retention_count": 0,
+    "auto_cleanup_enabled": false,
+    "schedules_paused": false
+  },
+  "workspaces": [
+    {
+      "id": "99b1f328-a33e-45b9-b3cf-8c2c94c68ecf",
+      "name": "Default Workspace",
+      "is_default": true,
+      "created_at": "2026-11-13T16:35:07.252622+00:00",
+      "updated_at": "2026-11-13T16:35:07.252650+00:00"
+    }
+  ],
+  "environments": [
+    {
+      "id": "d9e665e6-04ad-4ba3-8963-448015aa1fc8",
+      "name": "default",
+      "description": "",
+      "path": "",
+      "workspace_id": "99b1f328-a33e-45b9-b3cf-8c2c94c68ecf",
+      "python_version": "3.12",
+      "requirements": "requests==2.32.3\n",
+      "is_default": true,
+      "is_active": true,
+      "created_at": "2026-11-13T16:35:19.084266+00:00",
+      "updated_at": "2026-11-13T16:35:19.084334+00:00",
+      "created_by_email": "admin@example.com"
+    }
+  ],
+  "users": [
+    {
+      "id": 1,
+      "email": "admin@example.com",
+      "is_verified": false,
+      "is_staff": true,
+      "is_superuser": true,
+      "date_joined": "2026-11-13T16:35:18.603750+00:00"
+    }
+  ],
+  "libraries": [],
+  "scripts": [
+    {
+      "id": "ac29047e-fe2a-4c38-ba3f-acbba536f931",
+      "name": "Hello",
+      "description": "",
+      "code": "print('hello from 2.0.0')\n",
+      "environment_id": "d9e665e6-04ad-4ba3-8963-448015aa1fc8",
+      "workspace_id": "99b1f328-a33e-45b9-b3cf-8c2c94c68ecf",
+      "owner_plugin": null,
+      "owner_key": null,
+      "injection_mode": "all",
+      "isolation_mode": "inherit",
+      "timeout_seconds": 300,
+      "is_enabled": true,
+      "webhook_token": "fixture-webhook-token-1",
+      "notify_on": "never",
+      "notify_email": "",
+      "notify_webhook_url": "",
+      "notify_webhook_enabled": false,
+      "retention_days_override": null,
+      "retention_count_override": null,
+      "tags": [],
+      "archived_at": null,
+      "archived_by_email": null,
+      "secret_grants": [],
+      "libraries": [],
+      "created_at": "2026-11-13T16:35:19.093050+00:00",
+      "updated_at": "2026-11-13T16:35:19.093423+00:00",
+      "created_by_email": "admin@example.com"
+    },
+    {
+      "id": "32481c56-836d-491c-9789-1d63d067adf2",
+      "name": "Reads a secret",
+      "description": "",
+      "code": "import os\nprint(len(os.environ.get('API_KEY', '')))\n",
+      "environment_id": "d9e665e6-04ad-4ba3-8963-448015aa1fc8",
+      "workspace_id": "99b1f328-a33e-45b9-b3cf-8c2c94c68ecf",
+      "owner_plugin": null,
+      "owner_key": null,
+      "injection_mode": "all",
+      "isolation_mode": "inherit",
+      "timeout_seconds": 300,
+      "is_enabled": true,
+      "webhook_token": "fixture-webhook-token-2",
+      "notify_on": "never",
+      "notify_email": "",
+      "notify_webhook_url": "",
+      "notify_webhook_enabled": false,
+      "retention_days_override": null,
+      "retention_count_override": null,
+      "tags": [],
+      "archived_at": null,
+      "archived_by_email": null,
+      "secret_grants": [],
+      "libraries": [],
+      "created_at": "2026-11-13T16:35:19.102401+00:00",
+      "updated_at": "2026-11-13T16:35:19.102445+00:00",
+      "created_by_email": "admin@example.com"
+    },
+    {
+      "id": "d59476a5-268a-43d1-bb40-f43510a29596",
+      "name": "Weekly report",
+      "description": "",
+      "code": "print('report')\n",
+      "environment_id": "d9e665e6-04ad-4ba3-8963-448015aa1fc8",
+      "workspace_id": "99b1f328-a33e-45b9-b3cf-8c2c94c68ecf",
+      "owner_plugin": null,
+      "owner_key": null,
+      "injection_mode": "all",
+      "isolation_mode": "inherit",
+      "timeout_seconds": 300,
+      "is_enabled": true,
+      "webhook_token": "fixture-webhook-token-3",
+      "notify_on": "never",
+      "notify_email": "",
+      "notify_webhook_url": "",
+      "notify_webhook_enabled": false,
+      "retention_days_override": null,
+      "retention_count_override": null,
+      "tags": [],
+      "archived_at": null,
+      "archived_by_email": null,
+      "secret_grants": [],
+      "libraries": [],
+      "created_at": "2026-11-13T16:35:19.109523+00:00",
+      "updated_at": "2026-11-13T16:35:19.109570+00:00",
+      "created_by_email": "admin@example.com"
+    }
+  ],
+  "script_schedules": [
+    {
+      "id": "658c0803-0571-4aea-b829-f5a727f64ea3",
+      "script_id": "ac29047e-fe2a-4c38-ba3f-acbba536f931",
+      "workspace_id": "99b1f328-a33e-45b9-b3cf-8c2c94c68ecf",
+      "run_mode": "interval",
+      "interval_minutes": 15,
+      "daily_times": [],
+      "weekly_days": [],
+      "weekly_times": [],
+      "monthly_days": [],
+      "monthly_times": [],
+      "cron_expression": "",
+      "yearly_month": null,
+      "yearly_day": null,
+      "yearly_time": "",
+      "timezone": "UTC",
+      "is_active": true,
+      "created_at": "2026-11-13T16:35:19.120305+00:00",
+      "updated_at": "2026-11-13T16:35:19.120376+00:00",
+      "created_by_email": null
+    },
+    {
+      "id": "b3288fad-e49f-4eba-b5d3-5bcd1fb40699",
+      "script_id": "32481c56-836d-491c-9789-1d63d067adf2",
+      "workspace_id": "99b1f328-a33e-45b9-b3cf-8c2c94c68ecf",
+      "run_mode": "daily",
+      "interval_minutes": null,
+      "daily_times": [
+        "09:00",
+        "17:30"
+      ],
+      "weekly_days": [],
+      "weekly_times": [],
+      "monthly_days": [],
+      "monthly_times": [],
+      "cron_expression": "",
+      "yearly_month": null,
+      "yearly_day": null,
+      "yearly_time": "",
+      "timezone": "UTC",
+      "is_active": true,
+      "created_at": "2026-11-13T16:35:19.129113+00:00",
+      "updated_at": "2026-11-13T16:35:19.129143+00:00",
+      "created_by_email": null
+    },
+    {
+      "id": "1da4c669-13e8-4cd3-a39d-a4d375f61a77",
+      "script_id": "d59476a5-268a-43d1-bb40-f43510a29596",
+      "workspace_id": "99b1f328-a33e-45b9-b3cf-8c2c94c68ecf",
+      "run_mode": "weekly",
+      "interval_minutes": null,
+      "daily_times": [],
+      "weekly_days": [
+        0,
+        3
+      ],
+      "weekly_times": [
+        "08:15"
+      ],
+      "monthly_days": [],
+      "monthly_times": [],
+      "cron_expression": "",
+      "yearly_month": null,
+      "yearly_day": null,
+      "yearly_time": "",
+      "timezone": "UTC",
+      "is_active": true,
+      "created_at": "2026-11-13T16:35:19.139954+00:00",
+      "updated_at": "2026-11-13T16:35:19.140004+00:00",
+      "created_by_email": null
+    }
+  ],
+  "schedule_history": [],
+  "secret_providers": [],
+  "secrets": [
+    {
+      "id": "7679a840-7ad4-4f50-abc7-8f04f699789a",
+      "key": "API_KEY",
+      "workspace_id": "99b1f328-a33e-45b9-b3cf-8c2c94c68ecf",
+      "owner_plugin": null,
+      "owner_key": null,
+      "source": "local",
+      "provider_name": null,
+      "external_ref": "",
+      "encrypted_value": "gAAAAABq9zxHdZ8RpXSHB4CKP7KpD_nXNu_-fD8AL5f1UmQASvxbEFgkUByHQmFyaMqUjEBlkS8E9lpeTWwrsDKK3Ndarw0IseFL3vfNvvxZCs0TZo9Eh1M=",
+      "description": "fixture value",
+      "created_at": "2026-11-13T16:35:19.163996+00:00",
+      "updated_at": "2026-11-13T16:35:19.164102+00:00",
+      "created_by_email": "admin@example.com"
+    },
+    {
+      "id": "9dff10af-98d6-44aa-a2eb-cae29702acdb",
+      "key": "GITHUB_TOKEN",
+      "workspace_id": "99b1f328-a33e-45b9-b3cf-8c2c94c68ecf",
+      "owner_plugin": null,
+      "owner_key": null,
+      "source": "local",
+      "provider_name": null,
+      "external_ref": "",
+      "encrypted_value": "gAAAAABq9zxHJe8yhACUDG4zL_-IXWK_vqW8OKLWwzBBf7qukyHRthc3Tj_GRIv3PVsT2ov92isfnEpneUf7f2lpi5l-TNGJkJYNUf6UpTxVLZlXmgdrnwQ=",
+      "description": "",
+      "created_at": "2026-11-13T16:35:19.177604+00:00",
+      "updated_at": "2026-11-13T16:35:19.177653+00:00",
+      "created_by_email": "admin@example.com"
+    }
+  ],
+  "runs": [
+    {
+      "id": "262906e9-1e40-4773-9df7-b11d7a8eb138",
+      "script_id": "32481c56-836d-491c-9789-1d63d067adf2",
+      "workspace_id": "99b1f328-a33e-45b9-b3cf-8c2c94c68ecf",
+      "status": "success",
+      "exit_code": 0,
+      "stdout": "run 1\n",
+      "stderr": "",
+      "started_at": "2026-11-13T16:26:19.209015+00:00",
+      "ended_at": "2026-11-13T16:27:19.209015+00:00",
+      "code_snapshot": "import os\nprint(len(os.environ.get('API_KEY', '')))\n",
+      "library_versions": null,
+      "trigger_type": "manual",
+      "triggered_by_email": "admin@example.com",
+      "created_at": "2026-11-13T16:35:19.217673+00:00"
+    },
+    {
+      "id": "25bc4bcd-485e-4936-8b19-c8f5f22916eb",
+      "script_id": "ac29047e-fe2a-4c38-ba3f-acbba536f931",
+      "workspace_id": "99b1f328-a33e-45b9-b3cf-8c2c94c68ecf",
+      "status": "success",
+      "exit_code": 0,
+      "stdout": "run 0\n",
+      "stderr": "",
+      "started_at": "2026-11-13T16:25:19.209015+00:00",
+      "ended_at": "2026-11-13T16:26:19.209015+00:00",
+      "code_snapshot": "print('hello from 2.0.0')\n",
+      "library_versions": null,
+      "trigger_type": "manual",
+      "triggered_by_email": "admin@example.com",
+      "created_at": "2026-11-13T16:35:19.211302+00:00"
+    }
+  ],
+  "package_operations": [],
+  "datastores": [
+    {
+      "id": "7a5f9bae-0b97-4fa2-8eaa-dc31252761a6",
+      "name": "settings",
+      "workspace_id": "99b1f328-a33e-45b9-b3cf-8c2c94c68ecf",
+      "owner_plugin": null,
+      "owner_key": null,
+      "description": "fixture store",
+      "created_at": "2026-11-13T16:35:19.183777+00:00",
+      "updated_at": "2026-11-13T16:35:19.183855+00:00",
+      "created_by_email": "admin@example.com",
+      "entries": [
+        {
+          "id": "deb3ea8e-0c7c-4a42-af28-506d4713c53d",
+          "key": "count",
+          "value_json": "3",
+          "created_at": "2026-11-13T16:35:19.199020+00:00",
+          "updated_at": "2026-11-13T16:35:19.199075+00:00"
+        },
+        {
+          "id": "3b3bd540-0530-4f40-b590-3b6317fa2fd0",
+          "key": "flags",
+          "value_json": "{\"beta\": true, \"list\": [1, 2]}",
+          "created_at": "2026-11-13T16:35:19.204490+00:00",
+          "updated_at": "2026-11-13T16:35:19.204578+00:00"
+        },
+        {
+          "id": "03c18fcf-dffc-4188-9ba8-b70cb1c9711f",
+          "key": "greeting",
+          "value_json": "\"hi\"",
+          "created_at": "2026-11-13T16:35:19.192449+00:00",
+          "updated_at": "2026-11-13T16:35:19.192484+00:00"
+        }
+      ]
+    }
+  ],
+  "databases": [],
+  "embedding_providers": [],
+  "vector_connections": [
+    {
+      "id": "e7ce7f54-7c95-4b5e-878d-c81ec7c25fa8",
+      "provider_type": "local",
+      "name": "Local",
+      "config": {},
+      "credentials_encrypted": "",
+      "enabled": true,
+      "is_default": true,
+      "last_tested_at": null,
+      "created_at": "2026-11-13T16:35:11.945122+00:00",
+      "updated_at": "2026-11-13T16:35:11.945146+00:00"
+    }
+  ],
+  "vector_collections": [],
+  "brains": [
+    {
+      "id": "0d650d1c-1069-4bbe-91a1-7673a192adf8",
+      "workspace_id": "99b1f328-a33e-45b9-b3cf-8c2c94c68ecf",
+      "slug": "notes",
+      "name": "Notes",
+      "description": "",
+      "owner_plugin": null,
+      "owner_key": null,
+      "contract_version": "1.1",
+      "legacy_descriptions": {},
+      "head_revision_id": "57f05cdc-91ab-4b6e-ae55-3f44d58c206d",
+      "ai_provider_name": null,
+      "reader_model": "",
+      "vector_collection_name": null,
+      "feeder_model": "",
+      "daily_cost_cap_usd": null,
+      "include_in_backup": true,
+      "created_by_id": "1",
+      "created_at": "2026-11-13T16:35:19.252988+00:00",
+      "blobs": [
+        {
+          "sha256": "686ce6340756c87c60dc0d5acea447f62b278e12162fb3dd6edd78eaae09e91b",
+          "content": "# Your Brain\n\nThis content tree is the seed of your PyRun Brain. Edit identity notes and the\ntaxonomy in CLAUDE.md first. The console stores each change as an immutable\nrevision; imports and exports use UTF-8 ZIP archives. Git is not required.\n\nKnowledge notes hold distilled ideas and provenance. Raw source text belongs in\nraw/. Grants control which scripts, plugins, agents and tokens may read or\npropose. Every feed requires human approval. INDEX.md is generated per tier.\n\nThe template is adapted from BrainOutside under its included MIT LICENSE.\n",
+          "size": 552
+        },
+        {
+          "sha256": "ca623565c3c8dc9d5579d367a26ea48800206df2c90a5eca7e4691925a1ae40a",
+          "content": "---\ncontract-version: \"1.1\"\n---\n\n# YOUR MIND \u2014 Schema & Operating Contract\n\nThis repo is your brain: the single knowledge base all of your AI agents\nread from for context, facts, and voice. This file is the contract. Every\nagent that reads or writes this repo MUST follow it. If an instruction\nelsewhere conflicts with this file, this file wins.\n\nPyRun manages this brain as immutable database revisions. Its reader and feeder\nprompts ship with the engine, outside this content tree. Every proposed feed\nrequires human approval. Workspace owners/admins may edit directly.\n\n> **New here?** Read `README.md` first \u2014 it tells you which parts of this\n> file to edit before you feed anything in. The structure below is the\n> engine's contract and should stay as-is; the *taxonomy* (\u00a77) and the\n> identity files are yours to write.\n\n---\n\n## 1. Layout\n\n| Path | Layer | What lives here |\n|---|---|---|\n| `INDEX.md` | Index | Generated per visibility tier from indexed entities. Read first, always. |\n| `identity/` | Identity core | Who you are, how you write, what you believe. Small. Loaded by every consumer. |\n| `projects/` | Cards | One card per project/product/series. Status, numbers, pitch, pointers. |\n| `knowledge/` | Distilled notes | Atomic notes: takes, stories, lessons, facts. The retrieval workhorse. |\n| `content-catalog/` | Inventory | Tables of published content per platform (for remix/repurpose queries). |\n| `lenses/` | Scopes | Named default filters that consumers can invoke. |\n| `raw/` | Archive | Full transcripts/posts, or pointers to them. Almost never loaded. |\n| `eval/` | Quality | The falsification test. Run before trusting changes to the schema. |\n\n## 2. Scope rule (hard)\n\n**The mind knows ABOUT your work; it does not CONTAIN your work.**\n\nA note is a distillation with provenance \u2014 a position, a story, a lesson, a\nfact. The artefact itself (the codebase, the manuscript, the video file, the\ncourse, the dataset) lives wherever it already lives. The project card\npoints at it.\n\nTwo consequences worth stating plainly:\n\n- **Size**: if you find yourself pasting a whole document in, you want a\n  `raw/` archive plus a note that links to it, not a giant note.\n- **Language**: if some of your work is in another language, keep the mind\n  in ONE language (whichever your agents write in) and let it hold the\n  *about*-layer \u2014 what you are building, why, what you learned. A\n  translated or mixed-language corpus inside the mind will poison voice\n  retrieval. Point at the corpus from the project card instead.\n\n## 3. Note frontmatter schema (knowledge/)\n\nEvery file in `knowledge/` starts with:\n\n```yaml\n---\nid: take-2026-07-rag-vs-finetuning        # type-YYYY-MM-slug, unique\ntype: take | story | lesson | fact         # matches its folder\ntopics: [rag, agents]                      # from TAXONOMY below, 1-4 tags\nprojects: [my-library]                     # entities touched (optional)\nsource: yt-2026-06-rag-video                # id in content-catalog, or raw/ path\nsource_url: https://...                    # link to the original; null ONLY\n                                           # for direct thoughts (see \u00a75.2)\ndate: 2026-07                              # when this was said/published\ndescription: One-line summary              # optional; used in the generated index\nstatus: current | superseded\nsuperseded_by: null                        # id of the newer note, if superseded\nvisibility: public | agents-only | private\n---\n```\n\nBody rules:\n- **Voice is sacred**: every `take` and `story` MUST include at least one\n  verbatim quote of your actual words from the source, marked as\n  `> VERBATIM: \"...\"`. Paraphrase around it, never instead of it.\n- One idea per note. If extraction finds two ideas, write two notes.\n- 5\u201315 lines of body. Notes are retrieval units, not essays.\n\nType meanings:\n- `take` \u2014 an opinionated position (\"my angle on X\").\n- `story` \u2014 a personal narrative with numbers/failures/outcomes.\n- `lesson` \u2014 a transferable \"what I learned building/testing X\".\n- `fact` \u2014 a stable, citable fact about your work or results.\n\n## 4. Visibility (hard)\n\n- `public` \u2014 derived from published content. Safe for any consumer,\n  including future audience-facing chatbots.\n- `agents-only` \u2014 derived from source code, planning docs, or unpublished\n  thinking. Your own agents only. Any audience-facing serving layer MUST\n  filter this out server-side, before context assembly.\n- `private` \u2014 do not surface in any generated output; background context only.\n\nDefault: notes from published content \u2192 `public`. Notes from repos/planning \u2192\n`agents-only`. When unsure \u2192 `agents-only`.\n\n### Path defaults (files with no `visibility:` frontmatter)\n\nExplicit frontmatter always wins. Files without it resolve by path:\n\n| Path | Resolution |\n|---|---|\n| `identity/*`, `knowledge/*`, `projects/*` | frontmatter required; missing \u2192 `agents-only` |\n| `content-catalog/*` | `public` (inventory of published content) |\n| `lenses/*` | `public` |\n| `raw/*` | inherits the MAX visibility of the notes/cards linking to it; reachable only via those links, never by browsing |\n| `INDEX.md` | serving layers serve a generated, tier-filtered index \u2014 never the raw file |\n| `PENDING.md` | workbench \u2014 you + the feeder only; never served to any consumer tier |\n| `eval/*`, `*/_TEMPLATE.md`, `CLAUDE.md`, `.claude/*`, `README.md` | infrastructure, not content \u2014 never served as notes |\n| anything else unclassified | `private` (deny by default) |\n\n### Line-level visibility\n\nA `public` file may contain spans marked `(agents-only: ...)`. Serving\nlayers below agents-only tier MUST strip these spans \u2014 filtering whole\nfiles is not enough.\n\n## 5. Compiler rules (mind-feeder enforces these)\n\n1. **Conservative extraction**: 2\u20134 strong notes per source. Depth lives in\n   `raw/`; the note links to it.\n2. **Provenance is mandatory**: no note without `source` + `source_url`.\n   Exception: a source fed as a **direct thought** has no URL \u2014\n   `source_url: null` is valid there, and the feed id in `source` (plus the\n   `raw/` archive of the thought) IS the provenance. Never invent a URL to\n   satisfy this rule.\n3. **Supersede, never delete**: a conflicting new claim marks the old note\n   `status: superseded` + `superseded_by:`. Old note stays. If the conflict\n   might be context-specific (both true in different scopes), keep BOTH\n   current and note the boundary \u2014 do not force a winner.\n4. **Dedupe conservatively**: when unsure whether two notes are duplicates,\n   keep both and flag it. Prefer false duplicates over false merges.\n5. **Never invent**: no claim that isn't in the source. No enrichment.\n6. **Human write gate**: the feeder proposes; you approve; then it writes.\n   Every approved feed is one atomic database revision.\n7. **Freshness**: every project card touched by a feed gets\n   `last-verified: YYYY-MM-DD` updated.\n\n## 6. Reader rules (mind-reader enforces these)\n\n1. Read `INDEX.md` first. Open only what the lens + task justify\n   (typical budget: identity core + 2\u20135 files).\n2. Respect `visibility`. Never quote `private`.\n3. **Staleness**: if a project card's `last-verified` is older than 45 days,\n   do not cite its specifics (numbers, status) as current \u2014 hedge or omit.\n4. For voice tasks, prefer adapting VERBATIM quotes over summarizing notes.\n5. `raw/` only when the task needs full depth (long-form writing, deep Q&A).\n6. Superseded notes are history: never treat as current positions.\n\n## 7. Topic taxonomy (controlled vocabulary)\n\nThe compiler picks tags ONLY from this list. Extend it deliberately (edit\nthis file in the same revision) \u2014 never invent ad-hoc tags. A tag is worth\nadding when you have two or more notes that need it.\n\n**Replace the list below with your own topics.** These are an example set\nfor a developer/creator; a researcher's or a founder's would look nothing\nlike it. Keep tags lowercase-with-hyphens, and keep the list short \u2014 a\ntaxonomy of 60 tags retrieves worse than one of 20.\n\n`ai-agents, llm-engineering, rag, prompt-engineering, python, automation,\nself-hosting, security, saas, build-in-public, content-creation, youtube,\nseo, teaching, engineering-thinking, open-source, tools, entrepreneurship,\naudience-growth`\n\n## 8. Blocked scripts (optional)\n\nValidator rule 6. If your brain is meant to hold one language and you\nwant the server to reject anything written in another script, list the\nscripts here. **Leave this out and nothing is blocked** \u2014 that is the\ndefault, and it is the right one for most brains.\n\nThe server recognises: `arabic`, `hebrew`, `cyrillic`, `greek`,\n`devanagari`, `thai`, `han`, `hiragana`, `katakana`, `hangul`. A name it\ndoesn't recognise is reported as a warning on the approval screen rather\nthan silently ignored, because a typo here would quietly switch the rule\noff.\n\nThis is coarse on purpose: it asks \"does this file contain that script\nat all\", not \"what language is this\". A note that quotes one Arabic\nphrase is rejected the same as one written entirely in Arabic.\n\nTo use it, uncomment and edit:\n\n<!-- Scripts: `arabic` -->\n\n## 9. Consumers\n\nAnything can read this mind through `mind-reader` + a lens: reply agents,\nnewsletter/blog/video pipelines, remix tasks (an external proven\ntitle/hook + your substance), niche-platform agents, and \u2014 via an MCP/API\ndoor with server-side visibility filtering \u2014 audience-facing chatbots. The\nrepo structure never changes per consumer; only the lens does.\n\n## 10. Contract version\n\nThe frontmatter at the top of this file carries `contract-version`.\nYour brain is a copy of the template and never auto-updates, so this\nrecords which contract your copy speaks. A server that ships a newer\ncontract will WARN \u2014 never refuse to boot \u2014 and may propose the upgrade\nas a diff through the normal approval queue, where you review it like\nany other write. Don't bump the version by hand: it changes only when\nthe template's contract itself changes.\n",
+          "size": 9965
+        },
+        {
+          "sha256": "240a1b56d4ff58c0d622eabcd1466811b6c58a68ea9943b03d5188368ce73188",
+          "content": "# INDEX\n\nPyRun generates this index from entities for each consumer tier.\nAdd optional `description` frontmatter to notes to customize their index lines.\n",
+          "size": 154
+        },
+        {
+          "sha256": "32892d61e7724c75d67741d6f4f060d78cac89910bcb68347086e761c35425dc",
+          "content": "MIT License\n\nCopyright (c) 2026 Hasan Aboul Hasan\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n",
+          "size": 1074
+        },
+        {
+          "sha256": "6e1d7a1a4dfc4403b552951fc4a023d114b7e41e566d516beff9f5cdb0713b05",
+          "content": "# eval/ \u2014 the falsification test\n\nThe point of this repo is that your agents produce better output *with* the\nmind than without it. That is a claim, and claims should be testable.\n\n**Run an eval before you invest more in structure.** It is very easy to\nbuild an elaborate knowledge base that makes output worse \u2014 longer,\nblander, stuffed with retrieved context nobody needed.\n\n## The protocol\n\n1. **Collect ~15 real tasks.** Actual ones: posts you'd reply to, topics\n   you'd write about, questions people ask you. Not invented prompts \u2014\n   invented prompts flatter the system.\n2. **Generate two outputs per task, blind.** One with mind retrieval, one\n   without, same model and instructions otherwise. Don't label them.\n3. **Score each on three axes**, 1\u20135:\n   - **Voice** \u2014 does it sound like you, or like an assistant?\n   - **Substance** \u2014 does it contain something only you could say (a real\n     number, a real failure, a specific take)?\n   - **Would-I-post-it** \u2014 the only score that really matters.\n4. **Read the losses.** Where the mind-backed version lost, ask which is\n   true: the note was wrong, the note was missing, or retrieval picked the\n   wrong notes. Each has a different fix.\n5. **Fix the notes, not the harness.** The usual finding is that the notes\n   are too abstract \u2014 summaries of positions rather than the positions\n   themselves, with the verbatim quotes stripped out.\n\n## Record results here\n\nOne file per run: `eval-YYYY-MM-<what-you-tested>.md`, with the tasks, the\nscores, and what you changed afterwards. A dated trail of evals is how you\nfind out whether the mind is actually getting better or just bigger.\n\nFiles in this folder are infrastructure \u2014 never served as notes, never\nretrieved as context.\n",
+          "size": 1752
+        },
+        {
+          "sha256": "fdfc51943e63a443a9b061e5b0b836e1bcde8d6749efd624a90b8751d239a8d2",
+          "content": "# raw/\n\nFull source text: transcripts, post exports, long thoughts \u2014 or pointer\nfiles saying where the original lives.\n\n**This folder is never browsed.** Agents reach a raw file only through a\nlink in a note or card that they were already allowed to read, and the raw\nfile inherits that note's visibility. That is why it can hold long,\nunfiltered material without widening what any consumer can see.\n\nUse it when a note needs depth behind it: the note carries the distilled\nclaim and the VERBATIM quote, `raw/` carries the whole transcript for the\nrare task that needs the full thing.\n\nNaming: match the `source:` id where you can \u2014 `yt-2026-07-some-video.md`\nnext to a note whose `source: yt-2026-07-some-video`.\n",
+          "size": 718
+        },
+        {
+          "sha256": "da202493960d4c92e145f8235a7411cd731280e16469e2d4c5f19c7920be6dd1",
+          "content": "---\nvisibility: agents-only\n---\n# Who I am\n\n<!--\n  REPLACE EVERYTHING BELOW. This file is loaded on nearly every retrieval,\n  so it is the highest-leverage file in the repo \u2014 and the easiest to get\n  wrong by writing a LinkedIn bio.\n\n  Rules of thumb:\n  - Specific beats flattering. \"I ship small tools and write about the\n    build\" tells an agent what to do; \"passionate technologist\" does not.\n  - Write what is STABLE. Anything that changes monthly belongs in a\n    project card, not here.\n  - Keep it under ~40 lines. This competes for context with actual notes.\n  - Mark anything an audience-facing bot must not repeat with the inline\n    span convention: (agents-only: ...). See CLAUDE.md \u00a74.\n-->\n\n## What I do\n\nTODO \u2014 one paragraph. What you build, who it's for, and what you're known\nfor. If someone quoted this back at you, it should sound like you.\n\n## What I'm working toward\n\nTODO \u2014 2\u20134 bullets. The direction, not the task list. This is what lets an\nagent tell which of your projects a new idea belongs to.\n\n## How I got here\n\nTODO \u2014 3\u20135 lines of background that changes how your positions should be\nread: what you did before, what you built, what failed. Agents use this to\nknow when you're speaking from experience versus opinion.\n\n## Cross-cutting principles\n\nTODO \u2014 the beliefs that show up in everything you make, stated as\nprinciples an agent can apply to a new question you've never answered.\nTwo or three is plenty; the rest belong in `beliefs.md`.\n\n## What I don't do\n\nTODO \u2014 genuinely useful and usually skipped. The topics you decline, the\ntone you avoid, the advice you refuse to give. This is what stops an agent\nfrom confidently writing something you'd never say.\n",
+          "size": 1709
+        },
+        {
+          "sha256": "75e624ed8fc08671e1767b4bb3acd11950d07f4f3e26b260ae20bd8b2ed40de6",
+          "content": "---\nvisibility: agents-only\n---\n# How I write\n\n<!--\n  REPLACE EVERYTHING BELOW. This is an instruction manual for agents\n  writing AS you. It is `agents-only` by default and should usually stay\n  that way: it exposes your actual technique, and an audience-facing bot\n  reciting your hook formulas is a bad look.\n\n  The single most effective thing you can put here is REAL EXAMPLES of\n  your own sentences. Rules describe voice; examples transmit it. Two\n  paragraphs you actually wrote beat a page of adjectives.\n-->\n\n## The shape of my sentences\n\nTODO \u2014 short and declarative? long and winding? Do you use questions?\nSecond person? Contractions? Em dashes?\n\nPaste 3\u20135 sentences you actually wrote that sound unmistakably like you:\n\n> TODO \u2014 a real sentence of yours.\n\n> TODO \u2014 another, from a different context (a post vs. a tutorial vs. a reply).\n\n## How I open\n\nTODO \u2014 how a piece of yours starts. If you have a habitual move (a\nconcrete number, a contrarian claim, a failure), name it and give an\nexample.\n\n## How I explain\n\nTODO \u2014 the teaching pattern. Example first, then theory? Smallest working\nversion, then generalize? Analogies, or strictly literal?\n\n## Words and phrases I use\n\nTODO \u2014 the vocabulary that recurs. Also useful: the terms you deliberately\navoid (buzzwords, hype verbs, words that don't survive your own edit).\n\n## What I never do\n\nTODO \u2014 the anti-patterns. Emoji? Exclamation marks? Hedging? Fake\nenthusiasm? Calls to action? Be blunt; this section prevents more bad\noutput than any other.\n\n## Per-platform adjustments\n\nTODO \u2014 how the voice shifts between a long-form post, a short social reply,\na video script, and an email. Note what stays constant: that's the real\nvoice.\n",
+          "size": 1719
+        },
+        {
+          "sha256": "bb1f4deb6ea990668aa1109f4d6c468e28ef5f1a3578129ecfcaf2c67d193350",
+          "content": "---\nvisibility: agents-only\n---\n# What I believe\n\n<!--\n  REPLACE EVERYTHING BELOW. Loaded whenever an agent writes something\n  opinionated in your name.\n\n  A belief here is a POSITION, not a preference: something you would defend\n  in public, that rules some answers out. If a statement could not possibly\n  be disagreed with, it isn't a belief \u2014 it's filler, and it makes retrieval\n  worse by diluting the ones that matter.\n\n  Format each as: the claim, then one line of why. Keep the whole file\n  under ~30 lines; specific takes on specific topics belong in\n  knowledge/takes/ where they carry provenance and can be superseded.\n-->\n\n## Core positions\n\n**TODO \u2014 the claim, stated flatly.**\nWhy: TODO \u2014 one line. What experience makes you hold it.\n\n**TODO \u2014 a second claim.**\nWhy: TODO.\n\n**TODO \u2014 a third.**\nWhy: TODO.\n\n## Where I've changed my mind\n\nTODO \u2014 one or two. Genuinely valuable: it tells an agent which of your\nolder positions to treat carefully, and it's the most human thing you can\nput in a knowledge base. When a belief here gets replaced, write the new\none as a `take` note that supersedes the old one, so the change is dated\nand traceable.\n",
+          "size": 1169
+        },
+        {
+          "sha256": "b8f0383f5ea7df417251c3349c1e110aa93efd494daad19d0c35b9539dcaaa34",
+          "content": "# Content catalog\n\nAn inventory of what you have already published, one file per platform\n(`youtube.md`, `blog.md`, `x.md`, `newsletter.md`\u2026). Plain markdown tables.\n\nThis is not a knowledge layer \u2014 it holds no positions and no distillation.\nIt exists so an agent can answer two questions cheaply:\n\n- **\"Have I covered this already?\"** \u2014 before writing something new.\n- **\"What can I repurpose?\"** \u2014 for remix tasks, where you pair an\n  externally-proven title/hook/format with your own substance.\n\nSuggested columns (adapt freely):\n\n| id | title | published | url | topics | notes |\n|---|---|---|---|---|---|\n| `yt-2026-07-some-video` | Some video | 2026-07-14 | https://\u2026 | rag, tools | `take-2026-07-...` |\n\nThe `id` column is what note frontmatter points at in its `source:` field,\nso keep ids stable once they exist. Files here resolve to `public` by\ndefault \u2014 it's a list of things you already published.\n",
+          "size": 923
+        },
+        {
+          "sha256": "848c1dafd98b596644c2dadcc6576bb45336b2a20c6d2f655e2ce300699a1168",
+          "content": "---\nlens: NAME\ntopics: []                  # primary topics, from the CLAUDE.md \u00a77 taxonomy\ntypes: all                  # all | a subset: [take, story, lesson, fact]\nvisibility-ceiling: public  # public | agents-only | private\nidentity: [core, beliefs]   # which identity files this lens loads\n---\n# Lens: NAME\n\nOne line: which consumer or task this lens is for.\n\n- primary topics: [...]\n- secondary: any topic when the task clearly needs it (lenses focus, they\n  don't censor)\n- note types: all\n- visibility ceiling: public          # why: e.g. serves a public audience\n- identity: core + beliefs\n",
+          "size": 599
+        },
+        {
+          "sha256": "f6277b4aeb2be3565f663cf91a217f48654f47b59a743ddeb81211bc1fe732c0",
+          "content": "---\nlens: building-in-public\ntopics: [build-in-public, open-source, tools, engineering-thinking]\ntypes: all\nvisibility-ceiling: public\nidentity: [core, beliefs]\n---\n# Lens: building-in-public\n\nFor posts, threads and replies about what you're building \u2014 the default\nlens for audience-facing content.\n\n- primary topics: [build-in-public, open-source, tools, engineering-thinking]\n- secondary: any topic when the task clearly needs it (lenses focus, they\n  don't censor)\n- note types: all \u2014 stories carry the numbers, takes carry the angle\n- visibility ceiling: public          # audience-facing \u2192 published material only\n- identity: core + beliefs (voice is loaded per output platform)\n\nEdit or delete this once you know what your agents actually keep asking\nfor. A good lens is discovered, not designed: notice which retrievals keep\npulling the same cluster of topics, then name it.\n",
+          "size": 888
+        },
+        {
+          "sha256": "96fc430d4e2c1a3a64c46df5c4580fedc3effcf2e13f08c036a91e3ea0f31fe1",
+          "content": "---\nid: project-SLUG\nkind: project\ntopics: []            # from the CLAUDE.md \u00a77 taxonomy\nvisibility: public    # the card; individual lines can be marked (agents-only: ...)\nlast-verified: \u2014      # YYYY-MM-DD; the feeder updates this on every touch\nlinks:\n  site:\n  repo:\n  docs:\n---\n# NAME\n\n## What it is (elevator pitch)\nTODO \u2014 2-3 sentences, in your own words if possible. This is what an agent\nwill paraphrase when someone asks \"what is NAME?\".\n\n## Current status\nTODO \u2014 the perishable part: shipped / in progress / paused, and what's next.\nAnything here older than 45 days is treated as stale and hedged by readers.\n\n## Key numbers\nTODO \u2014 users, stars, revenue-safe metrics, milestones. Date every number.\n\n## Architecture / how it works\nTODO \u2014 the technical shape, for technical content and support answers.\n\n## Decisions & constraints\nTODO \u2014 notable choices and why. Mark anything from private planning with\nan inline (agents-only: ...) span rather than making the whole card\nagents-only.\n\n## Pointers\n- Deep docs / planning: TODO\n- Related notes: TODO \u2014 knowledge/ ids\n",
+          "size": 1092
+        },
+        {
+          "sha256": "c72e8bdd42a9d27e07897c8e349605ae255874397bf86275d75b062654017d7b",
+          "content": "---\nid: project-example-project\nkind: project\ntopics: [tools, open-source]\nvisibility: public\nlast-verified: 2026-01-01\nlinks:\n  site: https://example.com\n  repo: https://github.com/you/example-project\n  docs:\n---\n# Example Project\n\n> **DELETE THIS FILE.** It exists so a fresh clone has one indexable entity\n> and you can see a card rendered in the brain browser before you've\n> written anything. Copy `_TEMPLATE.md` for your real projects.\n\n## What it is (elevator pitch)\nA small open-source tool that does one thing well. Two or three sentences,\nwritten the way you'd say it out loud \u2014 this is the text an agent will\nparaphrase when someone asks what you're building.\n\n## Current status\nShipped and maintained. Note that `last-verified` above is deliberately\nold, so this card shows up as **stale** on the dashboard \u2014 that's the\nfreshness rule working, not a bug.\n\n## Key numbers\n- 120 GitHub stars (2026-01)\n- ~40 weekly installs (2026-01)\n\nEvery number carries the month it was true. Readers hedge or omit numbers\nfrom a card that hasn't been verified in 45 days.\n\n## Architecture / how it works\nOne CLI entry point, a small core library, no service dependencies.\n(agents-only: this span is stripped for public-tier consumers \u2014 use it for\ndetail you'd share with your own agents but not with an audience bot.)\n\n## Decisions & constraints\nChose a single binary over a plugin system: fewer moving parts matter more\nthan extensibility at this size.\n\n## Pointers\n- Deep docs / planning: link to wherever they really live\n- Related notes: none yet\n",
+          "size": 1554
+        },
+        {
+          "sha256": "9b130e0cf2a341891600d47de24567876ca71af4fb06caba4199fe4c1ce50d96",
+          "content": "---\nid: story-YYYY-MM-slug\ntype: story\ntopics: []\nprojects: []\nsource:\nsource_url:\ndate: YYYY-MM\nstatus: current\nsuperseded_by: null\nvisibility: public\n---\n# The time X happened\n\nWhat happened, in order: the situation, what you did, what it cost, how it\nturned out. Numbers make a story usable \u2014 include them.\n\n> VERBATIM: \"Your literal words telling this story.\"\n\nWhy it matters: the transferable point, one or two lines.\n",
+          "size": 425
+        },
+        {
+          "sha256": "a0f7087f4541c235df8cd01b13afd21e583f28000890f33cc50a625cc7d5297c",
+          "content": "---\nid: lesson-YYYY-MM-slug\ntype: lesson\ntopics: []\nprojects: []\nsource:\nsource_url:\ndate: YYYY-MM\nstatus: current\nsuperseded_by: null\nvisibility: agents-only\n---\n# What I learned about X\n\nThe lesson in one line \u2014 stated so it's useful to someone who wasn't there.\n\nWhat I expected / what actually happened: 2-4 lines. The gap IS the lesson.\n\nHow to apply it: the rule you'd give someone hitting this tomorrow.\n",
+          "size": 413
+        },
+        {
+          "sha256": "08284bbe669ce3bf629edac722f4d87837aa4c5f47c501a2e1926069d4485776",
+          "content": "---\nid: take-YYYY-MM-slug\ntype: take\ntopics: []            # 1-4, from the CLAUDE.md \u00a77 taxonomy\nprojects: []          # optional: project ids this touches\nsource:               # content-catalog id, or a raw/ path\nsource_url:           # link to the original; null ONLY for direct thoughts\ndate: YYYY-MM\nstatus: current\nsuperseded_by: null\nvisibility: public\n---\n# My take on X\n\nOne-line position statement, in your own framing.\n\n> VERBATIM: \"Your literal words from the source, character for character.\"\n\nContext: when this applies, and its boundary if any (2-4 lines max).\n",
+          "size": 577
+        },
+        {
+          "sha256": "806ff2392b01c1d602df783e5ced6931a8b0206ed7cc92d8d191f0850905a481",
+          "content": "---\nid: fact-YYYY-MM-slug\ntype: fact\ntopics: []\nprojects: []\nsource:\nsource_url:\ndate: YYYY-MM\nstatus: current\nsuperseded_by: null\nvisibility: public\n---\n# X is Y\n\nThe fact, stated plainly enough to be quoted verbatim by an agent.\n\nDate every number. A fact whose value drifts (users, stars, revenue,\nversion) belongs on a project card with `last-verified:` instead \u2014 cards\nare checked for staleness, notes are not.\n",
+          "size": 418
+        }
+      ],
+      "revisions": [
+        {
+          "id": "57f05cdc-91ab-4b6e-ae55-3f44d58c206d",
+          "number": 1,
+          "parent_id": null,
+          "manifest": {
+            "README.md": "686ce6340756c87c60dc0d5acea447f62b278e12162fb3dd6edd78eaae09e91b",
+            "CLAUDE.md": "ca623565c3c8dc9d5579d367a26ea48800206df2c90a5eca7e4691925a1ae40a",
+            "INDEX.md": "240a1b56d4ff58c0d622eabcd1466811b6c58a68ea9943b03d5188368ce73188",
+            "LICENSE": "32892d61e7724c75d67741d6f4f060d78cac89910bcb68347086e761c35425dc",
+            "eval/README.md": "6e1d7a1a4dfc4403b552951fc4a023d114b7e41e566d516beff9f5cdb0713b05",
+            "raw/README.md": "fdfc51943e63a443a9b061e5b0b836e1bcde8d6749efd624a90b8751d239a8d2",
+            "identity/core.md": "da202493960d4c92e145f8235a7411cd731280e16469e2d4c5f19c7920be6dd1",
+            "identity/voice.md": "75e624ed8fc08671e1767b4bb3acd11950d07f4f3e26b260ae20bd8b2ed40de6",
+            "identity/beliefs.md": "bb1f4deb6ea990668aa1109f4d6c468e28ef5f1a3578129ecfcaf2c67d193350",
+            "content-catalog/README.md": "b8f0383f5ea7df417251c3349c1e110aa93efd494daad19d0c35b9539dcaaa34",
+            "lenses/_TEMPLATE.md": "848c1dafd98b596644c2dadcc6576bb45336b2a20c6d2f655e2ce300699a1168",
+            "lenses/building-in-public.md": "f6277b4aeb2be3565f663cf91a217f48654f47b59a743ddeb81211bc1fe732c0",
+            "projects/_TEMPLATE.md": "96fc430d4e2c1a3a64c46df5c4580fedc3effcf2e13f08c036a91e3ea0f31fe1",
+            "projects/example-project.md": "c72e8bdd42a9d27e07897c8e349605ae255874397bf86275d75b062654017d7b",
+            "knowledge/stories/_TEMPLATE.md": "9b130e0cf2a341891600d47de24567876ca71af4fb06caba4199fe4c1ce50d96",
+            "knowledge/lessons/_TEMPLATE.md": "a0f7087f4541c235df8cd01b13afd21e583f28000890f33cc50a625cc7d5297c",
+            "knowledge/takes/_TEMPLATE.md": "08284bbe669ce3bf629edac722f4d87837aa4c5f47c501a2e1926069d4485776",
+            "knowledge/facts/_TEMPLATE.md": "806ff2392b01c1d602df783e5ced6931a8b0206ed7cc92d8d191f0850905a481"
+          },
+          "message": "Create brain",
+          "source": "seed",
+          "feed_id": null,
+          "author_id": "1",
+          "created_at": "2026-11-13T16:35:19.279712+00:00"
+        }
+      ],
+      "entities": [
+        {
+          "revision_id": "57f05cdc-91ab-4b6e-ae55-3f44d58c206d",
+          "entity_id": "identity-beliefs",
+          "kind": "identity",
+          "path": "identity/beliefs.md",
+          "title": "What I believe",
+          "description": "",
+          "status": "current",
+          "superseded_by": "",
+          "visibility": "agents-only",
+          "topics": [],
+          "projects": [],
+          "source": "",
+          "source_url": "",
+          "date": "",
+          "last_verified": null,
+          "content_sha": "bb1f4deb6ea990668aa1109f4d6c468e28ef5f1a3578129ecfcaf2c67d193350",
+          "malformed_frontmatter": false,
+          "indexed_at": "2026-11-13T16:35:19.295539+00:00"
+        },
+        {
+          "revision_id": "57f05cdc-91ab-4b6e-ae55-3f44d58c206d",
+          "entity_id": "identity-core",
+          "kind": "identity",
+          "path": "identity/core.md",
+          "title": "Who I am",
+          "description": "",
+          "status": "current",
+          "superseded_by": "",
+          "visibility": "agents-only",
+          "topics": [],
+          "projects": [],
+          "source": "",
+          "source_url": "",
+          "date": "",
+          "last_verified": null,
+          "content_sha": "da202493960d4c92e145f8235a7411cd731280e16469e2d4c5f19c7920be6dd1",
+          "malformed_frontmatter": false,
+          "indexed_at": "2026-11-13T16:35:19.303956+00:00"
+        },
+        {
+          "revision_id": "57f05cdc-91ab-4b6e-ae55-3f44d58c206d",
+          "entity_id": "identity-voice",
+          "kind": "identity",
+          "path": "identity/voice.md",
+          "title": "How I write",
+          "description": "",
+          "status": "current",
+          "superseded_by": "",
+          "visibility": "agents-only",
+          "topics": [],
+          "projects": [],
+          "source": "",
+          "source_url": "",
+          "date": "",
+          "last_verified": null,
+          "content_sha": "75e624ed8fc08671e1767b4bb3acd11950d07f4f3e26b260ae20bd8b2ed40de6",
+          "malformed_frontmatter": false,
+          "indexed_at": "2026-11-13T16:35:19.306926+00:00"
+        },
+        {
+          "revision_id": "57f05cdc-91ab-4b6e-ae55-3f44d58c206d",
+          "entity_id": "lens-building-in-public",
+          "kind": "lens",
+          "path": "lenses/building-in-public.md",
+          "title": "Lens: building-in-public",
+          "description": "",
+          "status": "current",
+          "superseded_by": "",
+          "visibility": "public",
+          "topics": [
+            "build-in-public",
+            "open-source",
+            "tools",
+            "engineering-thinking"
+          ],
+          "projects": [],
+          "source": "",
+          "source_url": "",
+          "date": "",
+          "last_verified": null,
+          "content_sha": "f6277b4aeb2be3565f663cf91a217f48654f47b59a743ddeb81211bc1fe732c0",
+          "malformed_frontmatter": false,
+          "indexed_at": "2026-11-13T16:35:19.307953+00:00"
+        },
+        {
+          "revision_id": "57f05cdc-91ab-4b6e-ae55-3f44d58c206d",
+          "entity_id": "project-example-project",
+          "kind": "project",
+          "path": "projects/example-project.md",
+          "title": "Example Project",
+          "description": "",
+          "status": "current",
+          "superseded_by": "",
+          "visibility": "public",
+          "topics": [
+            "tools",
+            "open-source"
+          ],
+          "projects": [],
+          "source": "",
+          "source_url": "",
+          "date": "",
+          "last_verified": "2026-01-01",
+          "content_sha": "c72e8bdd42a9d27e07897c8e349605ae255874397bf86275d75b062654017d7b",
+          "malformed_frontmatter": false,
+          "indexed_at": "2026-11-13T16:35:19.308671+00:00"
+        }
+      ],
+      "grants": [],
+      "feeds": [],
+      "github_sync": {
+        "repository": "example/brain-notes",
+        "branch": "main",
+        "generation": "639524eb-01fb-4d27-b746-11d49b1689c8",
+        "secret_key": "GITHUB_TOKEN",
+        "poll_enabled": false,
+        "remote_sha": "",
+        "remote_manifest": {}
+      }
+    }
+  ]
+}

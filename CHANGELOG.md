@@ -680,6 +680,15 @@ begins tracking at the current release; earlier history is in the git log.
   provisioned tables, and installing or activating a plugin whose `api` is
   newer than this PyRun's SDK is refused (updates already were). Every example
   plugin now declares the SDK version it needs.
+- **Backups can carry installed plugins (backup format 1.14.0).** A new
+  **Include installed plugins** option in Settings → Backup, for the download
+  and for the scheduled backup, off by default: without it backups are as
+  before. With it each plugin goes in with its files, and a restore installs
+  the ones the server doesn't have through the normal plugin install (every
+  check, the trust policy included), turned off for an admin to activate. A
+  plugin already installed is left as it is and none is removed. Backups made
+  by PyRun 2.0.0 restore with every 2.5 feature off; tests restore real 2.0.0
+  backups from SQLite and Postgres.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

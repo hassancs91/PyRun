@@ -181,6 +181,7 @@ class BackupScheduleService:
             "retention_count": settings.s3_backup_retention_count,
             "include_runs": settings.s3_backup_include_runs,
             "include_datastores": settings.s3_backup_include_datastores,
+            "include_plugins": settings.s3_backup_include_plugins,
             "s3_configured": S3Service.is_configured(connection),
             "s3_enabled": bool(connection and connection.enabled),
             "connection_name": connection.name if connection else None,

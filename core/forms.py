@@ -2125,6 +2125,18 @@ class BackupCreateForm(forms.Form):
         help_text="Include pip installation history",
     )
 
+    include_plugins = forms.BooleanField(
+        required=False,
+        initial=False,
+        widget=forms.CheckboxInput(
+            attrs={
+                "class": CHECK_CLASS,
+            }
+        ),
+        label="Include installed plugins",
+        help_text="With their files. A restore installs the ones that server doesn't have, turned off.",
+    )
+
 
 class BackupRestoreForm(forms.Form):
     """Form for restoring from backup."""
@@ -3489,6 +3501,17 @@ class S3BackupScheduleForm(forms.Form):
         label="Include DataStores",
     )
 
+    s3_backup_include_plugins = forms.BooleanField(
+        required=False,
+        initial=False,
+        widget=forms.CheckboxInput(
+            attrs={
+                "class": CHECK_CLASS,
+            }
+        ),
+        label="Include installed plugins",
+    )
+
     def __init__(self, *args, instance=None, **kwargs):
         """Initialize form with existing settings."""
         super().__init__(*args, **kwargs)
@@ -3502,6 +3525,7 @@ class S3BackupScheduleForm(forms.Form):
             self.fields["s3_backup_include_runs"].initial = instance.s3_backup_include_runs
             self.fields["s3_backup_max_runs"].initial = instance.s3_backup_max_runs
             self.fields["s3_backup_include_datastores"].initial = instance.s3_backup_include_datastores
+            self.fields["s3_backup_include_plugins"].initial = instance.s3_backup_include_plugins
 
     def save(self, instance):
         """Save the backup schedule settings."""
@@ -3516,6 +3540,7 @@ class S3BackupScheduleForm(forms.Form):
         instance.s3_backup_include_runs = self.cleaned_data.get("s3_backup_include_runs", False)
         instance.s3_backup_max_runs = self.cleaned_data.get("s3_backup_max_runs", 1000)
         instance.s3_backup_include_datastores = self.cleaned_data.get("s3_backup_include_datastores", True)
+        instance.s3_backup_include_plugins = self.cleaned_data.get("s3_backup_include_plugins", False)
 
         instance.save()
 
