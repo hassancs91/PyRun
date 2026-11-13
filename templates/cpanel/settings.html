@@ -606,7 +606,7 @@
     <div class="bg-panel border border-line rounded-2xl p-6">
         <h3 class="text-base font-semibold text-text mb-4">📦 Create backup</h3>
         <p class="text-sm text-muted mb-2">Export a backup of your PyRun instance: scripts, secrets, settings, libraries, data stores, brains and execution history.</p>
-        <p class="text-xs text-faint mb-4">Not included: AI providers, channels, object-storage connections, API tokens, installed plugin files and script working folders — recreate them after restoring on a new server.</p>
+        <p class="text-xs text-faint mb-4" id="backup-not-included">Not included: AI providers, channels, object-storage connections, API tokens and script working folders — recreate them after restoring on a new server. Installed plugins are included only when you tick “Include installed plugins” below.</p>
         <form method="post" action="{% url 'cpanel:backup_create' %}" id="backup-create-form">
             {% csrf_token %}
             {% if backup_create_form.errors %}<div class="mb-4">{% include "cpanel/_form_errors.html" with form=backup_create_form %}</div>{% endif %}

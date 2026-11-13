@@ -150,13 +150,13 @@ def release(script_id):
     try:
         webhook_data = json.loads(head.queued_payload) if head.queued_payload else None
         task_id = enqueue_run(head, webhook_data)
-    except Exception as e:
+    except Exception:
         # Fail it rather than leave it claimed: a claimed run counts as in
         # flight and would block the script until the stale-run reconciler.
         logger.exception(f"Could not start held run {head.id}")
         Run.objects.filter(pk=head.pk, status=Run.Status.PENDING).update(
             status=Run.Status.FAILED,
-            stderr=f"Failed to queue task: {e}",
+            stderr=Run.QUEUE_FAILED_TEXT,
             ended_at=timezone.now(),
             task_id="",
             queued_payload="",

@@ -229,6 +229,23 @@ class PluginBackupTests(_Dir):
         on = json.loads(self.client.post(url, {**base, "include_plugins": "on"}).content)
         self.assertEqual([row["slug"] for row in on["plugins"]], [SLUG])
 
+    def test_the_not_included_line_points_to_the_option(self):
+        # 2.5 test pass 9, F5: the line said "Not included: … installed plugin
+        # files …" right above the opt-in that includes them.
+        settings_obj = GlobalSettings.get_settings()
+        settings_obj.setup_completed = True
+        settings_obj.save()
+        Environment.objects.get_or_create(name="default", defaults={"is_default": True, "python_version": "3.12"})
+        self.client.force_login(self.admin)
+        page = self.client.get(reverse("cpanel:settings")).content.decode()
+        start = page.index('id="backup-not-included"')
+        line = page[start:page.index("</p>", start)]
+        self.assertIn("Not included:", line)
+        self.assertNotIn("plugin files", line)
+        self.assertIn("Installed plugins are included only when you tick", line)
+        self.assertIn("Include installed plugins", line)
+        self.assertIn(str(BackupCreateForm().fields["include_plugins"].label), page)
+
 
 def _demo_zip_bytes(version, slug=SLUG):
     from core.test_plugin_update import demo_zip

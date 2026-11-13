@@ -219,11 +219,11 @@ def _dispatch(pk) -> bool:
         logger.warning(f"Retry {run.id} not started: {e.message}")
         _notify_previous(run)
         return False
-    except Exception as e:
+    except Exception:
         logger.exception(f"Could not queue retry {run.id}")
         Run.objects.filter(pk=pk, status=Run.Status.PENDING).update(
             status=Run.Status.FAILED,
-            stderr=f"Failed to queue the retry: {e}",
+            stderr=Run.QUEUE_FAILED_TEXT,
             ended_at=timezone.now(),
             task_id="",
             queued_payload="",

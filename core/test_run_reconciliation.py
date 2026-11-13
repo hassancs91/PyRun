@@ -177,13 +177,19 @@ class AbandonedProcessTests(TestCase):
     def test_unexpected_exception_kills_abandoned_tree(self):
         script = _script()
         run = _run(script, Run.Status.PENDING)
-        backend = _FakeBackend(RuntimeError("boom"))
+        backend = _FakeBackend(RuntimeError("boom at /app/core/x.py"))
 
-        self._execute_with_backend(backend, run)
+        with self.assertLogs("core.executor", level="ERROR") as logs:
+            self._execute_with_backend(backend, run)
 
         run.refresh_from_db()
         self.assertEqual(run.status, Run.Status.FAILED)
-        self.assertIn("Unexpected executor error", run.stderr)
+        # The run shows the neutral line; the exception and PyRun's traceback
+        # are in the server log only (2.5 test pass 9, F3).
+        self.assertEqual(run.stderr, Run.INTERNAL_ERROR_TEXT)
+        log = "\n".join(logs.output)
+        self.assertIn("boom at /app/core/x.py", log)
+        self.assertIn("Traceback", log)
         self.assertEqual(backend.kill_calls, [4242])
 
     def test_clean_completion_does_not_kill(self):

@@ -551,7 +551,7 @@ def _start_manual_run(request: HttpRequest, script, inputs, rerun_of=None) -> Ht
     except Exception:
         logger.exception("Script %s: the run couldn't be queued", script.pk)
         run.status = Run.Status.FAILED
-        run.stderr = "Failed to queue task. The server log has the details."
+        run.stderr = Run.QUEUE_FAILED_TEXT
         run.save()
         messages.error(request, "Failed to queue script. The server log has the details.")
 

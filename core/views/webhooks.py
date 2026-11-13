@@ -260,10 +260,10 @@ def webhook_trigger_view(request: HttpRequest, token: str) -> HttpResponse:
 
         except Exception as e:
             run.status = Run.Status.FAILED
-            run.stderr = f"Failed to queue task: {str(e)}"
+            run.stderr = Run.QUEUE_FAILED_TEXT
             run.response_code = 500
             run.save()
-            logger.error(f"Webhook failed to queue run {run.id}: {e}")
+            logger.exception(f"Webhook failed to queue run {run.id}: {e}")
 
             return JsonResponse(
                 {"error": "Failed to queue script execution"},

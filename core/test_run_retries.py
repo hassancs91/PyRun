@@ -400,7 +400,7 @@ class DispatchTests(_Fixture, TestCase):
             self.assertEqual(run_retries.dispatch_due(), 0)
         retry.refresh_from_db()
         self.assertEqual(retry.status, Run.Status.FAILED)
-        self.assertIn("broker down", retry.stderr)
+        self.assertEqual(retry.stderr, Run.QUEUE_FAILED_TEXT)  # the exception is in the log only
         self.assertEqual(notify.call_args.args[0].pk, retry.retry_of_id)
         # It never ran, so the failed attempt before it isn't hidden by it.
         self.assertFalse(run_retries.retry_follows(self._first(retry)))

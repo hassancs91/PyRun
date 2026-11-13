@@ -331,7 +331,7 @@ class ReleaseTests(_Fixture, TestCase):
             self.assertIsNone(run_concurrency.release(self.script.pk))
         self.held.refresh_from_db()
         self.assertEqual(self.held.status, Run.Status.FAILED)
-        self.assertIn("broker down", self.held.stderr)
+        self.assertEqual(self.held.stderr, Run.QUEUE_FAILED_TEXT)  # the exception is in the log only
         self.assertEqual(self.held.task_id, "")
         with _tasks() as task:
             self.assertEqual(run_concurrency.release(self.script.pk).pk, self.second.pk)

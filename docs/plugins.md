@@ -1322,6 +1322,7 @@ and run automatically at activation). Tier-1 is a **static lint** — file check
 | `triggers.py` adapters: doesn't parse, a `TriggerAdapter` subclass without a literal valid `key` (or a duplicate, or `<slug>:<key>` over 80 characters), without a literal `title`, without its own `check`/`test`, a literal `config_schema` that isn't flat, unknown `providers` | fail |
 | `lifecycle.py` doesn't parse, or `reprovision` / `on_update` is async or can't be called with no argument / one argument | fail |
 | Manifest `api` too old for what it declares: `"vector_collections"` in `provisions` needs `2.6`, `"brains"` `2.7`; `requires_connections`, a `triggers.py` or `"tables"` need `2.8` | fail |
+| Manifest `api` newer than this PyRun's SDK (`"2.9"` on 2.8: "needs plugin SDK 2.9; this PyRun has 2.8", the same refusal as install, activation and update) | fail |
 | `MANIFEST.sha256` / `plugin.sig` present but a file changed, is missing or unlisted, or the signature doesn't check out (see [Signed plugins](#signed-plugins-and-the-verified-badge-pyrun-25)) | fail |
 | `triggers.py` defines no `TriggerAdapter` subclass | warn |
 | `lifecycle.py` defines neither `reprovision` nor `on_update` | warn |
@@ -1599,10 +1600,11 @@ outside the project, as for `plugin_sign`.
 is additive: a plugin written for an older version keeps working on a newer
 one. Declare the lowest version whose features you use as `"api"` in
 `plugin.json`. Install, activation and update refuse a plugin whose `api` is
-newer than this PyRun's SDK ("needs plugin SDK 2.9; this PyRun has 2.8"). The
-doctor checks `api` only for what a manifest or file declares (the rows that
-name a manifest `api` in [the doctor table](#the-plugin-doctor)); a call to a
-newer SDK class or kwarg is up to you to declare.
+newer than this PyRun's SDK ("needs plugin SDK 2.9; this PyRun has 2.8"), and
+the doctor fails it with the same words. Beyond that, the doctor checks `api`
+only for what a manifest or file declares (the rows that name a manifest `api`
+in [the doctor table](#the-plugin-doctor)); a call to a newer SDK class or kwarg
+is up to you to declare.
 
 ### 2.8 (PyRun 2.5)
 

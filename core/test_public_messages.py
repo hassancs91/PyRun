@@ -17,8 +17,9 @@ from django.conf import settings
 from django.contrib.messages import get_messages
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 
-from core.executor import EnvironmentNotFoundError, _validate_environment
+from core.executor import EnvironmentNotFoundError, _validate_environment, execute_run
 from core.models import Database, Environment, GlobalSettings, Run, Script, User, Workspace, WorkspaceMembership
 from core.services import DatabaseProvisionError, DatabaseService, EncryptionService
 from core.services.database_explorer import DatabaseUnavailable, QueryTimeout
@@ -246,6 +247,81 @@ class SignedInMessagesTests(TestCase):
         self.assertNotIn("q.sqlite3", run.stderr)
         shown = [str(m) for m in get_messages(resp.wsgi_request)]
         self.assertEqual(shown, ["Failed to queue script. The server log has the details."])
+
+    def test_an_executor_failure_shows_members_the_neutral_line_not_pyruns_traceback(self):
+        # 2.5 test pass 9, F3: an Environment row with an empty path (a shell-made
+        # fixture) made the executor fail, and the run's stderr carried
+        # "Unexpected executor error: ['Path cannot be empty']" plus PyRun's own
+        # traceback (/app/core/... paths) for every workspace member to read.
+        env = Environment.objects.create(name="emptyenv", path="", is_active=True)
+        script = Script.objects.create(name="s-exec", code="print('hi')", environment=env, workspace=self.ws)
+        run = Run.objects.create(script=script, workspace=self.ws)
+        with self.assertLogs("core.executor", level="ERROR") as logs:
+            execute_run(run)
+        run.refresh_from_db()
+        self.assertEqual(run.status, Run.Status.FAILED)
+        self.assertEqual(run.stderr, Run.INTERNAL_ERROR_TEXT)
+        log = "\n".join(logs.output)
+        self.assertIn("Path cannot be empty", log)
+        self.assertIn("Traceback", log)
+        for user in (self.member, self.admin):
+            with self.subTest(user=user.email):
+                page = self.get(user, "cpanel:run_detail", pk=run.pk)
+                self.assertContains(page, "internal PyRun error")
+                for leak in ("Traceback", "Path cannot be empty", "executor.py", "Unexpected executor error"):
+                    self.assertNotContains(page, leak)
+
+    def test_a_script_traceback_stays_in_the_run_output(self):
+        # The neutral line is only for PyRun's own failures: what the script
+        # itself prints (its own traceback included) is shown as it was.
+        script = Script.objects.create(
+            name="s-own", code="pass", environment=Environment.objects.get(is_default=True), workspace=self.ws,
+        )
+        own = 'Traceback (most recent call last):\n  File "/srv/mine.py", line 1\nValueError: mine'
+        run = Run.objects.create(script=script, workspace=self.ws, status=Run.Status.FAILED, stderr=own)
+        page = self.get(self.member, "cpanel:run_detail", pk=run.pk)
+        self.assertContains(page, "ValueError: mine")
+        self.assertNotContains(page, "internal PyRun error")
+
+    def test_a_webhook_queue_failure_keeps_the_exception_out_of_the_run(self):
+        script = Script.objects.create(
+            name="s-hook", code="pass", environment=Environment.objects.get(is_default=True), workspace=self.ws,
+        )
+        script.create_webhook_token()
+        with mock.patch("core.views.webhooks.queue_script_run", side_effect=RuntimeError("db at /srv/q.sqlite3")), \
+                self.assertLogs("core.views.webhooks", level="ERROR") as logs:
+            resp = self.client.post(reverse("webhook_trigger", args=[script.webhook_token]))
+        self.assertEqual(resp.status_code, 500)
+        self.assertNotIn("q.sqlite3", resp.content.decode())
+        run = Run.objects.get(script=script)
+        self.assertEqual(run.stderr, Run.QUEUE_FAILED_TEXT)
+        self.assertIn("q.sqlite3", "\n".join(logs.output))
+
+    def test_a_held_run_or_retry_that_cannot_be_queued_keeps_the_exception_out(self):
+        from core.services import run_concurrency, run_retries
+
+        script = Script.objects.create(
+            name="s-held", code="pass", environment=Environment.objects.get(is_default=True), workspace=self.ws,
+        )
+        ahead = Run.objects.create(script=script, workspace=self.ws, status=Run.Status.SUCCESS)
+        held = Run.objects.create(
+            script=script, workspace=self.ws, status=Run.Status.PENDING, task_id="", queued_behind=ahead.id,
+        )
+        with mock.patch("core.tasks.enqueue_run", side_effect=RuntimeError("broker at /srv/q.sqlite3")), \
+                self.assertLogs("core.services.run_concurrency", level="ERROR"):
+            run_concurrency.release(script.pk)
+        held.refresh_from_db()
+        self.assertEqual((held.status, held.stderr), (Run.Status.FAILED, Run.QUEUE_FAILED_TEXT))
+
+        retry = Run.objects.create(
+            script=script, workspace=self.ws, status=Run.Status.PENDING, task_id="",
+            next_attempt_at=timezone.now(),
+        )
+        with mock.patch("core.tasks.queue_script_run", side_effect=RuntimeError("broker at /srv/q.sqlite3")), \
+                self.assertLogs("core.services.run_retries", level="ERROR"):
+            run_retries._dispatch(retry.pk)
+        retry.refresh_from_db()
+        self.assertEqual((retry.status, retry.stderr), (Run.Status.FAILED, Run.QUEUE_FAILED_TEXT))
 
 
 DB_URL = "postgresql://prov:pw@10.9.8.7:5432/pyrun_data"

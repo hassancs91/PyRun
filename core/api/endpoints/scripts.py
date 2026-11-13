@@ -285,11 +285,11 @@ def run_script(ctx, params):
         except ScriptInputsError as exc:
             # The schema changed since the check above; the row is gone.
             raise ApiError("invalid_input", exc.message) from None
-        except Exception as exc:
+        except Exception:
             Run.objects.filter(pk=run.pk, status=Run.Status.PENDING).update(
                 status=Run.Status.FAILED,
                 ended_at=timezone.now(),
-                stderr=f"Failed to queue task: {exc}",
+                stderr=Run.QUEUE_FAILED_TEXT,
             )
             raise
         if run.is_maintenance_skipped:

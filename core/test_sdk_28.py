@@ -157,6 +157,20 @@ class DoctorRuleTests(SimpleTestCase):
         self.assertEqual(self._fails(self._folder({"api": "2.8", "provisions": {"tables": 1}}), "metadata"), [])
         self.assertEqual(self._fails(self._folder({"api": "2.0", "provisions": {"tables": 0}}), "metadata"), [])
 
+    def test_an_api_newer_than_this_sdk_fails_like_the_installer(self):
+        # 2.5 test pass 9, F4: the doctor said "activation allowed" for api "2.9"
+        # while install, activation and update refuse it.
+        report = run_doctor(self._folder({"api": "2.9"}))
+        self.assertFalse(report.ok, report.format())
+        self.assertEqual(
+            self._fails(self._folder({"api": "2.9"}), "api"),
+            [f"Plugin 't47demo' needs plugin SDK 2.9; this PyRun has {sdk.API_VERSION}. Upgrade PyRun first."],
+        )
+        for api in ("2.8", "2.1", None):
+            with self.subTest(api=api):
+                manifest = {} if api is None else {"api": api}
+                self.assertEqual(self._fails(self._folder(manifest), "api"), [])
+
     def test_a_plugin_without_2_5_surfaces_keeps_its_old_api(self):
         report = run_doctor(self._folder({"api": "2.1", "provisions": {"scripts": 1}}))
         self.assertTrue(report.ok, report.format())

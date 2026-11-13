@@ -34,6 +34,15 @@ class Run(models.Model):
     # The statuses a run ends in (``is_finished``).
     FINISHED_STATUSES = (Status.SUCCESS, Status.FAILED, Status.TIMEOUT, Status.CANCELLED)
 
+    # What a run's stderr says when PyRun itself failed, not the script. Anyone
+    # who can see the run reads it, so the exception and traceback go to the
+    # server log only (UI shows no internals).
+    INTERNAL_ERROR_TEXT = (
+        "This run failed because of an internal PyRun error, not your script. "
+        "An administrator can find the details in the server log."
+    )
+    QUEUE_FAILED_TEXT = "Failed to queue task. The server log has the details."
+
     class TriggerType(models.TextChoices):
         MANUAL = "manual", "Manual"
         SCHEDULED = "scheduled", "Scheduled"

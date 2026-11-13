@@ -163,6 +163,7 @@ def run_doctor(path, *, installed_version=None) -> DoctorReport:
 
     _check_slug(folder, report)
     _check_manifest(folder, report)
+    _check_api_version(folder, report)
     _check_metadata(folder, report)
     _check_package_files(folder, report)
     _check_no_ddl(folder, report)
@@ -211,6 +212,26 @@ def _check_manifest(folder: Path, report: DoctorReport):
         report.add("manifest", FAIL, f"plugin.json slug ({manifest.get('slug')!r}) must match the folder name ({folder.name!r}).")
     else:
         report.add("manifest", PASS, "plugin.json present and slug matches the folder.")
+
+
+def _check_api_version(folder: Path, report: DoctorReport):
+    """FAIL a manifest ``api`` newer than this PyRun's plugin SDK.
+
+    Install, activation and update refuse such a plugin
+    (plugin_updates.api_version_problem); the doctor says the same, with the
+    same words, so its verdict matches what the installer does.
+    """
+    from core.services.plugin_updates import api_version_problem
+
+    try:
+        manifest = json.loads((folder / "plugin.json").read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return  # already FAILed in _check_manifest
+    if not isinstance(manifest, dict):
+        return
+    problem = api_version_problem(manifest, manifest.get("slug") or folder.name)
+    if problem:
+        report.add("api", FAIL, problem)
 
 
 def _check_metadata(folder: Path, report: DoctorReport):

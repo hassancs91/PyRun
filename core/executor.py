@@ -11,7 +11,6 @@ import os
 import shutil
 import subprocess
 import tempfile
-import traceback
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -1107,7 +1106,7 @@ def execute_run(run: Run, webhook_data: dict | None = None) -> None:
         except OSError as e:
             run.status = Run.Status.FAILED
             run.exit_code = -1
-            run.stderr = f"Failed to write the run file: {e}"
+            run.stderr = Run.INTERNAL_ERROR_TEXT
             logger.error("Run %s could not write its run file: %s", run.id, e)
             return  # the finally block persists this FAILED state
 
@@ -1119,7 +1118,7 @@ def execute_run(run: Run, webhook_data: dict | None = None) -> None:
             except OSError as e:
                 run.status = Run.Status.FAILED
                 run.exit_code = -1
-                run.stderr = f"Failed to write the request body file: {e}"
+                run.stderr = Run.INTERNAL_ERROR_TEXT
                 logger.error("Run %s could not write its body file: %s", run.id, e)
                 return  # the finally block persists this FAILED state
 
@@ -1143,7 +1142,7 @@ def execute_run(run: Run, webhook_data: dict | None = None) -> None:
             except OSError as e:
                 run.status = Run.Status.FAILED
                 run.exit_code = -1
-                run.stderr = f"Failed to stage script libraries: {e}"
+                run.stderr = Run.INTERNAL_ERROR_TEXT
                 logger.error("Run %s could not stage libraries: %s", run.id, e)
                 return  # the finally block persists this FAILED state
 
@@ -1305,9 +1304,9 @@ def execute_run(run: Run, webhook_data: dict | None = None) -> None:
         except subprocess.SubprocessError as e:
             # Handle other subprocess errors
             run.status = Run.Status.FAILED
-            run.stderr = f"Subprocess error: {str(e)}"
+            run.stderr = Run.INTERNAL_ERROR_TEXT
             run.exit_code = -1
-            logger.error(f"Run {run.id} subprocess error: {e}")
+            logger.exception(f"Run {run.id} subprocess error: {e}")
 
     except SystemExit:
         # django-q2's per-task TimeoutException subclasses SystemExit — NOT
@@ -1333,13 +1332,15 @@ def execute_run(run: Run, webhook_data: dict | None = None) -> None:
         # Catch-all for unexpected errors. If the failure interrupted wait(),
         # the subprocess is still alive and would survive detached — kill it so
         # a run PyRun reports failed cannot keep executing (and writing) in
-        # the background.
+        # the background. The run's stderr is shown to everyone who can see the
+        # run, so it gets the neutral line; the exception and PyRun's own
+        # traceback go to the server log only.
         if not wait_completed:
             _kill_abandoned_process(backend, handle, run.id)
         run.status = Run.Status.FAILED
-        run.stderr = f"Unexpected executor error: {str(e)}\n\n{traceback.format_exc()}"
+        run.stderr = Run.INTERNAL_ERROR_TEXT
         run.exit_code = -1
-        logger.exception(f"Run {run.id} unexpected error")
+        logger.exception(f"Run {run.id} unexpected executor error: {e}")
 
     finally:
         # Phase 4: Cleanup and save
