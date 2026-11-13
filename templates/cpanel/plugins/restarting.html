@@ -19,23 +19,23 @@
 
 <style>
     .pr-wrap{min-height:calc(100vh - 4rem);display:grid;place-items:center;padding:2.5rem 1rem}
-    .pr-card{width:100%;max-width:30rem;text-align:center;background:var(--panel);
-        border:1px solid var(--line);border-radius:1.25rem;padding:3rem 2.5rem 2.75rem;
+    .pr-card{width:100%;max-width:30rem;text-align:center;background:rgb(var(--panel));
+        border:1px solid rgb(var(--line));border-radius:1.25rem;padding:3rem 2.5rem 2.75rem;
         box-shadow:0 24px 60px -28px rgba(0,0,0,.55)}
     .pr-spinner{position:relative;width:4.25rem;height:4.25rem;margin:0 auto 1.9rem}
-    .pr-track{position:absolute;inset:0;border-radius:9999px;border:2px solid var(--line-soft)}
+    .pr-track{position:absolute;inset:0;border-radius:9999px;border:2px solid rgb(var(--line-soft))}
     .pr-arc{position:absolute;inset:0;border-radius:9999px;border:2px solid transparent;
-        border-top-color:var(--warn);border-right-color:var(--warn);
+        border-top-color:rgb(var(--warn));border-right-color:rgb(var(--warn));
         animation:pr-spin .85s linear infinite}
-    .pr-glyph{position:absolute;inset:0;margin:auto;width:1.6rem;height:1.6rem;color:var(--warn)}
+    .pr-glyph{position:absolute;inset:0;margin:auto;width:1.6rem;height:1.6rem;color:rgb(var(--warn))}
     .pr-title{font-size:1.5rem;line-height:1.2;font-weight:600;letter-spacing:-.01em;
-        color:var(--text);margin:0 0 .65rem}
-    .pr-sub{font-size:.875rem;line-height:1.65;color:var(--muted);margin:0 auto;max-width:24rem}
-    .pr-bar{margin-top:2.1rem;height:4px;border-radius:9999px;background:var(--line-soft);overflow:hidden}
-    .pr-bar>span{display:block;height:100%;width:38%;border-radius:9999px;background:var(--warn);
+        color:rgb(var(--text));margin:0 0 .65rem}
+    .pr-sub{font-size:.875rem;line-height:1.65;color:rgb(var(--muted));margin:0 auto;max-width:24rem}
+    .pr-bar{margin-top:2.1rem;height:4px;border-radius:9999px;background:rgb(var(--line-soft));overflow:hidden}
+    .pr-bar>span{display:block;height:100%;width:38%;border-radius:9999px;background:rgb(var(--warn));
         animation:pr-slide 1.4s ease-in-out infinite}
-    .pr-slow{font-size:.75rem;color:var(--faint);margin:1.6rem 0 0;display:none}
-    .pr-slow a{color:var(--ok);text-decoration:none}
+    .pr-slow{font-size:.75rem;color:rgb(var(--faint));margin:1.6rem 0 0;display:none}
+    .pr-slow a{color:rgb(var(--ok));text-decoration:none}
     .pr-slow a:hover{text-decoration:underline}
     @keyframes pr-spin{to{transform:rotate(360deg)}}
     @keyframes pr-slide{0%{transform:translateX(-120%)}100%{transform:translateX(320%)}}
