@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{# Sign-in code step (2.5 T46): after a correct password, before the session starts. #}
+
+{% block title %}Two-factor sign-in - {{ instance_name }}{% endblock %}
+
+{% block header %}{% endblock %}
+{% block footer %}{% endblock %}
+
+{% block content %}
+<div class="min-h-screen flex items-center justify-center px-4 py-12">
+    <div class="w-full max-w-md">
+        <div class="text-center mb-10">
+            <div class="w-16 h-16 bg-ok/10 rounded-2xl grid place-items-center mx-auto mb-6">
+                <svg class="w-8 h-8 text-ok" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+            </div>
+            <h1 class="text-2xl font-semibold tracking-tight text-text mb-2">Two-factor sign-in</h1>
+            <p class="text-muted">Enter the {{ digits }}-digit code from your authenticator app.</p>
+        </div>
+
+        <div class="bg-panel border border-line rounded-2xl p-8">
+            {% if error %}
+                <div class="mb-6 p-4 bg-fail/10 border border-fail/30 rounded-lg">
+                    <p class="text-sm text-fail">{{ error }}</p>
+                </div>
+            {% endif %}
+
+            <form method="post" class="space-y-5">
+                {% csrf_token %}
+                <div>
+                    <label for="id_code" class="block text-[13px] font-medium text-muted mb-1.5">Code</label>
+                    <input id="id_code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="32" required autofocus placeholder="123456"
+                           class="w-full px-3.5 py-2.5 bg-ink border border-line rounded-lg text-text text-sm font-mono tracking-widest placeholder-faint/60 focus:outline-none focus:ring-2 focus:ring-ok/30 focus:border-ok/60 transition-colors">
+                    <p class="mt-1.5 text-xs text-faint">Lost your phone? Enter one of your recovery codes instead.</p>
+                </div>
+                <button type="submit" class="w-full py-3 px-4 bg-ok text-ink font-semibold rounded-lg hover:opacity-90 transition focus:outline-none focus:ring-2 focus:ring-ok/40 focus:ring-offset-2 focus:ring-offset-panel">Verify</button>
+            </form>
+
+            <div class="mt-4 text-center">
+                <a href="{% url 'auth:login' %}" class="text-sm text-muted hover:text-text transition-colors">Back to sign in</a>
+            </div>
+        </div>
+        <p class="mt-6 text-center text-xs text-faint">No authenticator and no recovery codes? Contact your administrator.</p>
+    </div>
+</div>
+{% endblock %}

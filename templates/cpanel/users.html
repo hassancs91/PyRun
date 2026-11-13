@@ -113,6 +113,7 @@
                     <div class="flex items-center gap-2 flex-wrap">
                         <span class="text-[13.5px] font-medium text-text break-all">{{ user.email }}</span>
                         {% if user.is_superuser %}<span class="px-2 py-0.5 bg-info/10 text-info text-xs rounded-md">Admin</span>{% endif %}
+                        {% if user.two_factor_on %}<span class="px-2 py-0.5 bg-ok/10 text-ok text-xs rounded-md" title="Two-factor sign-in is on">2FA</span>{% endif %}
                         {% if user.is_verified %}
                         <span class="px-2 py-0.5 bg-ok/10 text-ok text-xs rounded-md">Verified</span>
                         {% else %}

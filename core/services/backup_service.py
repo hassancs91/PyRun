@@ -6,6 +6,7 @@ import gzip
 import hashlib
 import io
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -49,6 +50,8 @@ from core.services.encryption_service import EncryptionError, EncryptionService
 from core.services.schedule_service import ScheduleService
 from core.services.script_env import usable_env_vars
 from pyrunner.version import __version__ as PYRUNNER_VERSION
+
+logger = logging.getLogger(__name__)
 
 
 def _restored_response_code(value):
@@ -514,6 +517,7 @@ class BackupService:
             "auto_cleanup_enabled": settings_obj.auto_cleanup_enabled,
             "schedules_paused": settings_obj.schedules_paused,
             "api_writes_enabled": settings_obj.api_writes_enabled,
+            "require_2fa": settings_obj.require_2fa,
             "plugin_trust_policy": settings_obj.plugin_trust_policy,
             "plugin_store_url": settings_obj.plugin_store_url,
         }
@@ -621,10 +625,27 @@ class BackupService:
 
     @classmethod
     def _export_users(cls) -> List[dict]:
-        """Export users (basic info only, no passwords)."""
+        """Export users (basic info only, no passwords).
+
+        A user with confirmed two-factor sign-in (2.5 T46) carries it as
+        ``two_factor``: the secret still Fernet-encrypted (it decrypts only
+        where the backup's ENCRYPTION_KEY is set, like secrets) and the unused
+        recovery codes as their SHA-256 hashes. Pending set-ups stay out.
+        """
+        from core.models import RecoveryCode, UserTOTP
+
+        authenticators = {
+            row.user_id: row for row in UserTOTP.objects.filter(confirmed_at__isnull=False)
+        }
+        recovery = {}
+        for user_id, code_hash in RecoveryCode.objects.filter(
+            user_id__in=authenticators, used_at__isnull=True
+        ).order_by("id").values_list("user_id", "code_hash"):
+            recovery.setdefault(user_id, []).append(code_hash)
+
         users = []
         for user in User.objects.all().order_by("date_joined"):
-            users.append({
+            entry = {
                 "id": user.id,
                 "email": user.email,
                 "is_verified": user.is_verified,
@@ -632,7 +653,16 @@ class BackupService:
                 "is_superuser": user.is_superuser,
                 "notify_on_login": user.notify_on_login,
                 "date_joined": cls._serialize_datetime(user.date_joined),
-            })
+            }
+            row = authenticators.get(user.id)
+            if row is not None:
+                entry["two_factor"] = {
+                    "secret_encrypted": row.secret_encrypted,
+                    "confirmed_at": cls._serialize_datetime(row.confirmed_at),
+                    "last_used_step": row.last_used_step,
+                    "recovery_code_hashes": recovery.get(user.id, []),
+                }
+            users.append(entry)
         return users
 
     @classmethod
@@ -1809,6 +1839,8 @@ class BackupService:
         settings_obj.schedules_paused = data.get("schedules_paused", False)
         # Only a literal true turns writes on; an older backup leaves them off.
         settings_obj.api_writes_enabled = data.get("api_writes_enabled") is True
+        # Two-factor requirement (2.5 T46): same rule, an older backup leaves it off.
+        settings_obj.require_2fa = data.get("require_2fa") is True
         # An older backup, or an unknown value, keeps the default (allow unsigned).
         policy = data.get("plugin_trust_policy")
         settings_obj.plugin_trust_policy = (
@@ -1896,8 +1928,51 @@ class BackupService:
                 User.objects.filter(email__iexact=email).update(
                     notify_on_login=bool(user_data["notify_on_login"])
                 )
+            if email and isinstance(user_data.get("two_factor"), dict):
+                cls._import_two_factor(email, user_data["two_factor"])
 
         return user_map
+
+    @classmethod
+    def _import_two_factor(cls, email: str, data: dict) -> None:
+        """Put a backed-up authenticator back onto the same-email account (2.5 T46).
+
+        Only onto an account with no confirmed authenticator of its own (a
+        restore never replaces or removes one), and only when the secret
+        decrypts with this server's ENCRYPTION_KEY; otherwise the account is
+        left as it is. Older backups and users without two-factor carry no
+        ``two_factor`` key and change nothing.
+        """
+        from core.models import RecoveryCode, UserTOTP
+
+        user = User.objects.filter(email__iexact=email).first()
+        secret_encrypted = data.get("secret_encrypted")
+        if user is None or not isinstance(secret_encrypted, str) or not secret_encrypted:
+            return
+        if UserTOTP.objects.filter(user=user, confirmed_at__isnull=False).exists():
+            return
+        try:
+            EncryptionService.decrypt(secret_encrypted)
+        except EncryptionError:
+            logger.warning("Restore: two-factor sign-in for %s not restored (the secret doesn't decrypt here)", email)
+            return
+        hashes = [
+            h for h in data.get("recovery_code_hashes") or []
+            if isinstance(h, str) and len(h) == 64
+        ]
+        try:
+            last_step = max(0, int(data.get("last_used_step") or 0))
+        except (TypeError, ValueError):
+            last_step = 0
+        UserTOTP.objects.filter(user=user).delete()
+        UserTOTP.objects.create(
+            user=user,
+            secret_encrypted=secret_encrypted,
+            confirmed_at=cls._deserialize_datetime(data.get("confirmed_at")) or timezone.now(),
+            last_used_step=last_step,
+        )
+        RecoveryCode.objects.filter(user=user).delete()
+        RecoveryCode.objects.bulk_create([RecoveryCode(user=user, code_hash=h) for h in hashes])
 
     @classmethod
     def _import_environments(cls, envs_data: List[dict], user_map: dict, current_user, ws_map: dict, default_ws) -> dict:

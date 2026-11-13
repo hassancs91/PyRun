@@ -2,8 +2,8 @@
 ``manage.py user`` — manage accounts from the server's shell.
 
 The recovery path for when the web console can't help: a forgotten password on
-an instance with no email configured, a login lockout, or no admin left who can
-sign in. Shell access to the host is the trust boundary here — whoever can run
+an instance with no email configured, a login lockout, a lost authenticator
+phone, or no admin left who can sign in. Shell access to the host is the trust boundary here — whoever can run
 this already owns the instance.
 
     python manage.py user list
@@ -12,6 +12,7 @@ this already owns the instance.
     python manage.py user promote you@example.com
     python manage.py user demote you@example.com
     python manage.py user unlock you@example.com
+    python manage.py user disable-2fa you@example.com
 
 Passwords are prompted for, never taken as an argument, so they stay out of the
 shell history and the process list. ``--generate`` prints a random one instead,
@@ -32,7 +33,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from core.models import PasswordResetToken, User, UserInvite, WorkspaceMembership
-from core.services import security_events
+from core.services import security_events, two_factor
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +41,10 @@ MAX_PASSWORD_TRIES = 3
 
 
 class Command(BaseCommand):
-    help = "Manage accounts from the shell: list, reset a password, create, promote, demote, unlock."
+    help = (
+        "Manage accounts from the shell: list, reset a password, create, promote, demote, "
+        "unlock, turn off two-factor sign-in."
+    )
 
     def add_arguments(self, parser):
         actions = parser.add_subparsers(dest="action", metavar="action", required=True)
@@ -76,6 +80,12 @@ class Command(BaseCommand):
         )
         unlock.add_argument("email")
 
+        disable_2fa = actions.add_parser(
+            "disable-2fa",
+            help="Turn off two-factor sign-in for an account (a lost phone and no recovery codes).",
+        )
+        disable_2fa.add_argument("email")
+
     @staticmethod
     def _add_generate_flag(parser):
         parser.add_argument(
@@ -92,6 +102,7 @@ class Command(BaseCommand):
             "promote": self._promote,
             "demote": self._demote,
             "unlock": self._unlock,
+            "disable-2fa": self._disable_2fa,
         }
         actions[options["action"]](options)
 
@@ -224,6 +235,19 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(f"Cleared the login lockout for {user.email}."))
         else:
             self.stdout.write(f"{user.email} has no failed logins on record.")
+
+    def _disable_2fa(self, options):
+        user = self._get_user(options["email"])
+        if not two_factor.disable(user):
+            self.stdout.write(f"{user.email} doesn't use two-factor sign-in.")
+            return
+        security_events.record("2fa_disable", user=user, detail="manage.py user disable-2fa")
+        logger.info("CLI: two-factor sign-in turned off for %s", user.email)
+        self.stdout.write(self.style.SUCCESS(f"Two-factor sign-in is off for {user.email}."))
+        if two_factor.is_required():
+            self.stdout.write("  This instance requires it: they set it up again at their next sign-in.")
+        else:
+            self.stdout.write("  They sign in with the password only until they turn it on again.")
 
     # --- Helpers --------------------------------------------------------------
 

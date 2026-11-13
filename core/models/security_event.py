@@ -24,6 +24,12 @@ class SecurityEvent(models.Model):
         RESET = "reset", "Password reset"
         RESET_LINK = "reset_link", "Reset link generated"
         TOKEN_CREATE = "token_create", "API token created"
+        # Two-factor sign-in (2.5 T46).
+        TWO_FA_ENROLL = "2fa_enroll", "Two-factor turned on"
+        TWO_FA_DISABLE = "2fa_disable", "Two-factor turned off"
+        TWO_FA_FAIL = "2fa_fail", "Two-factor code refused"
+        TWO_FA_CODES = "2fa_codes", "Recovery codes replaced"
+        TWO_FA_POLICY = "2fa_policy", "Two-factor requirement changed"
 
     # The account, when one matches. A failed sign-in for an unknown email
     # keeps only ``email``; deleting the user keeps the rows until the purge.

@@ -22,6 +22,7 @@ from .library import Library, LibraryRevision, ScriptLibrary
 from .api_token import APIToken, DataStoreAPIToken
 from .api_call import ApiCall
 from .security_event import SecurityEvent
+from .two_factor import RecoveryCode, UserTOTP
 from .public_page import PluginPublicPage
 from .claude_usage import ClaudeUsage
 from .ai_provider import AIProvider, PROVIDER_PRESETS
@@ -71,6 +72,8 @@ __all__ = [
     "DataStoreAPIToken",
     "ApiCall",
     "SecurityEvent",
+    "UserTOTP",
+    "RecoveryCode",
     "PluginPublicPage",
     "ClaudeUsage",
     "AIProvider",

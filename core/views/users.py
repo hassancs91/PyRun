@@ -8,7 +8,15 @@ from django.views.decorators.http import require_http_methods, require_POST
 from django.urls import reverse
 from django.http import HttpRequest, HttpResponse
 
-from core.models import PasswordResetToken, SecurityEvent, User, UserInvite, WorkspaceMembership
+from core.models import (
+    GlobalSettings,
+    PasswordResetToken,
+    SecurityEvent,
+    User,
+    UserInvite,
+    UserTOTP,
+    WorkspaceMembership,
+)
 from core.services import security_events
 from core.views.decorators import superuser_required
 
@@ -41,7 +49,11 @@ def user_list_view(request: HttpRequest) -> HttpResponse:
         .order_by("-date_joined")
         .prefetch_related("workspace_memberships__workspace__memberships")
     )
+    two_factor_on = set(
+        UserTOTP.objects.filter(confirmed_at__isnull=False).values_list("user_id", flat=True)
+    )
     for user in users:
+        user.two_factor_on = user.pk in two_factor_on
         user.memberships_sorted = sorted(
             user.workspace_memberships.all(), key=lambda m: m.workspace.name.lower()
         )
@@ -187,7 +199,8 @@ SECURITY_EVENT_LIMIT = 200
 @login_required
 @superuser_required
 def user_security_view(request: HttpRequest) -> HttpResponse:
-    """Users → Security: sign-ins, lockouts, password and token events."""
+    """Users → Security: sign-ins, lockouts, password, token and two-factor events,
+    and the instance-wide two-factor requirement."""
     kinds = SecurityEvent.Kind
     kind = request.GET.get("kind", "")
     email = request.GET.get("email", "").strip().lower()
@@ -205,5 +218,34 @@ def user_security_view(request: HttpRequest) -> HttpResponse:
         "email": email,
         "limit": SECURITY_EVENT_LIMIT,
         "retention_days": security_events.RETENTION_DAYS,
-        "failed_kinds": (kinds.LOGIN_FAIL, kinds.LOCKOUT),
+        "failed_kinds": (kinds.LOGIN_FAIL, kinds.LOCKOUT, kinds.TWO_FA_FAIL),
+        "require_2fa": GlobalSettings.get_settings().require_2fa,
+        "two_factor_users": UserTOTP.objects.filter(
+            confirmed_at__isnull=False, user__is_active=True
+        ).count(),
+        "active_users": User.objects.filter(is_active=True).count(),
     })
+
+
+@login_required
+@superuser_required
+@require_POST
+def user_require_2fa_view(request: HttpRequest) -> HttpResponse:
+    """Turn the instance-wide two-factor requirement on or off (2.5 T46).
+
+    On: an account without an authenticator sets one up at its next sign-in,
+    before the session starts. Sessions already signed in carry on; API
+    tokens and invite links are unaffected.
+    """
+    enabled = request.POST.get("enabled") == "1"
+    settings_obj = GlobalSettings.get_settings()
+    settings_obj.require_2fa = enabled
+    settings_obj.save(update_fields=["require_2fa", "updated_at"])
+    security_events.record(
+        "2fa_policy", request=request, user=request.user, detail="required" if enabled else "optional"
+    )
+    if enabled:
+        messages.success(request, "Two-factor sign-in is now required. Accounts without it set it up at their next sign-in.")
+    else:
+        messages.success(request, "Two-factor sign-in is now optional.")
+    return redirect("cpanel:user_security")

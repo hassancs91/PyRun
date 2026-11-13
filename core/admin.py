@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.shortcuts import redirect
 
 from core.models import Plugin
 
@@ -21,3 +22,12 @@ class PluginAdmin(admin.ModelAdmin):
 for _model in list(admin.site._registry):
     if _model is not Plugin:
         admin.site.unregister(_model)
+
+
+def _console_sign_in(request, extra_context=None):
+    """The admin's own login form would start a session on the password alone,
+    skipping two-factor sign-in (2.5 T46): send it to the console's sign-in."""
+    return redirect("auth:login")
+
+
+admin.site.login = _console_sign_in

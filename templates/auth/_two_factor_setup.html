@@ -1,0 +1,22 @@
+{# Two-factor set-up (2.5 T46): server-made SVG QR code, the secret for typing in, and the confirm form. Context: qr_svg, secret_grouped, digits, error, confirm_url. #}
+<ol class="space-y-5 text-sm text-muted">
+    <li>
+        <p class="mb-3"><span class="font-medium text-text">1.</span> Scan this QR code with an authenticator app (Google Authenticator, 1Password, Authy, Bitwarden...).</p>
+        <div class="w-48 max-w-full mx-auto p-2 bg-white rounded-lg" role="img" aria-label="QR code for your authenticator app">{{ qr_svg|safe }}</div>
+    </li>
+    <li>
+        <p class="mb-1.5"><span class="font-medium text-text">2.</span> Can't scan it? Type this key into the app instead:</p>
+        <p class="font-mono text-sm text-text bg-ink border border-line rounded-lg px-3 py-2 break-all select-all">{{ secret_grouped }}</p>
+    </li>
+    <li>
+        <p class="mb-1.5"><span class="font-medium text-text">3.</span> Enter the {{ digits }}-digit code the app shows.</p>
+        {% if error %}<p class="mb-3 text-sm text-fail">{{ error }}</p>{% endif %}
+        <form method="post" action="{{ confirm_url }}" class="flex flex-col sm:flex-row gap-3">
+            {% csrf_token %}
+            <label for="id_code" class="sr-only">Code from the app</label>
+            <input id="id_code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="{{ digits }}" required autofocus placeholder="123456"
+                   class="flex-1 min-w-0 px-3.5 py-2.5 bg-ink border border-line rounded-lg text-text text-sm font-mono tracking-widest placeholder-faint/60 focus:outline-none focus:ring-2 focus:ring-ok/30 focus:border-ok/60 transition-colors">
+            <button type="submit" class="py-2.5 px-4 bg-ok text-ink font-semibold rounded-lg hover:opacity-90 transition">Turn on</button>
+        </form>
+    </li>
+</ol>

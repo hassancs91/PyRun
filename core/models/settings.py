@@ -51,6 +51,14 @@ class GlobalSettings(models.Model):
         help_text="Allow API and MCP tokens to call write endpoints and be granted write permissions.",
     )
 
+    # 2.5 T46: when on, an account without two-factor sign-in has to set it
+    # up at its next sign-in (before the session starts). API tokens and
+    # invite links are unaffected.
+    require_2fa = models.BooleanField(
+        default=False,
+        help_text="Every account must use two-factor sign-in (set up at the next sign-in).",
+    )
+
     # Plan D10 (2.5 T43): unsigned plugins install by default; signed_only
     # refuses installing, updating, rolling back to or activating one.
     class PluginTrustPolicy(models.TextChoices):

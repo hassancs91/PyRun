@@ -494,5 +494,10 @@ class SecurityEventModelTests(TestCase):
     def test_kinds_cover_the_ticket(self):
         self.assertEqual(
             set(SecurityEvent.Kind.values),
-            {"login_ok", "login_fail", "lockout", "password_change", "reset_request", "reset", "reset_link", "token_create"},
+            {
+                "login_ok", "login_fail", "lockout", "password_change", "reset_request", "reset", "reset_link",
+                "token_create",
+                # T46
+                "2fa_enroll", "2fa_disable", "2fa_fail", "2fa_codes", "2fa_policy",
+            },
         )

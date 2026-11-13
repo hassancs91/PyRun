@@ -9,6 +9,7 @@ creation put the exception into the setup page. Operator commands stay on the
 signed-in admin pages and in the docs.
 """
 
+import time
 from pathlib import Path
 from unittest import mock
 
@@ -73,6 +74,35 @@ class PublicResponsesTests(TestCase):
         ):
             with self.subTest(page=name):
                 self.assertClean(self.client.get(reverse(name, kwargs=kwargs)))
+
+    def test_two_factor_sign_in_pages_are_clean(self):
+        # 2.5 T46: the code step, its wrong-code and too-many-attempts answers,
+        # the forced set-up page and its "can't set up" answer.
+        from core.services import EncryptionError, two_factor
+
+        secret = two_factor.begin_enrollment(self.user)
+        two_factor.confirm_enrollment(self.user, two_factor.totp(two_factor.secret_bytes(secret), time.time()))
+        self._sign_in("someone@example.com", "correct-horse-91")
+        url = reverse("auth:two_factor_verify")
+        self.assertClean(self.client.get(url))
+        for _ in range(two_factor.USER_ATTEMPTS + 1):
+            resp = self.client.post(url, {"code": "not-a-code"})
+            self.assertClean(resp)
+        self.assertContains(resp, "Too many attempts. Wait a few minutes, then try again.")
+
+        GlobalSettings.objects.update(require_2fa=True)
+        other = User.objects.create_user(username="new@example.com", email="new@example.com", password="correct-horse-91")
+        self.client.logout()
+        self._sign_in(other.email, "correct-horse-91")
+        url = reverse("auth:two_factor_enroll")
+        self.assertClean(self.client.get(url))
+        self.assertClean(self.client.post(url, {"code": "000000"}))
+        two_factor.disable(other)
+        with mock.patch.object(EncryptionService, "encrypt", side_effect=EncryptionError("ENCRYPTION_KEY is not set")):
+            resp = self.client.get(url)
+        self.assertClean(resp)
+        self.assertNotContains(resp, "ENCRYPTION_KEY")
+        self.assertContains(resp, "Two-factor sign-in can&#x27;t be set up right now. Contact your administrator.")
 
     def test_the_lockout_page_is_clean_and_the_same_for_an_unknown_account(self):
         pages = []

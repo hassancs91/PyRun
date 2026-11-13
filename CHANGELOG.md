@@ -653,6 +653,24 @@ begins tracking at the current release; earlier history is in the git log.
   links and new API tokens are recorded with the IP and browser and listed
   under **Users → Security**, kept for 90 days. Backups carry each user's
   sign-in alert choice.
+- **Two-factor sign-in.** Each user can add an authenticator app (any TOTP
+  app) from the Change password page: scan the QR code, confirm with a code,
+  and save 10 single-use recovery codes. Sign-in then asks for a 6-digit code
+  after the password, and the session starts only when it is right; the same
+  goes for the sign-in after a password reset, and the Django admin's own
+  login form now sends to the console's sign-in. A code works once, and code
+  attempts are limited to 5 per account and 20 per client address per 5
+  minutes. Turning it off or making new recovery codes needs a current code.
+  Admins can require it for everyone under **Users → Security** (off by
+  default): accounts without it set it up at their next sign-in. API tokens and
+  invite links are unaffected. Lost phone and recovery codes:
+  `manage.py user disable-2fa <email>`. The Users page marks accounts that use
+  it, and turning it on or off, new recovery codes, refused codes and the
+  requirement are recorded under Users → Security. Backups carry each
+  account's authenticator (encrypted) and unused recovery codes (hashed); a
+  restore puts them back only onto an existing same-email account that has
+  none of its own, on a server with the same `ENCRYPTION_KEY`. New dependency:
+  `segno` (pure Python) draws the QR code as an inline SVG.
 
 ### Fixed
 - **A schedule time listed twice no longer runs the script twice.** The

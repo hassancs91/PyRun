@@ -182,6 +182,7 @@ from core.views.users import (
     delete_user_view,
     user_reset_link_view,
     user_security_view,
+    user_require_2fa_view,
 )
 from core.views.logs import (
     logs_view,
@@ -534,6 +535,7 @@ urlpatterns = [
     path("users/<int:pk>/delete/", delete_user_view, name="delete_user"),
     path("users/<int:pk>/reset-link/", user_reset_link_view, name="user_reset_link"),
     path("users/security/", user_security_view, name="user_security"),
+    path("users/security/require-2fa/", user_require_2fa_view, name="user_require_2fa"),
 
     # Logs
     path("logs/", logs_view, name="logs"),

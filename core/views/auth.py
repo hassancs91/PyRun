@@ -20,7 +20,7 @@ from django_q.tasks import async_task
 from core.ratelimit import client_ip, rate_limit_exceeded
 from core.models import User, UserInvite, PasswordResetToken
 from core.models.settings import GlobalSettings
-from core.services import security_events
+from core.services import security_events, two_factor
 from core.forms import ChangePasswordForm, PasswordLoginForm, SetPasswordForm
 from core.services import RecaptchaService, EncryptionService, EncryptionError
 
@@ -36,6 +36,9 @@ FORGOT_WINDOW_SECONDS = 3600
 # The one answer to every forgot-password request, whether or not the account
 # exists, has a password, or was throttled.
 FORGOT_SENT_MESSAGE = "If an account exists with that email, a password reset link has been sent."
+
+# Where a correct password leads when two-factor sign-in applies (2.5 T46).
+TWO_FACTOR_STEPS = {"verify": "auth:two_factor_verify", "enroll": "auth:two_factor_enroll"}
 
 
 @csrf_protect
@@ -75,6 +78,13 @@ def login_view(request: HttpRequest) -> HttpResponse:
                 # the lockout never blocked a correct password.
                 user = authenticate(request, email=email, password=password)
                 if user is not None:
+                    # Two-factor (2.5 T46): the password alone doesn't start
+                    # the session when the account has an authenticator, or
+                    # must set one up; the code step does.
+                    step = two_factor.sign_in_step(user)
+                    if step is not None:
+                        two_factor.stash(request, user, "login")
+                        return redirect(TWO_FACTOR_STEPS[step])
                     login(request, user)
                     security_events.record("login_ok", request=request, user=user)
                     _queue_login_notification(request, user)
@@ -244,6 +254,7 @@ def change_password_view(request: HttpRequest) -> HttpResponse:
         "has_password": request.user.has_usable_password(),
         "done_url": done_url,
         "notify_on_login": request.user.notify_on_login,
+        "two_factor_enabled": two_factor.is_enabled(request.user),
     })
 
 
@@ -351,6 +362,14 @@ def reset_password_view(request: HttpRequest, token: str) -> HttpResponse:
             reset_login_attempts(username=user.email.lower())
             security_events.record("reset", request=request, user=user)
 
+            # The reset proves the mailbox, not the second factor: an account
+            # with two-factor (or one that must set it up) goes through the
+            # same code step as a sign-in.
+            step = two_factor.sign_in_step(user)
+            if step is not None:
+                two_factor.stash(request, user, "reset")
+                messages.success(request, "Password has been reset. Finish signing in.")
+                return redirect(TWO_FACTOR_STEPS[step])
             login(request, user, backend='django.contrib.auth.backends.ModelBackend')
             messages.success(request, "Password has been reset successfully.")
             return redirect("cpanel:dashboard")

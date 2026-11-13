@@ -128,6 +128,7 @@ docker exec pyrunner python manage.py user reset-password you@example.com --gene
 | `user create <email> [--admin]` | Create an account with a password, no invite needed |
 | `user promote <email>` / `user demote <email>` | Give or remove admin rights (the last admin can't be demoted) |
 | `user unlock <email>` | Clear a lockout without changing the password |
+| `user disable-2fa <email>` | Turn off two-factor sign-in for someone who lost their phone and recovery codes |
 
 Outside Docker, run the same commands as `python manage.py user ...`.
 
@@ -149,8 +150,21 @@ directly, and works with email turned off.
   (default `1209600`, two weeks).
 - **Sign-in alerts.** Each user can turn on an email after every sign-in, on
   the Change password page (off by default; needs email set up).
+- **Two-factor sign-in.** Each user can add an authenticator app (any TOTP app:
+  Google Authenticator, 1Password, Authy, Bitwarden...) from the Change password
+  page. Sign-in then asks for a 6-digit code after the password, also after a
+  password reset. Setting it up gives 10 single-use recovery codes for a lost
+  phone; turning it off or making new codes needs a current code. An admin can
+  require it for everyone under **Users → Security**: accounts without it set it
+  up at their next sign-in. API tokens and invite links don't use it. Code
+  attempts are limited to 5 per account and 20 per client address per 5
+  minutes. A backup carries each account's authenticator (still encrypted) and
+  unused recovery codes; a restore puts them back only onto an existing account
+  with the same email that has none of its own, on a server with the same
+  `ENCRYPTION_KEY`.
 - **Security events.** Sign-ins, failed sign-ins, lockouts, password changes
-  and resets, reset links and new API tokens are listed under
+  and resets, reset links, new API tokens and two-factor changes and refused
+  codes are listed under
   **Users → Security** (admins only) and kept for 90 days.
 
 ## AI in your scripts

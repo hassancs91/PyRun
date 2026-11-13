@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{# Forced two-factor set-up at sign-in (2.5 T46, require_2fa on): before the session starts. #}
+
+{% block title %}Set up two-factor sign-in - {{ instance_name }}{% endblock %}
+
+{% block header %}{% endblock %}
+{% block footer %}{% endblock %}
+
+{% block content %}
+<div class="min-h-screen flex items-center justify-center px-4 py-12">
+    <div class="w-full max-w-md">
+        <div class="text-center mb-10">
+            <div class="w-16 h-16 bg-ok/10 rounded-2xl grid place-items-center mx-auto mb-6">
+                <svg class="w-8 h-8 text-ok" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+            </div>
+            <h1 class="text-2xl font-semibold tracking-tight text-text mb-2">Set up two-factor sign-in</h1>
+            <p class="text-muted">This instance requires a code from an authenticator app at every sign-in.</p>
+        </div>
+
+        <div class="bg-panel border border-line rounded-2xl p-8">
+            {% if unavailable %}
+                <div class="p-4 bg-fail/10 border border-fail/30 rounded-lg">
+                    <p class="text-sm text-fail">{{ unavailable }}</p>
+                </div>
+            {% else %}
+                {% url 'auth:two_factor_enroll' as confirm_url %}
+                {% include "auth/_two_factor_setup.html" with confirm_url=confirm_url %}
+            {% endif %}
+            <div class="mt-6 text-center">
+                <a href="{% url 'auth:login' %}" class="text-sm text-muted hover:text-text transition-colors">Back to sign in</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

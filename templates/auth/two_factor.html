@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{# Two-factor sign-in, the account page (2.5 T46). #}
+
+{% block title %}Two-factor sign-in - {{ instance_name }}{% endblock %}
+
+{% block content %}
+<div class="min-h-[calc(100vh-12rem)] flex items-center justify-center px-4 py-12">
+    <div class="w-full max-w-md">
+        <div class="text-center mb-10">
+            <div class="w-16 h-16 bg-info/10 rounded-2xl grid place-items-center mx-auto mb-6">
+                <svg class="w-8 h-8 text-info" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+            </div>
+            <h1 class="text-2xl font-semibold tracking-tight text-text mb-2">Two-factor sign-in</h1>
+            <p class="text-muted">A code from an authenticator app on your phone, asked for after your password.</p>
+        </div>
+
+        <div class="bg-panel border border-line rounded-2xl p-8">
+            {% if unavailable %}
+                <div class="p-4 bg-fail/10 border border-fail/30 rounded-lg">
+                    <p class="text-sm text-fail">{{ unavailable }}</p>
+                </div>
+            {% elif enabled %}
+                <p class="flex items-center gap-2 text-sm text-text mb-1"><span class="w-2 h-2 rounded-full bg-ok" aria-hidden="true"></span> On since {{ confirmed_at|date:"M d, Y" }}</p>
+                <p class="text-sm text-muted mb-6">{{ codes_left }} of {{ code_count }} recovery codes left.</p>
+
+                <form method="post" action="{% url 'auth:two_factor_codes' %}" class="space-y-3 mb-6">
+                    {% csrf_token %}
+                    <h2 class="text-base font-semibold text-text">New recovery codes</h2>
+                    <p class="text-sm text-muted">Makes a new set; the old codes stop working.</p>
+                    <div class="flex flex-col sm:flex-row gap-3">
+                        <label for="id_codes_code" class="sr-only">Current code</label>
+                        <input id="id_codes_code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="32" required placeholder="Current code"
+                               class="flex-1 min-w-0 px-3.5 py-2.5 bg-ink border border-line rounded-lg text-text text-sm font-mono placeholder-faint/60 focus:outline-none focus:ring-2 focus:ring-ok/30 focus:border-ok/60 transition-colors">
+                        <button type="submit" class="py-2.5 px-4 text-sm font-medium rounded-lg border border-line text-text hover:border-faint transition-colors">Make new codes</button>
+                    </div>
+                </form>
+
+                <form method="post" action="{% url 'auth:two_factor_disable' %}" class="space-y-3 pt-6 border-t border-line-soft">
+                    {% csrf_token %}
+                    <h2 class="text-base font-semibold text-text">Turn off</h2>
+                    <p class="text-sm text-muted">{% if required %}This instance requires two-factor sign-in: you'll set it up again at your next sign-in.{% else %}Sign-in will ask for your password only.{% endif %}</p>
+                    <div class="flex flex-col sm:flex-row gap-3">
+                        <label for="id_disable_code" class="sr-only">Current code</label>
+                        <input id="id_disable_code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="32" required placeholder="Current code"
+                               class="flex-1 min-w-0 px-3.5 py-2.5 bg-ink border border-line rounded-lg text-text text-sm font-mono placeholder-faint/60 focus:outline-none focus:ring-2 focus:ring-ok/30 focus:border-ok/60 transition-colors">
+                        <button type="submit" class="py-2.5 px-4 text-sm font-medium rounded-lg border border-fail/40 text-fail hover:bg-fail/10 transition-colors">Turn off</button>
+                    </div>
+                    <p class="text-xs text-faint">A code from the app, or one of your recovery codes.</p>
+                </form>
+            {% elif pending %}
+                {% url 'auth:two_factor_confirm' as confirm_url %}
+                {% include "auth/_two_factor_setup.html" with confirm_url=confirm_url %}
+                <form method="post" action="{% url 'auth:two_factor_disable' %}" class="mt-6 text-center">
+                    {% csrf_token %}
+                    <button type="submit" class="text-sm text-muted hover:text-text transition-colors">Cancel set-up</button>
+                </form>
+            {% else %}
+                <p class="text-sm text-muted mb-1">Off.{% if required %} This instance requires it: you'll be asked to set it up at your next sign-in.{% endif %}</p>
+                <p class="text-sm text-muted mb-6">You need an authenticator app on your phone. After set-up you get {{ code_count }} recovery codes for when the phone isn't at hand.</p>
+                <form method="post" action="{% url 'auth:two_factor_start' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="w-full py-3 px-4 bg-ok text-ink font-semibold rounded-lg hover:opacity-90 transition">Set up two-factor sign-in</button>
+                </form>
+            {% endif %}
+        </div>
+
+        <div class="mt-6 text-center">
+            <a href="{% url 'auth:change_password' %}" class="text-sm text-muted hover:text-text transition-colors">Back to Change password</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

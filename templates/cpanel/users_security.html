@@ -3,10 +3,23 @@
 {% block title %}Security - Users - {{ instance_name }}{% endblock %}
 
 {% block heading %}Users{% endblock %}
-{% block subtitle %}Sign-ins, lockouts, password changes and resets, and API tokens created. Kept {{ retention_days }} days.{% endblock %}
+{% block subtitle %}Sign-ins, lockouts, password changes and resets, API tokens created, and two-factor changes and refused codes. Kept {{ retention_days }} days.{% endblock %}
 
 {% block page %}
 {% include "cpanel/_users_tabs.html" %}
+
+{# Two-factor requirement (2.5 T46). #}
+<section class="rounded-2xl border border-line bg-panel p-5 flex flex-col sm:flex-row sm:items-center gap-4">
+    <div class="flex-1 min-w-0">
+        <h2 class="text-base font-semibold text-text mb-1">Two-factor sign-in</h2>
+        <p class="text-sm text-muted">{% if require_2fa %}Required: an account without an authenticator sets one up at its next sign-in.{% else %}Optional: each person turns it on from their account security page.{% endif %} On for {{ two_factor_users }} of {{ active_users }} active account{{ active_users|pluralize }}.</p>
+    </div>
+    <form method="post" action="{% url 'cpanel:user_require_2fa' %}" class="flex-shrink-0">
+        {% csrf_token %}
+        <input type="hidden" name="enabled" value="{% if require_2fa %}0{% else %}1{% endif %}">
+        <button type="submit" class="text-[13px] font-medium px-3.5 py-2 rounded-lg border border-line text-muted hover:text-text hover:border-faint transition-colors">{% if require_2fa %}Make optional{% else %}Require for everyone{% endif %}</button>
+    </form>
+</section>
 
 <form method="get" class="flex flex-col sm:flex-row sm:items-end gap-3">
     <div>

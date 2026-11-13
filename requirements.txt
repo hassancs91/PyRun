@@ -28,3 +28,6 @@ numpy>=2.0
 PyYAML==6.0.3
 boto3>=1.34.0
 claude-agent-sdk>=0.2.101,<0.3.0
+# Two-factor sign-in: the QR code is an inline SVG made on the server (pure
+# Python, no dependencies of its own). TOTP itself is hmac/hashlib.
+segno==1.6.6
