@@ -265,7 +265,7 @@ def update(plugin, uploaded_file, *, user=None, source=PluginUpdate.Source.UPLOA
             user=user if getattr(user, "pk", None) else None,
             outcome=PluginUpdate.Outcome.REFUSED,
             # A preflight failure carries the new code's output: mask it like steps.
-            error=_cut(_mask_plugin_output(plugin.slug, str(exc))),
+            error=_cut(mask_plugin_output(plugin.slug, str(exc))),
             finished_at=timezone.now(),
         )
         logger.warning("Update of plugin %r refused: %s", plugin.slug, exc)
@@ -340,8 +340,11 @@ def _update(plugin, uploaded_file, *, user, source, initiated_by, attempt):
             plugin.checksum = new_checksum
             plugin.previous_version = old_version if kept else ""
             plugin.previous_checksum = old_checksum if kept else ""
+            # Where the installed code came from now (2.5 T52): the Store, a
+            # URL or an upload; the Updates history keeps every earlier one.
+            plugin.source = source
             plugin.save(update_fields=[
-                "name", "version", "manifest", "checksum",
+                "name", "version", "manifest", "checksum", "source",
                 "previous_version", "previous_checksum", "updated_at",
                 *plugin_trust.apply(plugin, trust),
             ])
@@ -497,8 +500,8 @@ def swapped_since_load() -> bool:
 # Update steps after the restart
 # --------------------------------------------------------------------------- #
 
-def _mask_plugin_output(slug, text):
-    """Mask the plugin's own secret values out of step output before it is stored."""
+def mask_plugin_output(slug, text):
+    """Mask the plugin's own secret values out of output before it is stored or shown."""
     from core.executor import mask_secrets_in_value
     from core.models import Secret
 
@@ -583,7 +586,7 @@ def run_pending_steps(write=print) -> dict:
             outcome = PluginUpdate.Outcome.OK if ok else PluginUpdate.Outcome.STEPS_FAILED
             PluginUpdate.objects.filter(pk__in=[r.pk for r in rows]).update(
                 outcome=outcome,
-                error="" if ok else _cut(_mask_plugin_output(plugin.slug, output)) or "Update steps failed.",
+                error="" if ok else _cut(mask_plugin_output(plugin.slug, output)) or "Update steps failed.",
                 finished_at=timezone.now(),
             )
             results[plugin.slug] = outcome

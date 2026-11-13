@@ -1066,7 +1066,9 @@ known connection `providers`. The same rule runs again before a loaded
 plugin's adapters are offered (so a dev-mode plugin is held to it too), and
 each adapter object is checked once more when it is imported; one that fails
 is left out (logged). The file is imported once per process, on first use.
-When a plugin goes away, watchers that use its adapters fail with "isn't
+When the file fails the rule or fails to import, the plugin's page shows
+**Watcher types unavailable** with the reason (the traceback stays in the
+server log). When a plugin goes away, watchers that use its adapters fail with "isn't
 available" and, after 10 failed checks, turn off.
 
 ---
@@ -1450,7 +1452,9 @@ reads the plugin:
 PyRun trusts only its own keys, listed by key id in
 `core/plugins/trust/keys.py` (a new key id is how a key is rotated). Signatures
 from other publishers are refused for now; the format already carries the
-publisher and key id they will need.
+publisher and key id they will need. The badge follows the current keys: when
+the key that signed an installed plugin is later revoked or removed, the plugin
+shows **Signature not trusted** with the doctor's reason instead of Verified.
 
 **Key pinning.** Once a slug is installed signed, every update must be signed by
 the same publisher (a new key id of that publisher is fine). An unsigned zip, or
@@ -1522,7 +1526,8 @@ or plugin SDK (`api`), or when it is unsigned and the trust policy is
 **Install from URL.** Plugins → Upload → **Install from URL** takes a zip link
 (and, optionally, its sha256) and installs or updates it like an upload, with
 the same guard and 50 MB cap. The plugin's page shows the source (*Upload*,
-*Store* or *URL*).
+*Store* or *URL*) of its latest install or update; the **Updates** history keeps
+each update's own.
 
 **Updates are manual.** Each plugin has an update policy, shown on its page;
 2.5 offers only *Manual*. Automatic updates are not available yet.

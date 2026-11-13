@@ -541,14 +541,19 @@ class ConsoleTrustTests(_Dir):
         self.client.force_login(self.admin)
 
     def test_list_and_detail_show_the_badge(self):
+        # The badge follows the keys trusted when the page renders (T52).
         with trusted():
             plugin, _, _ = PluginService.upload(zip_of(signed_files(demo_files())))
-        listing = self.client.get(reverse("cpanel:plugin_list"))
+            listing = self.client.get(reverse("cpanel:plugin_list"))
+            detail = self.client.get(reverse("cpanel:plugin_detail", kwargs={"slug": plugin.slug}))
         self.assertContains(listing, "Verified · PyRun", count=2)  # the badge + the policy card
         self.assertContains(listing, "Trust policy")
-        detail = self.client.get(reverse("cpanel:plugin_detail", kwargs={"slug": plugin.slug}))
         self.assertContains(detail, "Verified · PyRun")
         self.assertContains(detail, "Updates must be signed by pyrun")
+        # Without the key, the same plugin shows the doctor's reason instead.
+        listing = self.client.get(reverse("cpanel:plugin_list"))
+        self.assertContains(listing, "Verified · PyRun", count=1)  # the policy card only
+        self.assertContains(listing, "Signature not trusted")
 
     def test_unsigned_plugin_shows_unsigned_on_its_page_only(self):
         plugin, _, _ = PluginService.upload(zip_of(demo_files()))

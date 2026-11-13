@@ -703,6 +703,27 @@ begins tracking at the current release; earlier history is in the git log.
   the newest runs that ran, and refused runs keep their own last N. The
   cleanup preview counts exactly what is deleted, shows how many runs are in
   progress, and the cleanup reports runs only.
+- **Reset links keep their token out of the address bar.** The first visit
+  of an emailed (or admin-made) reset link moves its token into the session
+  and opens the form at a token-free address, so the server log of later
+  requests, the browser history and any Referer don't carry it. A used,
+  expired or unknown link answers as before, and each link still works once.
+- **Forgot password asks for reCAPTCHA when the sign-in does.** With
+  reCAPTCHA on, the forgot-password form shows the same check; a failed check
+  gets the sign-in page's message and sends nothing. The hourly limits stay.
+- **The example plugins' publisher is `pyrun`** (was `learnwithhasan`).
+- **The Verified badge follows the current keys.** A plugin signed with a key
+  that is later revoked or removed shows **Signature not trusted** with the
+  doctor's reason instead of Verified.
+- **A plugin's source follows its latest update.** Updating from the Store, a
+  URL or an upload now records that as the plugin's source; the Updates
+  history keeps each update's own.
+- **No "Doctor warnings" toast after a clean activation.** The preflight's
+  own output was shown as a warning even when the check passed.
+- **A plugin whose watcher types fail to load says so on its page.** When
+  `triggers.py` fails the doctor's rule or fails to import, the plugin's page
+  shows **Watcher types unavailable** with the reason; the traceback stays in
+  the server log.
 
 ## [2.0.0] — October 23, 2026
 

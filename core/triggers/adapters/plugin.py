@@ -33,6 +33,9 @@ logger = logging.getLogger(__name__)
 
 # {slug: (PluginAdapter, ...)}: per process, failures included (an empty tuple).
 _loaded: dict = {}
+# {slug: detail}: why a plugin's triggers.py offered nothing (the doctor's
+# failures or the import error), for the plugin page (2.5 T52).
+_errors: dict = {}
 
 
 class PluginAdapter(Adapter):
@@ -127,6 +130,7 @@ def _load(slug) -> tuple:
         if failures:
             logger.warning("Plugin %r: triggers.py fails the doctor, no adapters offered: %s",
                            slug, " ".join(failures))
+            _errors[slug] = " ".join(failures)
         elif keys:
             module = importlib.import_module(f"plugins.{slug}.triggers")
             for _, cls in inspect.getmembers(module, inspect.isclass):
@@ -138,12 +142,26 @@ def _load(slug) -> tuple:
                     logger.warning("Plugin %r: adapter %s left out: %s", slug, cls.__name__, problem)
                     continue
                 found.append(PluginAdapter(slug, adapter))
-    except Exception:
+    except Exception as exc:
         logger.exception("Plugin %r: loading triggers.py failed", slug)
+        _errors[slug] = f"{type(exc).__name__}: {exc}"
         found = []
     # The picker's order: by title, then key.
     _loaded[slug] = tuple(sorted(found, key=lambda a: (a.title.lower(), a.key)))
     return _loaded[slug]
+
+
+def load_problem(slug) -> str:
+    """Why plugin ``slug``'s triggers.py offers no adapters, or ''.
+
+    Loads it first when the plugin is loaded in this process (as the watcher
+    picker would); a plugin that isn't loaded here has nothing to report.
+    """
+    apps = getattr(settings, "INSTALLED_PLUGINS", [])
+    if not any(app.rsplit(".", 1)[-1] == slug for app in apps):
+        return ""
+    _load(slug)
+    return _errors.get(slug, "")
 
 
 def plugin_adapters() -> tuple:
@@ -155,3 +173,4 @@ def plugin_adapters() -> tuple:
 def reset() -> None:
     """Forget what was loaded (tests; the next lookup loads again)."""
     _loaded.clear()
+    _errors.clear()

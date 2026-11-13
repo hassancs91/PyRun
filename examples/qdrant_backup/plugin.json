@@ -1,7 +1,7 @@
 {
     "manifest_version": 1,
     "slug": "qdrant_backup",
-    "publisher": "learnwithhasan",
+    "publisher": "pyrun",
     "name": "Qdrant Backup",
     "version": "1.0.0",
     "api": "2.1",

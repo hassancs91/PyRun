@@ -54,7 +54,7 @@ class LinkErrorTitleTests(PolishAuthBase):
         token = PasswordResetToken.create_for_user(self.admin)
         token.used_at = timezone.now()
         token.save()
-        resp = self.client.get(reverse("auth:reset_password", args=[token.token]))
+        resp = self.client.get(reverse("auth:reset_password", args=[token.token]), follow=True)
         self.assertContains(resp, "Link already used")
         self.assertNotContains(resp, "Link expired")
         self.assertNotContains(resp, "Enter your new password")
@@ -63,7 +63,7 @@ class LinkErrorTitleTests(PolishAuthBase):
         token = PasswordResetToken.create_for_user(self.admin)
         token.expires_at = timezone.now() - timedelta(minutes=1)
         token.save()
-        resp = self.client.get(reverse("auth:reset_password", args=[token.token]))
+        resp = self.client.get(reverse("auth:reset_password", args=[token.token]), follow=True)
         self.assertContains(resp, "Link expired")
 
     def test_used_invite_is_titled_already_used(self):

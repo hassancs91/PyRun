@@ -76,12 +76,12 @@
             {% csrf_token %}
             {% if recaptcha_form.errors %}<div class="mb-4">{% include "cpanel/_form_errors.html" with form=recaptcha_form %}</div>{% endif %}
             <h3 class="text-base font-semibold text-text mb-1">Login protection (reCAPTCHA)</h3>
-            <p class="text-sm text-muted mb-4">Require Google reCAPTCHA v2 (“I'm not a robot”) on the sign-in page to block automated login attempts.</p>
+            <p class="text-sm text-muted mb-4">Require Google reCAPTCHA v2 (“I'm not a robot”) on the sign-in and forgot-password pages to block automated attempts.</p>
 
             <label class="flex items-center justify-between p-4 bg-panel-hi/40 border border-line-soft rounded-lg mb-4 cursor-pointer">
                 <div>
                     <p class="text-text font-medium">{{ recaptcha_form.recaptcha_enabled.label }}</p>
-                    <p class="text-sm text-muted">When enabled, users must pass the reCAPTCHA challenge to sign in.</p>
+                    <p class="text-sm text-muted">When enabled, users must pass the reCAPTCHA challenge to sign in or to ask for a password reset.</p>
                 </div>
                 {{ recaptcha_form.recaptcha_enabled }}
             </label>

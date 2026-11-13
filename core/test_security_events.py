@@ -260,7 +260,7 @@ class AdminResetLinkTests(TestCase):
 
         # The member uses it (signed out), with email still off.
         self.client.logout()
-        self.assertEqual(self.client.get(link).status_code, 200)
+        self.assertEqual(self.client.get(link, follow=True).status_code, 200)
         done = self.client.post(link, {"password": "a-brand-new-pass-77", "password_confirm": "a-brand-new-pass-77"})
         self.assertRedirects(done, reverse("cpanel:dashboard"), fetch_redirect_response=False)
         self.member.refresh_from_db()
@@ -268,7 +268,7 @@ class AdminResetLinkTests(TestCase):
         self.assertTrue(SecurityEvent.objects.filter(kind="reset", user=self.member).exists())
         # Single use.
         self.client.logout()
-        self.assertContains(self.client.get(link), "already been used")
+        self.assertContains(self.client.get(link, follow=True), "already been used")
 
     def test_a_new_link_expires_the_earlier_one(self):
         self.client.force_login(self.admin)

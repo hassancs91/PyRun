@@ -37,6 +37,14 @@ FORGOT_WINDOW_SECONDS = 3600
 # exists, has a password, or was throttled.
 FORGOT_SENT_MESSAGE = "If an account exists with that email, a password reset link has been sent."
 
+# A reset link's token moves into the session on its first GET; the form then
+# lives at reset-password/<RESET_URL_TOKEN>/ (the token itself never is that).
+RESET_SESSION_KEY = "pyrun_reset_token"
+RESET_URL_TOKEN = "set-password"
+
+# Login and forgot password refuse a failed reCAPTCHA check with this.
+RECAPTCHA_FAILED_MESSAGE = "reCAPTCHA verification failed. Please try again."
+
 # Where a correct password leads when two-factor sign-in applies (2.5 T46).
 TWO_FACTOR_STEPS = {"verify": "auth:two_factor_verify", "enroll": "auth:two_factor_enroll"}
 
@@ -64,7 +72,7 @@ def login_view(request: HttpRequest) -> HttpResponse:
 
         if recaptcha_active and not _verify_recaptcha(request, settings):
             # Bot protection: reject before processing any login action.
-            error_message = "reCAPTCHA verification failed. Please try again."
+            error_message = RECAPTCHA_FAILED_MESSAGE
         elif action == "password":
             # Password authentication
             password_form = PasswordLoginForm(request.POST)
@@ -114,7 +122,7 @@ def login_view(request: HttpRequest) -> HttpResponse:
 
 
 def _verify_recaptcha(request: HttpRequest, settings: GlobalSettings) -> bool:
-    """Verify the reCAPTCHA token submitted with the login form."""
+    """Verify the reCAPTCHA token submitted with the login or forgot-password form."""
     token = request.POST.get("g-recaptcha-response", "")
     try:
         secret = EncryptionService.decrypt(settings.recaptcha_secret_key_encrypted)
@@ -283,12 +291,20 @@ def forgot_password_view(request: HttpRequest) -> HttpResponse:
         messages.error(request, "Password reset is not available. Please contact an administrator.")
         return redirect("auth:login")
 
+    recaptcha_active = settings.recaptcha_active()
+    context = {"recaptcha_active": recaptcha_active, "recaptcha_site_key": settings.recaptcha_site_key}
+
     if request.method == "POST":
         email = request.POST.get("email", "").strip().lower()
 
+        if recaptcha_active and not _verify_recaptcha(request, settings):
+            # Same check and answer as the login form; nothing is sent.
+            messages.error(request, RECAPTCHA_FAILED_MESSAGE)
+            return render(request, "auth/forgot_password.html", context)
+
         if not email:
             messages.error(request, "Please enter your email address.")
-            return render(request, "auth/forgot_password.html")
+            return render(request, "auth/forgot_password.html", context)
 
         # Same answer for every address, known or not. The lookup, the token
         # and the email happen in a task, so the response time doesn't depend
@@ -323,13 +339,25 @@ def forgot_password_view(request: HttpRequest) -> HttpResponse:
 
         return redirect("auth:login")
 
-    return render(request, "auth/forgot_password.html")
+    return render(request, "auth/forgot_password.html", context)
 
 
 @csrf_protect
 @require_http_methods(["GET", "POST"])
 def reset_password_view(request: HttpRequest, token: str) -> HttpResponse:
-    """Reset password using a token from email."""
+    """Reset password using a token from email.
+
+    The first GET of an emailed link moves the token into the session and
+    redirects to a token-free address (Django's PasswordResetConfirmView
+    pattern), so the form page's URL, the server log of later requests and
+    any Referer never carry it. A POST to the tokened address still works.
+    """
+    if token == RESET_URL_TOKEN:
+        token = request.session.get(RESET_SESSION_KEY, "")
+    elif request.method == "GET" and PasswordResetToken.objects.filter(token=token).exists():
+        # Checked again (used, expired) on the token-free page.
+        request.session[RESET_SESSION_KEY] = token
+        return redirect("auth:reset_password", token=RESET_URL_TOKEN)
     try:
         reset_token = PasswordResetToken.objects.get(token=token)
     except PasswordResetToken.DoesNotExist:
@@ -354,6 +382,7 @@ def reset_password_view(request: HttpRequest, token: str) -> HttpResponse:
     if request.method == "POST":
         form = SetPasswordForm(request.POST, user=reset_token.user)
         if form.is_valid():
+            request.session.pop(RESET_SESSION_KEY, None)
             user = reset_token.consume()
             user.set_password(form.cleaned_data["password"])
             user.save()
@@ -376,10 +405,7 @@ def reset_password_view(request: HttpRequest, token: str) -> HttpResponse:
     else:
         form = SetPasswordForm()
 
-    return render(request, "auth/reset_password.html", {
-        "form": form,
-        "token": token,
-    })
+    return render(request, "auth/reset_password.html", {"form": form})
 
 
 def csrf_failure(request: HttpRequest, reason: str = "") -> HttpResponse:

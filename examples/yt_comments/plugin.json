@@ -1,7 +1,7 @@
 {
     "manifest_version": 1,
     "slug": "yt_comments",
-    "publisher": "learnwithhasan",
+    "publisher": "pyrun",
     "name": "YouTube Comments AI",
     "version": "0.6.0",
     "api": "2.5",

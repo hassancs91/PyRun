@@ -85,6 +85,14 @@
         </section>
         {% endif %}
 
+        {% if triggers_problem %}
+        <section class="rounded-2xl border border-warn/30 bg-warn/10 p-5">
+            <p class="text-sm font-medium text-warn mb-1">Watcher types unavailable</p>
+            <p class="text-sm text-muted">This plugin's watcher types couldn't be loaded, so it offers none and its watchers fail their checks until a fixed version is installed.</p>
+            {% if triggers_problem.detail %}<pre class="mt-3 text-[11px] text-muted bg-ink border border-line-soft rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">{{ triggers_problem.detail }}</pre>{% endif %}
+        </section>
+        {% endif %}
+
         {# Provisions (trust surface) #}
         {% if plugin.provisions_summary or plugin.provisions.secret_keys %}
         <section class="rounded-2xl border border-line bg-panel p-6">
@@ -185,7 +193,7 @@
                 </div>
                 <div>
                     <dt class="eyebrow text-faint font-normal mb-1">Signature</dt>
-                    <dd class="text-text">{% if plugin.trust == 'verified' %}{{ plugin.signed_by }} <span class="font-mono text-xs text-faint">· key {{ plugin.signing_key_id }}</span>{% else %}None{% endif %}{% if plugin.pinned_publisher %}<span class="block text-xs text-faint mt-0.5">Updates must be signed by {{ plugin.pinned_publisher }}</span>{% endif %}</dd>
+                    <dd class="text-text">{% if plugin.trust == 'verified' %}{{ plugin.signed_by }} <span class="font-mono text-xs text-faint">· key {{ plugin.signing_key_id }}</span>{% if plugin.signature_problem %}<span class="block text-xs text-warn mt-0.5">{{ plugin.signature_problem }}</span>{% endif %}{% else %}None{% endif %}{% if plugin.pinned_publisher %}<span class="block text-xs text-faint mt-0.5">Updates must be signed by {{ plugin.pinned_publisher }}</span>{% endif %}</dd>
                 </div>
                 {% if plugin.manifest.min_pyrunner %}
                 <div>

@@ -109,8 +109,23 @@ def plugin_detail_view(request: HttpRequest, slug: str) -> HttpResponse:
         "rollback_problem": plugin_updates.rollback_problem(plugin) if plugin.previous_version else None,
         # requires_connections (T25), with their status in this workspace.
         "connection_requirements": states_for(request.workspace, plugin.slug, plugin.manifest),
+        # A triggers.py that fails to load (T52): a neutral notice; the
+        # detail for superusers only (the traceback stays in the server log).
+        "triggers_problem": _triggers_problem(request, plugin.slug),
     }
     return render(request, "cpanel/plugins/detail.html", context)
+
+
+def _triggers_problem(request, slug):
+    """``{"detail": str}`` when the plugin's watcher types failed to load, else None."""
+    from core.services.plugin_updates import mask_plugin_output
+    from core.triggers.adapters.plugin import load_problem
+
+    problem = load_problem(slug)
+    if not problem:
+        return None
+    detail = mask_plugin_output(slug, problem)[:2000] if request.user.is_superuser else ""
+    return {"detail": detail}
 
 
 @login_required

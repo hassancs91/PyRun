@@ -223,21 +223,33 @@ def sign_manifest(manifest: bytes, private_key: Ed25519PrivateKey, *, slug, publ
     return (json.dumps(body, indent=2, sort_keys=True) + "\n").encode("utf-8")
 
 
+def key_problem(key_id: str, publisher: str) -> str:
+    """Why ``key_id`` can't vouch for ``publisher`` today, or ''.
+
+    The key checks of ``verify_signature`` on their own: an installed plugin's
+    badge asks this again, so a key revoked or removed after the install no
+    longer shows as verified (2.5 T52).
+    """
+    key = keys.trusted_key(key_id)
+    if key is None:
+        return f"it is signed with key id {key_id!r}, which this PyRun does not trust."
+    if key.revoked:
+        return f"it is signed with key id {key_id!r}, which has been revoked."
+    if key.publisher != publisher:
+        return f"key id {key_id!r} belongs to the publisher {key.publisher!r}, not {publisher!r}."
+    return ""
+
+
 def verify_signature(message: bytes, signature_b64: str, key_id: str, publisher: str):
     """Check ``signature_b64`` over ``message`` with the trusted key ``key_id``.
 
     Also for other signed PyRun documents (the store index, T44). Raises
     TrustError; returns the TrustedKey on success.
     """
+    problem = key_problem(key_id, publisher)
+    if problem:
+        raise TrustError(problem)
     key = keys.trusted_key(key_id)
-    if key is None:
-        raise TrustError(f"it is signed with key id {key_id!r}, which this PyRun does not trust.")
-    if key.revoked:
-        raise TrustError(f"it is signed with key id {key_id!r}, which has been revoked.")
-    if key.publisher != publisher:
-        raise TrustError(
-            f"key id {key_id!r} belongs to the publisher {key.publisher!r}, not {publisher!r}."
-        )
     try:
         signature = base64.b64decode(signature_b64 or "", validate=True)
         public = Ed25519PublicKey.from_public_bytes(base64.b64decode(key.public_key, validate=True))

@@ -365,6 +365,8 @@ class PluginService:
 
         Returns (ok, output). On failure the plugin keeps its current installed
         state and the error is stored on the row — the live site is untouched.
+        On success ``output`` is the doctor's advisory warnings, or '' when the
+        check passed cleanly (the preflight's own output isn't a warning).
         """
         # Tier-1 doctor (static lint) runs FIRST, in this process, so a
         # rule-breaker is refused BEFORE the preflight subprocess could apply any
@@ -408,9 +410,9 @@ class PluginService:
                 plugin.status = Plugin.Status.ERRORED
             plugin.save(update_fields=["status", "error_message", "updated_at"])
             logger.warning("Plugin %r failed activation preflight", plugin.slug)
-        # On success, surface any advisory doctor warnings (non-blocking).
-        if ok and report.warn_count:
-            output = report.warnings_text()
+        # On success, surface only the advisory doctor warnings (non-blocking).
+        if ok:
+            output = report.warnings_text() if report.warn_count else ""
         return ok, output
 
     @staticmethod

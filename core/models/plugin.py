@@ -171,11 +171,30 @@ class Plugin(models.Model):
         return self.status == self.Status.ACTIVE
 
     @property
+    def signature_problem(self) -> str:
+        """Why the stored signature no longer vouches for this plugin, or ''.
+
+        ``trust`` records what the install proved; the key that signed it can
+        be revoked or dropped later. The badge follows the current keys, with
+        the sentence the doctor would report (2.5 T52).
+        """
+        if self.trust != self.Trust.VERIFIED:
+            return ""
+        from core.plugins.trust.signing import key_problem
+
+        problem = key_problem(self.signing_key_id, self.signed_by)
+        return f"{problem[:1].upper()}{problem[1:]}" if problem else ""
+
+    @property
     def verified_by_pyrun(self) -> bool:
         """Signed with one of PyRun's own keys: the "Verified · PyRun" badge."""
         from core.plugins.trust.keys import PYRUN_PUBLISHER
 
-        return self.trust == self.Trust.VERIFIED and self.signed_by == PYRUN_PUBLISHER
+        return (
+            self.trust == self.Trust.VERIFIED
+            and self.signed_by == PYRUN_PUBLISHER
+            and not self.signature_problem
+        )
 
     # ------------------------------------------------------------- metadata
     # Plugin Platform v2 Stage 6: the manifest (plugin.json) is the single carrier
