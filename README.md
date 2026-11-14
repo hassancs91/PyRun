@@ -20,11 +20,18 @@ A self-hosted Python script automation platform. Upload a script, schedule it, m
 - **Secrets Management** — Store encrypted environment variables and secrets
 - **AI for Scripts** — Call AI from your scripts using your Claude subscription, an Anthropic API key, or other providers (Z.AI GLM, OpenRouter, local Ollama, any Anthropic-compatible endpoint) — with saved provider profiles and one-click switching
 - **Workspace Brains** — Versioned knowledge with file browsing, tiered grants, reviewed AI proposals, cited context and optional semantic search ([Brain guide](docs/brain.md))
+- **Scripts as functions** — Declare a script's inputs, return a result and report progress; run it from a form, the API, an MCP client (as a tool), a webhook (signed, with a synchronous reply) or a chat message ([run context guide](docs/run-context.md))
+- **Run control** — Allow, skip or queue a run while one is going, retry failures with backoff, stop gracefully, set per-script env vars and plan maintenance windows ([scheduling guide](docs/scheduling.md))
 - **Unified REST and MCP** — Connect AI clients over MCP or call the same permission-scoped tools from REST, scripts and plugins; discover them from Connect and OpenAPI ([API guide](docs/api.md))
+- **Connections & integrations** — Connect API keys and OAuth accounts (Google, Microsoft 365, GitHub, Slack, Notion) once, grant them per script, and use typed helpers for Airtable, Notion, Google Sheets, Drive, Gmail, SMTP, Slack, GitHub and any HTTP API ([integrations](docs/integrations/framework.md))
+- **Watchers** — Start a script for each new item in a JSON list, a feed, a mailbox, Gmail, a Google Sheet, a database query or a GitHub repository ([watchers](docs/scheduling.md#watchers))
+- **Tables** — Typed tables made in the console and filled from scripts, plugins, the API or CSV, in one data grid shared with data stores, database tables and vector points
+- **Chat channels** — Telegram and WhatsApp (Meta's Cloud API): notifications, replies and incoming messages that start scripts, with a delivery log ([channels guide](docs/channels.md))
+- **Plugins** — Install from a zip, a URL or a signed store, update in place with rollback, and see which plugins are signed ([plugin guide](docs/plugins.md))
 - **Vector collections** — Embedding providers, Local and Qdrant storage, shared filters and a credential-free script helper
 - **Reviewed GitHub sync** — Pull repository changes into a Brain's inbox for review and export a revision to a dedicated branch
 - **Notifications** — Get alerts via email, webhook, Telegram or WhatsApp on script completion/failure
-- **Invite-Only Auth** — Admin-invited accounts with email + password login and email-based reset (no open registration)
+- **Invite-Only Auth** — Admin-invited accounts with email + password login, email-based reset, optional two-factor sign-in and a security event log (no open registration)
 - **Single Container** — Deploy with one Docker command
 
 ## Quick Start
@@ -81,6 +88,18 @@ an HTTPS reverse proxy, remove them to keep the secure defaults.
 how many processes the container can start: scripts run as root, which ignores
 the per-run process limit, so this is what stops a fork bomb in a script from
 taking down the server.
+
+### Upgrading from 2.0
+
+Download a backup first (**Settings → Backup**) and keep it: the upgrade
+changes the database, and going back to 2.0 means restoring that backup on a
+fresh volume. Pull the new image and start it; migrations run on the first
+start. A few things behave differently: a stopped or timed-out run gets 10
+seconds to shut down before it is killed, each script's webhook has its own
+rate limit (60 calls a minute by default), the forgot-password email is sent by
+the background worker, and uploading a newer version of an installed plugin
+updates it. Read the [upgrade notes in the changelog](CHANGELOG.md#upgrade-notes-from-20)
+before you update.
 
 ### Upgrading from 1.x
 

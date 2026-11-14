@@ -8,6 +8,162 @@ When you cut a release, bump ``pyrunner/version.py`` and add an entry here.
 
 CHANGELOG = [
     {
+        "version": "2.5.0",
+        "date": "Unreleased",
+        "headline": (
+            "Scripts you can call like functions from the API, MCP, webhooks and chat, "
+            "connected to your accounts and started by what happens in them."
+        ),
+        "changes": [
+            {
+                "tag": "Changed",
+                "title": "Upgrading from 2.0: what behaves differently",
+                "body": (
+                    "Download a backup before you update: the upgrade changes the "
+                    "database, and going back to 2.0 means restoring that backup. "
+                    "Stopping a run, or a timeout, now gives the script 10 seconds to "
+                    "shut down before it is killed (set its Stop grace period to 0 for "
+                    "the old behaviour). Each script's webhook takes 60 calls a minute "
+                    "and 30 a second by default, a body over 2.5 MB is refused, and a "
+                    "call during a maintenance window gets 503. The forgot-password "
+                    "email is sent by the background worker. Uploading a newer version "
+                    "of an installed plugin now updates it, with a rollback. The "
+                    "changelog's upgrade notes list every change."
+                ),
+            },
+            {
+                "tag": "Added",
+                "title": "Scripts with inputs and results",
+                "body": (
+                    "Declare what a script takes on its Inputs tab and Run now asks for "
+                    "it in a form. The pyrunner_run helper reads the inputs and the event "
+                    "that started the run, sets a result and reports progress, and every "
+                    "run page shows them. One event describes every trigger, from Run now "
+                    "to a webhook call or a chat message."
+                ),
+            },
+            {
+                "tag": "Added",
+                "title": "Run control: skip or queue, retries, maintenance windows",
+                "body": (
+                    "Choose what happens when a script is already running (allow, skip "
+                    "or queue), retry a failed run with backoff, give a stopped run time "
+                    "to clean up, keep plain settings in per-script env vars, and plan "
+                    "maintenance windows that pause schedules, webhooks and chat for the "
+                    "whole instance or one workspace."
+                ),
+            },
+            {
+                "tag": "Added",
+                "title": "Scripts and data over the API and MCP",
+                "body": (
+                    "Tokens can list, read, run and stop scripts and read runs, data "
+                    "stores, tables, databases, vectors and the rest of the workspace. "
+                    "Turn on Expose as MCP tool and an AI client calls a script by name, "
+                    "with its inputs as the tool's arguments. Data writes exist only while "
+                    "Settings → API & MCP → Allow API writes is on (off by default), and a "
+                    "token can be bound to one script, data store or table."
+                ),
+            },
+            {
+                "tag": "Added",
+                "title": "Webhooks that verify and reply",
+                "body": (
+                    "A webhook run gets the whole request, headers and body of any size. "
+                    "Require a Stripe, GitHub, Shopify or custom HMAC signature, set each "
+                    "script's rate limits, and add ?sync=1 to wait for the reply the "
+                    "script sets. The script page lists the last 20 calls."
+                ),
+            },
+            {
+                "tag": "Added",
+                "title": "Connections and integrations",
+                "body": (
+                    "Connect an account once, with an API key or by signing in to Google, "
+                    "Microsoft 365, GitHub, Slack or Notion, and grant it to the scripts "
+                    "and plugins that need it; OAuth tokens are refreshed for you and "
+                    "stored encrypted. pyrunner_integrations gives scripts typed "
+                    "helpers for Airtable, Notion, Google Sheets, Drive, Gmail, SMTP, "
+                    "Slack, GitHub and any HTTP API."
+                ),
+            },
+            {
+                "tag": "Added",
+                "title": "Watchers start a script when something new shows up",
+                "body": (
+                    "A watcher checks a source on an interval, a JSON list, a feed, a "
+                    "mailbox, Gmail, a Google Sheet, GitHub or new database rows, and "
+                    "runs its script once for each new item, with the item as the run's "
+                    "event. Plugins can make watchers and add their own sources."
+                ),
+            },
+            {
+                "tag": "Added",
+                "title": "WhatsApp channels and a delivery log",
+                "body": (
+                    "Connect a WhatsApp Business number through Meta's Cloud API: "
+                    "notifications, replies, templates, files, buttons and lists, with "
+                    "incoming messages starting scripts. Every message a channel sends is "
+                    "logged with its status, and a send that fails for a temporary reason "
+                    "is retried."
+                ),
+            },
+            {
+                "tag": "Added",
+                "title": "Tables and one data grid",
+                "body": (
+                    "Make a table with typed columns in the console and fill it from "
+                    "scripts (pyrunner_tables), plugins, the API or a CSV file. The same "
+                    "grid now browses data stores, managed database tables and vector "
+                    "points, with filters."
+                ),
+            },
+            {
+                "tag": "Added",
+                "title": "Plugin updates, signatures and a store",
+                "body": (
+                    "Upload a newer version of an installed plugin to update it, and roll "
+                    "back if you need to. Signed plugins show Verified, and PyRun's own "
+                    "Verified · PyRun; a trust policy can allow signed plugins only. The "
+                    "Store tab installs and updates plugins from a signed index, and "
+                    "Install from URL takes a zip link."
+                ),
+            },
+            {
+                "tag": "Security",
+                "title": "Two-factor sign-in, sign-in alerts and security events",
+                "body": (
+                    "Add an authenticator app and recovery codes to your account, or "
+                    "require two-factor sign-in for everyone under Users → Security. "
+                    "Turn on an email after every sign-in. Forgot password no longer "
+                    "reveals which accounts exist, admins can hand over a reset link, and "
+                    "sign-ins, failures, lockouts and other account changes are listed "
+                    "for admins for 90 days."
+                ),
+            },
+            {
+                "tag": "Improved",
+                "title": "Py AI knows the workspace and the docs",
+                "body": (
+                    "Py AI reads scripts, runs, data stores, tables, connections, "
+                    "watchers and the rest of the workspace, checks whether all is well, "
+                    "and answers how-to questions from PyRun's own documentation with a "
+                    "link to the right section. It still changes nothing."
+                ),
+            },
+            {
+                "tag": "Improved",
+                "title": "Backups can include installed plugins",
+                "body": (
+                    "Tick Include installed plugins in Settings → Backup, for a download "
+                    "or the scheduled backup, and a restore installs the plugins the "
+                    "server doesn't have, turned off for you to activate. Backups made "
+                    "by 2.0 restore as before."
+                ),
+            },
+        ],
+    },
+    {
         "version": "2.0.0",
         "date": "October 23, 2026",
         "headline": (

@@ -8,6 +8,60 @@ begins tracking at the current release; earlier history is in the git log.
 
 ## [Unreleased]
 
+PyRun 2.5 "Connect": scripts take inputs and return results, so the API, MCP
+clients, webhooks, chat channels and watchers can call them like functions;
+connections and integrations sign scripts in to outside services; watchers
+start runs when something new appears; WhatsApp channels, Tables, plugin
+updates, signing and a store, and two-factor sign-in.
+
+### Upgrade notes (from 2.0)
+- **Back up first, and keep that backup to go back.** The first start of the
+  2.5 image runs migrations `0066` to `0099`. A database upgraded by them can't
+  be used by 2.0 again: to go back, start 2.0 on a fresh volume and restore the
+  backup you made before upgrading. On PostgreSQL the upgrade rewrites the
+  scripts and runs tables once (inputs, results and events are stored as `json`
+  to keep their key order), so a long run history makes the first start slower.
+- **Stop and timeout give the script time to shut down.** A stopped or
+  timed-out run now gets SIGTERM first and 10 seconds (the script's new **Stop
+  grace period**) before it is killed, so the Stop button takes up to that long
+  and a timed-out run can last its timeout plus the grace period. A stopped run
+  keeps its output. Set the grace period to 0 on a script for the old
+  behaviour.
+- **Webhooks have per-script limits.** Each script's webhook takes 60 calls a
+  minute and 30 in any one second by default; past that it answers 429 with
+  `Retry-After` and starts no run. Raise them under **Webhook → Reply,
+  signature and limits** for a busy sender. The per-address limit went up from
+  30 to 300 a minute. A body over 2.5 MB is refused with 413 (it used to start a
+  run with an empty body), and a call during a maintenance window gets 503 with
+  `Retry-After`. `WEBHOOK_*` variables are unchanged for bodies that fit.
+- **Datastore tokens of a deleted workspace stop working.** A datastore token
+  whose workspace no longer exists is refused with 403 `SCOPE_MISMATCH` (it used
+  to read the data stores that belong to no workspace), and no token reaches one
+  of those by its name any more.
+- **Notifications count what was delivered.** A webhook notification counts as
+  sent only on a 2xx answer, a chat message that fails for a temporary reason is
+  retried up to 5 times over about 80 minutes, and a channel's daily reply cap
+  now counts replies only (the new daily send cap, off by default, counts all).
+- **Forgot password needs the worker.** The reset email is sent from the
+  background worker, so it goes out only while a worker runs. The sign-in page
+  no longer says that an account has no password, and the Django admin's own
+  sign-in form sends to the console's sign-in (it would skip a two-factor code).
+- **Uploading a newer version of an installed plugin updates it.** It used to
+  be refused until the plugin was deleted; the old version is kept for **Roll
+  back**. Installing or activating a plugin whose `api` is newer than this
+  PyRun's SDK (2.8) is refused. The Docker entrypoint runs
+  `manage.py plugin_post_update` at every start for plugins updated in place;
+  outside Docker, run it after the restart that follows an update.
+- **New dependency.** `segno==1.6.6` (pure Python, for the two-factor QR code)
+  is in `requirements.txt`; the Docker image has it, a source install needs
+  `pip install -r requirements.txt`.
+- **Example plugins.** Brand Tracker and YouTube Comments AI now set their
+  scripts to Skip a run while one is already running, instead of their own
+  check.
+- Everything new starts off or empty: API writes, the two-factor requirement,
+  the plugin trust policy stays *Allow unsigned*, and backups leave plugins out
+  unless you tick **Include installed plugins**.
+
 ### Added
 - **Script inputs.** A script can declare what it takes on the new **Inputs**
   tab of the editor: text, number, yes/no, select and JSON fields, or a raw
