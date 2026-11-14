@@ -296,6 +296,11 @@ def mask_values(name, preset, auth_kind, config, credentials) -> dict:
         if isinstance(value, str) and value:
             masks[f"connection:{name}.{key}"] = value
     material = auth_material(preset, auth_kind, config, credentials)
+    if not (material["token"] or (material["basic"] or {}).get("password")):
+        # No key, token or password (a revoked connection, or an OAuth one
+        # without an access token): the header would be only its prefix
+        # ("Bearer "), and masking that would hide the word in every output.
+        return masks
     fixed = {(name.lower(), value) for name, value in preset.default_headers}
     for where in ("headers", "params"):
         for key, value in material[where].items():

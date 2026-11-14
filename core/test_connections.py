@@ -170,6 +170,20 @@ class PresetTests(SimpleTestCase):
         self.assertNotIn("robot", masks.values())  # the username is not a secret
         self.assertIn("connection:intranet.password", masks)
 
+    def test_mask_values_skip_a_bare_prefix_when_nothing_secret_is_stored(self):
+        # A revoked connection has no credentials left: its header would be
+        # "Bearer " (or "Token ", "Basic <user:>"), and masking that hid the
+        # word in every output of a script the connection is granted to.
+        http = get_preset("http")
+        self.assertEqual(mask_values("api", http, "bearer", {}, {}), {})
+        self.assertEqual(mask_values("api", http, "api_key", {"param_name": "Authorization", "prefix": "Token "}, {}), {})
+        self.assertEqual(mask_values("intranet", http, "basic", {"username": "robot"}, {}), {})
+        self.assertEqual(mask_values("g", get_preset("google"), "oauth2", {}, {"refresh_token": "r1"}),
+                         {"connection:g.refresh_token": "r1"})
+        # With the secret there, the header is still masked whole.
+        self.assertEqual(mask_values("api", http, "bearer", {}, {"token": "t1"}),
+                         {"connection:api.token": "t1", "connection:api.authorization": "Bearer t1"})
+
 
 # --------------------------------------------------------------------------- #
 # Model and grants
