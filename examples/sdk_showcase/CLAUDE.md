@@ -56,11 +56,11 @@ add `requests`/`boto3` here.
 ## Keep the manifest truthful
 
 `plugin.json` must match the code:
-- **`api` / `min_pyrunner`** = `2.6` / `1.13.0` today. The Inputs & result
+- **`api` / `min_pyrunner`** = `2.8` / `1.13.0` today. The Inputs & result
   and Watcher cards need the PyRun 2.5 SDK (`inputs_schema=`, `queue_run(inputs=)`,
-  `InputsError`, `WatcherAPI`, `TriggerAdapter`), so they move to `2.8` / `2.5.0` when the SDK version is
-  bumped for that release (a `min_pyrunner` above this PyRun's own version
-  would block the install).
+  `InputsError`, `WatcherAPI`, `TriggerAdapter`), so `min_pyrunner` moves to
+  `2.5.0` in the commit that sets PyRun's own version to 2.5.0 (a
+  `min_pyrunner` above this PyRun's own version would block the install).
 - **`provisions`** = what `provision()` creates (1 datastore, 1 secret, 1 script,
   1 schedule + the `DEMO_TOKEN` key).
 

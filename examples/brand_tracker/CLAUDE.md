@@ -70,8 +70,11 @@ is a standalone script PyRun runs in an environment; it imports only stdlib +
 ## Keep the manifest truthful
 
 `plugin.json` is metadata the marketplace + doctor read — it must match the code:
-- **`api` / `min_pyrunner`** are `2.1` / `1.13.0` because the dashboard uses the
-  run-lifecycle surface (`latest_run` / `cancel_latest_run`).
+- **`api` / `min_pyrunner`** are `2.8` / `1.16.0`: the dashboard uses the
+  run-lifecycle surface (`latest_run` / `cancel_latest_run`, SDK 2.1) and
+  `lifecycle.py` holds the PyRun 2.5 update steps (SDK 2.8). `min_pyrunner`
+  moves to `2.5.0` in the commit that sets PyRun's own version to 2.5.0 (a
+  `min_pyrunner` above this PyRun's version would block the install).
 - **`provisions`** (scripts/secrets/datastores/schedules + `secret_keys`) is the
   *upper bound* — `secrets: 5` lists every key the plugin *may* create; a minimal
   install creates only `SERPER_API_KEY`.

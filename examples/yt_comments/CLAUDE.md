@@ -148,10 +148,11 @@ again: every owned secret reaches the analyzer's environment, granted or not.
 
 ## Keep the manifest truthful
 
-`plugin.json` must match the code: `api: "2.5"` / `min_pyrunner: "1.16.0"`
+`plugin.json` must match the code: `api: "2.8"` / `min_pyrunner: "1.16.0"`
 (ChannelAPI + DatabaseAPI + StorageAPI/`pyrunner_storage`; 0.6.0 also needs
-`ConnectionAPI`, which ships with PyRun 2.5: raise both values when 2.5's SDK
-version is published); `provisions` =
+`ConnectionAPI` and `requires_connections`, PyRun 2.5's SDK 2.8: `min_pyrunner`
+moves to `2.5.0` in the commit that sets PyRun's own version to 2.5.0);
+`provisions` =
 1 script / 1 secret (`YT_API_KEY`) / 1 datastore / 1 database / 1 schedule,
 and `requires_connections` names the Google account (key `youtube`, scope
 `youtube.force-ssl`) the page connects. Version bumps touch **three places**: `plugin.json`,

@@ -888,6 +888,19 @@ class ConsoleTests(_Fixture):
         self.assertFalse(watcher.enabled)
         self.assertIsNone(watcher.auto_disabled_at)
 
+    def test_next_goes_back_only_to_a_path_on_this_site(self):
+        # The shared local_url rule (as on Connections): a path, never another host or "//host".
+        watcher = self._watcher()
+        detail = reverse("cpanel:watcher_detail", args=[watcher.pk])
+        toggle = reverse("cpanel:watcher_toggle", args=[watcher.pk])
+        listing = reverse("cpanel:watcher_list")
+        resp = self.client.post(toggle, {"next": listing})
+        self.assertRedirects(resp, listing, fetch_redirect_response=False)
+        for target in ("https://evil.example/x", "//evil.example/x", "http://testserver" + listing, "javascript:x"):
+            with self.subTest(target=target):
+                resp = self.client.post(toggle, {"next": target})
+                self.assertRedirects(resp, detail, fetch_redirect_response=False)
+
     def test_delete_keeps_runs_and_plugin_owned_watchers_need_force(self):
         watcher = self._watcher(owner_plugin="shop")
         member = User.objects.create_user(username="wm@example.com", email="wm@example.com", password="x-Pass-12345!")

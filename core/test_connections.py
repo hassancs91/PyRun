@@ -717,6 +717,27 @@ class ConsoleTests(_Fixture, TestCase):
             self.assertNotIn("t23-key-with-break", text)
             self.assertEqual(text, "Invalid header value b'[connection:airtable.api_key:MASKED]'")
 
+    def test_pyrun_own_fault_in_a_test_shows_neutral_text(self):
+        # T48 sweep: a service's answer (ValueError, OSError, ...) is shown as it is;
+        # any other exception is PyRun's own fault and stays in the server log.
+        c = self._connection(provider="http", config={"base_url": "https://x.test", "location": "header",
+                                                     "param_name": "X-API-Key", "test_path": "/me"},
+                             credentials={"api_key": "k"})
+        opener = mock.Mock()
+        opener.open.side_effect = KeyError("internal_field_name")
+        with _netguard_ok(), mock.patch("core.netguard.guarded_opener", return_value=opener), \
+                self.assertLogs("core.services.connections", "ERROR"):
+            ok, message = svc.check_connection(c)
+        self.assertFalse(ok)
+        c.refresh_from_db()
+        for text in (message, c.last_error):
+            self.assertEqual(text, svc.UNEXPECTED_TEST_ERROR)
+        self.assertEqual(c.status, Connection.Status.ERROR)
+        opener.open.side_effect = OSError("Connection refused")
+        with _netguard_ok(), mock.patch("core.netguard.guarded_opener", return_value=opener):
+            ok, message = svc.check_connection(c)
+        self.assertEqual((ok, message), (False, "Connection refused"))
+
     def test_a_field_with_a_line_break_is_refused(self):
         data = {"provider": "http", "auth_kind": "api_key", "name": "crm", "base_url": "https://api.crm.test",
                 "api_key": "first-line\nsecond-line", "location": "header", "param_name": "X-API-Key",

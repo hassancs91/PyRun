@@ -25,11 +25,11 @@ from django.contrib.auth.decorators import login_required
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_http_methods, require_POST
 
 from core.models import Channel, Run, Script, ScriptSchedule, Watcher
 from core.triggers import registry, runner
+from core.views.connections import local_url
 from core.views.ownership import owned_block_message, owned_delete_blocked
 from core.watcher_forms import CONFIG_PREFIX, WatcherForm
 
@@ -75,8 +75,7 @@ def _annotate(watchers):
 def _back(request, fallback):
     """The page a POST came from (``next``), if it is one of ours, else ``fallback``."""
     target = request.POST.get("next", "")
-    if target and url_has_allowed_host_and_scheme(target, allowed_hosts={request.get_host()},
-                                                  require_https=request.is_secure()):
+    if local_url(request, target):
         return redirect(target)
     return redirect(fallback)
 

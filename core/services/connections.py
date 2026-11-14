@@ -21,6 +21,7 @@ and the executor all go through here:
 """
 
 import hashlib
+import http.client
 import imaplib
 import json
 import logging
@@ -45,6 +46,7 @@ TEST_TIMEOUT = 15  # seconds, for a whoami call or an SMTP login
 # A whoami reply is a small JSON object; never read more than this of it.
 _WHOAMI_MAX_BYTES = 64 * 1024
 LAST_ERROR_MAX_CHARS = 500
+UNEXPECTED_TEST_ERROR = "The test couldn't finish. The server log has the details."
 
 
 class ConnectionLookupError(Exception):
@@ -490,6 +492,12 @@ class CredentialsRefused(ValueError):
     """The service answered HTTP 401 to a connection's credentials."""
 
 
+# What a test raises when the service, the network or the login says no: its
+# text is the answer shown on the connection. Anything else is PyRun's own fault.
+# (OSError covers URLError, socket and TLS errors and smtplib.SMTPException.)
+_TEST_FAILURES = (ValueError, OSError, imaplib.IMAP4.error, http.client.HTTPException)
+
+
 def _probe(preset, connection) -> str:
     """One test of ``connection`` with its stored credentials; the account label."""
     material = auth_material(preset, connection.auth_kind, connection.config, connection.get_credentials())
@@ -592,10 +600,18 @@ def check_connection(connection) -> tuple[bool, str]:
             except ConnectionLookupError as e:
                 return False, e.message
             label = _probe(preset, connection)
-    except Exception as e:
+    except _TEST_FAILURES as e:
         message = _masked_error(str(e) or e.__class__.__name__, masks_for(connection))
         message = message[:LAST_ERROR_MAX_CHARS]
         logger.warning("Connection %s test failed: %s", connection.pk, message)
+    except Exception:
+        # Not the service's answer but PyRun's own fault: its text stays in the
+        # server log (members see this page; UI shows no internals).
+        logger.exception("Connection %s test failed unexpectedly", connection.pk)
+        message = UNEXPECTED_TEST_ERROR
+    else:
+        message = None
+    if message is not None:
         Connection.objects.filter(pk=connection.pk).update(
             status=Connection.Status.ERROR, last_error=message, updated_at=timezone.now()
         )
