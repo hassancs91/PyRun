@@ -635,7 +635,7 @@ Each endpoint declares a Py AI tier:
 | Tier | Who | Endpoints |
 |---|---|---|
 | `console` | The console's Py AI, open to workspace owners and admins | Every read endpoint |
-| `channel` | Py AI on a chat channel (Telegram, WhatsApp), whose approved senders need not be owners or admins | `scripts.list`, `scripts.get`, `runs.list`, `runs.get`, the four datastore reads, `databases.list`, `databases.tables`, `vectors.list`, `vectors.search`, `plugins.list`, `environments.list`, `libraries.list`, `schedules.list`, `watchers.list`, `system.health`, `help.search`, and the Brain reads |
+| `channel` | Py AI on a chat channel (Telegram, WhatsApp), whose approved senders need not be owners or admins | `scripts.list`, `scripts.get`, `runs.list`, `runs.get`, the four datastore reads, `databases.list`, `databases.tables`, `tables.list`, `tables.get`, `tables.rows`, `vectors.list`, `vectors.search`, `plugins.list`, `environments.list`, `libraries.list`, `schedules.list`, `watchers.list`, `system.health`, `help.search`, and the Brain reads |
 
 So a chat channel can't read a run's output (`runs.output`), run a database
 query (`databases.query`), read a script's code (`scripts.code`) or list secret
@@ -643,7 +643,8 @@ names (`secrets.names`), providers (`providers.list`), channels
 (`channels.list`) or connections (`connections.list`); the console can.
 The tier is checked again on every call, not only when the tools are listed.
 Datastore values reach both tiers as stored, unmasked, as Py AI's
-`query_datastore` tool already gave them to chat channels; so do vector points.
+`query_datastore` tool already gave them to chat channels; so do table rows and
+vector points.
 A `vectors.search` from Py AI embeds the query like any other call.
 Brain endpoints also need the agent's own Brain grant (`agent:pyai` for the
 console, `<provider>:<channel UUID>` for a channel). Like an API token, Py AI

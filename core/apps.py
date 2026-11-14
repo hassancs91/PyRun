@@ -159,7 +159,10 @@ class CoreConfig(AppConfig):
                 except Exception:
                     pass  # Fail silently - don't break task execution
 
-            post_execute.connect(update_heartbeat, dispatch_uid="worker_heartbeat")
+            # weak=False: update_heartbeat is a local closure with no other strong
+            # reference, so a weak connection (the default) is garbage-collected after
+            # ready() returns and the heartbeat never moves when a task ends.
+            post_execute.connect(update_heartbeat, dispatch_uid="worker_heartbeat", weak=False)
         except Exception:
             pass  # django-q signals not available
 

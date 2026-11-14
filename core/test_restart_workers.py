@@ -18,7 +18,7 @@ from unittest import mock
 
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, TestCase
 
 # SimpleTestCase on purpose: the command must not need the database — the old
 # heartbeat-based success check (the false-success vector) required it.
@@ -95,3 +95,34 @@ class RestartWorkersCommandTests(SimpleTestCase):
         call_command("restart_workers", timeout=10, stdout=out)
 
         self.assertIn("New worker started with PID 5555", out.getvalue())
+
+
+class TaskEndHeartbeatTests(TestCase):
+    """A finished task moves the worker heartbeat (2.5 rc, F10-2).
+
+    The post_execute receiver is a closure made in CoreConfig.ready(); connected
+    weakly it was garbage-collected at once, so only the queued heartbeat task
+    ever moved the heartbeat, and a cluster whose workers were all busy with
+    long runs looked stopped after three minutes: "Workers stopped" on the
+    dashboard, and 503 for synchronous webhook and API waits.
+    """
+
+    def test_post_execute_updates_the_heartbeat(self):
+        import gc
+        from datetime import timedelta
+
+        from django.utils import timezone
+        from django_q.signals import post_execute
+
+        from core.models import GlobalSettings
+
+        settings = GlobalSettings.get_settings()
+        settings.worker_heartbeat_at = timezone.now() - timedelta(minutes=10)
+        settings.save(update_fields=["worker_heartbeat_at"])
+        gc.collect()  # a weakly connected closure would be gone now
+
+        responses = post_execute.send(sender="django_q", task={"success": True})
+
+        self.assertTrue(responses, "no live post_execute receiver")
+        settings.refresh_from_db()
+        self.assertTrue(settings.worker_is_alive())

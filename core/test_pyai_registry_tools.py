@@ -349,3 +349,23 @@ class RuntimeTierTests(_Fixture, TestCase):
             for area in ("scripts", "runs", "schedules", "datastores", "runs-output",
                          "where you have scripts-code, their code"):
                 self.assertIn(area, prompt)
+
+
+class ChannelTierDocsTests(SimpleTestCase):
+    """docs/api.md's Py AI table names exactly the channel-tier reads (2.5 rc, F10-1:
+    the tables reads were channel tier since T39 but missing from the docs)."""
+
+    def test_docs_channel_row_matches_the_registry(self):
+        import re
+        from pathlib import Path
+
+        from django.conf import settings
+
+        text = (Path(settings.BASE_DIR) / "docs" / "api.md").read_text(encoding="utf-8")
+        row = next(line for line in text.splitlines() if line.startswith("| `channel` |"))
+        documented = set(re.findall(r"`([a-z]+\.[a-z_-]+)`", row))
+        if "the four datastore reads" in row:
+            documented |= {"datastores.list", "datastores.get", "datastores.entries", "datastores.entry"}
+        channel = {e.slug for e in registry.reads() if e.pyai_tier == "channel"}
+        self.assertIn("the Brain reads", row)
+        self.assertEqual(documented, {s for s in channel if not s.startswith("brain.")})
