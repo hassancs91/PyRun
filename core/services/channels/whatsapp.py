@@ -628,7 +628,7 @@ class WhatsAppProvider(ChannelProvider):
         url = _str(info.get("url"))
         if not url.lower().startswith("https://"):
             raise ChannelError("WhatsApp gave no download link for the attachment.")
-        safe, why = is_safe_endpoint_url(url)
+        safe, why = is_safe_endpoint_url(url, operator_hint=False)
         if not safe:
             raise ChannelError(f"Not downloaded: the download link was refused ({why}).")
         token = creds["access_token"].strip()

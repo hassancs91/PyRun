@@ -391,3 +391,75 @@ class DatabaseMessagesTests(TestCase):
         with mock.patch(tables, side_effect=QueryTimeout("Reading the database took longer than 15 seconds.")):
             self.assertContains(self.get(self.ws_admin, "cpanel:database_detail", pk=database.pk),
                                 "took longer than 15 seconds")
+
+
+@override_settings(PYRUNNER_ALLOW_PRIVATE_NETWORK=False)
+class GuardReasonTests(TestCase):
+    """The SSRF guard's reason, on 2.5 paths members see, never names the setting
+    (test pass 10, F10-4); superuser-only forms keep the operator hint."""
+
+    def assertNeutral(self, message):
+        self.assertIn("Private IP addresses are not allowed (10.1.2.3)", message)
+        self.assertNotIn("PYRUNNER_", message)
+
+    def test_superuser_forms_keep_the_hint_members_do_not_get_it(self):
+        from core import netguard
+
+        ok, why = netguard.is_safe_endpoint_url("http://10.1.2.3/")
+        self.assertFalse(ok)
+        self.assertIn("PYRUNNER_ALLOW_PRIVATE_NETWORK", why)
+        ok, why = netguard.is_safe_endpoint_url("http://10.1.2.3/", operator_hint=False)
+        self.assertFalse(ok)
+        self.assertNeutral(why)
+
+    def test_connection_test_watcher_and_connect_time_refusals_are_neutral(self):
+        from core import netguard
+        from core.integrations.presets import get_preset
+        from core.services.connections import http_check
+        from core.triggers.adapters import _net
+        from core.triggers.adapters.base import AdapterError
+
+        with self.assertRaises(ValueError) as ctx:
+            http_check(get_preset("http"), {"base_url": "http://10.1.2.3", "test_path": "/"},
+                       {"headers": {}, "params": {}})
+        self.assertNeutral(str(ctx.exception))
+        with self.assertRaises(AdapterError) as ctx:
+            _net.check_url("http://10.1.2.3/feed")
+        self.assertNeutral(str(ctx.exception))
+        with self.assertRaises(netguard.UnsafeAddressError) as ctx:
+            netguard.guarded_create_connection(("10.1.2.3", 80), timeout=1)
+        self.assertNeutral(str(ctx.exception))
+
+    def test_whatsapp_media_link_refusal_is_neutral(self):
+        from core.services.channels.base import ChannelError
+        from core.services.channels.whatsapp import WhatsAppProvider
+
+        provider = WhatsAppProvider()
+        with mock.patch.object(provider, "_creds", return_value={"access_token": "t", "phone_number_id": "123"}), \
+                mock.patch.object(provider, "_request", return_value={"url": "https://10.1.2.3/media", "file_size": 1}):
+            with self.assertRaises(ChannelError) as ctx:
+                provider.download_media(None, {"id": "123456"}, 1024 * 1024)
+        self.assertNeutral(str(ctx.exception))
+
+    def test_member_pressing_test_on_a_private_address_sees_no_setting_name(self):
+        from core.models import Connection
+
+        _setup_done()
+        ws = Workspace.get_default()
+        member = User.objects.create_user(
+            username="m10@example.com", email="m10@example.com", password="correct-horse-91",
+        )
+        WorkspaceMembership.objects.update_or_create(
+            user=member, workspace=ws, defaults={"role": WorkspaceMembership.ROLE_MEMBER},
+        )
+        c = Connection(workspace=ws, name="private", provider="http", auth_kind="api_key",
+                       config={"base_url": "http://10.1.2.3", "test_path": "/"}, created_by=member)
+        c.set_credentials({"api_key": "k-123"})
+        c.save()
+        self.client.force_login(member)
+        resp = self.client.post(reverse("cpanel:connection_test", kwargs={"pk": c.pk}), follow=True)
+        body = resp.content.decode()
+        self.assertIn("Private IP addresses are not allowed (10.1.2.3)", body)
+        self.assertNotIn("PYRUNNER_", body)
+        c.refresh_from_db()
+        self.assertNeutral(c.last_error)

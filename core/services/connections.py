@@ -521,7 +521,7 @@ def http_check(preset, config, material) -> str:
     if material["params"]:
         joiner = "&" if urllib.parse.urlsplit(url).query else "?"
         url += joiner + urllib.parse.urlencode(material["params"])
-    ok, why = is_safe_endpoint_url(url)
+    ok, why = is_safe_endpoint_url(url, operator_hint=False)
     if not ok:
         raise ValueError(why)
     request = urllib.request.Request(url, headers={**material["headers"], "Accept": "application/json"})

@@ -6,7 +6,6 @@ import hashlib
 import logging
 
 from axes.utils import reset as reset_login_attempts
-from django.contrib.auth.hashers import make_password
 from django.shortcuts import render, redirect
 from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
@@ -100,13 +99,12 @@ def login_view(request: HttpRequest) -> HttpResponse:
                     return redirect("cpanel:dashboard")
                 # One message for every failure: a wrong password, an unknown
                 # email and an account without a password look the same (the
-                # forgot-password page says how to set a first password).
+                # forgot-password page says how to set a first password). They
+                # take as long too: Django runs the hasher once for an unknown
+                # email and for an unusable password alike, so nothing is added
+                # here (an extra hash made password-less accounts twice as slow).
                 error_message = "Invalid email or password."
                 account = User.objects.filter(email=email).first()
-                if account is not None and not account.has_usable_password():
-                    # Django hashes the password for an unknown email but not
-                    # for an unusable one; hash once so the answer takes as long.
-                    make_password(password)
                 # A refused attempt on a locked account is recorded as a
                 # lockout by the django-axes signal instead.
                 if not getattr(request, "axes_locked_out", False):

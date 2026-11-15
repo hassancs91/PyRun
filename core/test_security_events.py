@@ -181,10 +181,28 @@ class LoginHardeningTests(TestCase):
             self.assertNotContains(page, "have a password set")
 
     def test_passwordless_failure_hashes_like_an_unknown_email(self):
-        with mock.patch("core.views.auth.make_password") as hashed:
-            self._sign_in("nopass@example.com", "whatever")
-            self._sign_in("admin@example.com", "wrong")
-        hashed.assert_called_once_with("whatever")
+        # As many hasher runs for a password-less account as for an unknown
+        # email or a wrong password: no timing difference tells them apart
+        # (test pass 10, F10-5: an extra hash made password-less accounts slower).
+        from django.contrib.auth.hashers import get_hasher
+
+        hasher_cls = type(get_hasher("default"))
+        real_encode = hasher_cls.encode
+        runs = []
+
+        def counting(hasher, password, salt, *args, **kwargs):
+            runs.append(password)
+            return real_encode(hasher, password, salt, *args, **kwargs)
+
+        counts = []
+        with mock.patch.object(hasher_cls, "encode", counting):
+            for email in ("nopass@example.com", "ghost@example.com", "admin@example.com"):
+                runs.clear()
+                self._sign_in(email, "wrong-password")
+                counts.append(len(runs))
+        self.assertEqual(counts[0], counts[1])
+        self.assertEqual(counts[1], counts[2])
+        self.assertGreaterEqual(counts[0], 1)
 
     def test_failure_and_success_are_recorded_with_ip_and_browser(self):
         self._sign_in("admin@example.com", "wrong", REMOTE_ADDR="198.51.100.7", HTTP_USER_AGENT="Probe/1.0")

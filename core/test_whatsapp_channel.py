@@ -121,7 +121,7 @@ class FakeWhatsApp:
             test.addCleanup(patcher.stop)
         guard = mock.patch(
             "core.services.channels.whatsapp.is_safe_endpoint_url",
-            side_effect=lambda url: (True, "") if url.startswith(MEDIA_HOST) else is_safe_endpoint_url(url),
+            side_effect=lambda url, **kw: (True, "") if url.startswith(MEDIA_HOST) else is_safe_endpoint_url(url, **kw),
         )
         guard.start()
         test.addCleanup(guard.stop)

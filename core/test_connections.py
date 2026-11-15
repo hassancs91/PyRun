@@ -650,7 +650,7 @@ class ConsoleTests(_Fixture, TestCase):
                 "security": "none", "username": "", "password": "", "from_address": ""}
         with _netguard_ok() as guard:
             self.client.post(reverse("cpanel:connection_create"), data)
-        guard.assert_called_once_with("smtp://mailpit")
+        guard.assert_called_once_with("smtp://mailpit", operator_hint=False)
         self.assertEqual(Connection.objects.get(name="mail").config["host"], "mailpit")
         data.update(name="mail2", host="smtp://mailpit")
         self.assertContains(self.client.post(reverse("cpanel:connection_create"), data), "host name only")

@@ -38,10 +38,21 @@ def private_network_allowed() -> bool:
     return bool(getattr(settings, "PYRUNNER_ALLOW_PRIVATE_NETWORK", False))
 
 
-def is_safe_endpoint_url(url: str, *, allow_private: bool | None = None) -> tuple[bool, str]:
-    return _policy.is_safe_endpoint_url(
+def is_safe_endpoint_url(
+    url: str, *, allow_private: bool | None = None, operator_hint: bool = True,
+) -> tuple[bool, str]:
+    """``(ok, reason)``. ``operator_hint=False`` leaves the environment-variable
+    hint out of the reason, for pages and messages workspace members see (the UI
+    shows no internals); superuser-only forms keep it."""
+    ok, why = _policy.is_safe_endpoint_url(
         url, allow_private=private_network_allowed() if allow_private is None else allow_private,
     )
+    return ok, (why if operator_hint else without_operator_hint(why))
+
+
+def without_operator_hint(message: str) -> str:
+    """The guard's reason without "(set PYRUNNER_ALLOW_PRIVATE_NETWORK=true …)"."""
+    return (message or "").replace(FLAG_HINT, "")
 
 
 # --- Connect-time pinning (F130) -------------------------------------------
@@ -67,7 +78,9 @@ def guarded_create_connection(
     for *_, sockaddr in infos:
         ok, message = _check_ip(sockaddr[0], allow)
         if not ok:
-            raise UnsafeAddressError(message)
+            # Connect-time refusals end up in member-visible errors (a connection's
+            # Test, a watcher check), so they never name the setting.
+            raise UnsafeAddressError(without_operator_hint(message))
     error = None
     for family, socktype, proto, _, sockaddr in infos:
         sock = socket.socket(family, socktype, proto)

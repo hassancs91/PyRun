@@ -160,7 +160,7 @@ class ConnectionForm(forms.Form):
             if not value.lower().startswith(("https://", "http://")):
                 self.add_error(field.name, "Start the URL with https:// (or http://).")
                 continue
-            ok, why = netguard.is_safe_endpoint_url(value)
+            ok, why = netguard.is_safe_endpoint_url(value, operator_hint=False)
             if not ok:
                 self.add_error(field.name, why)
         host = data.get("host")
@@ -169,7 +169,7 @@ class ConnectionForm(forms.Form):
             if any(c in host for c in "/:@ "):
                 self.add_error("host", f"Enter a host name only, e.g. {mail}.example.com.")
             else:
-                ok, why = netguard.is_safe_endpoint_url(f"{mail}://{host}")
+                ok, why = netguard.is_safe_endpoint_url(f"{mail}://{host}", operator_hint=False)
                 if not ok:
                     self.add_error("host", why)
         return data

@@ -22,7 +22,7 @@ def check_url(url) -> str:
     """``url`` if it is an http(s) URL the SSRF policy allows; else AdapterError."""
     if not isinstance(url, str) or not url.lower().startswith(("http://", "https://")):
         raise AdapterError("The URL must start with http:// or https://.")
-    ok, message = is_safe_endpoint_url(url)
+    ok, message = is_safe_endpoint_url(url, operator_hint=False)
     if not ok:
         raise AdapterError(message)
     return url

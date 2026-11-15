@@ -169,7 +169,7 @@ def _token_request(preset, client, data) -> dict:
         payload = urllib.parse.urlencode(body).encode("utf-8")
         headers["Content-Type"] = "application/x-www-form-urlencoded"
     host = urllib.parse.urlsplit(token_url).netloc
-    ok, why = is_safe_endpoint_url(token_url)
+    ok, why = is_safe_endpoint_url(token_url, operator_hint=False)
     if not ok:
         raise OAuthError(why)
     request = urllib.request.Request(token_url, data=payload, headers=headers, method="POST")
