@@ -31,9 +31,11 @@ class TrustedKey:
     revoked: bool = False
 
 
-#: key id -> TrustedKey. Empty until PyRun's first official key is generated;
-#: until then no plugin can be ``verified`` and every plugin is ``unsigned``.
-TRUSTED_KEYS: dict = {}
+#: key id -> TrustedKey: PyRun's official signing key(s). A plugin or store
+#: index signed with any other key id is refused.
+TRUSTED_KEYS: dict = {
+    "pyrun-2026": TrustedKey(publisher="pyrun", public_key="ecCw8ec0QKKtDDm2qYqLrSyAvddGkRzBRfZ9REKgcY0="),
+}
 
 
 def trusted_key(key_id):

@@ -1464,7 +1464,8 @@ reads the plugin:
 | A signature that doesn't check out | **Refused**: a file changed, missing or unlisted, a bad signature, a key id this PyRun doesn't trust or that was revoked, or a signature for another slug, version or publisher (`plugin.json`'s `publisher`, when set, must be the signing one). |
 
 PyRun trusts only its own keys, listed by key id in
-`core/plugins/trust/keys.py` (a new key id is how a key is rotated). Signatures
+`core/plugins/trust/keys.py` (a new key id is how a key is rotated); today that
+is `pyrun-2026`, the key PyRun's own plugins and store index are signed with. Signatures
 from other publishers are refused for now; the format already carries the
 publisher and key id they will need. The badge follows the current keys: when
 the key that signed an installed plugin is later revoked or removed, the plugin
@@ -1490,8 +1491,9 @@ server can't be activated again until it is re-installed.
 the image; `plugin_sign` refuses a key path inside the project.
 
 ```bash
-# once: a new key pair, and the entry to add to core/plugins/trust/keys.py
-python manage.py plugin_sign --generate-key ~/keys/pyrun-2026.pem --key-id pyrun-2026
+# once per key: a new key pair, and the entry to add to core/plugins/trust/keys.py
+# (pyrun-2026 is the current key; rotating adds a new id such as pyrun-2027)
+python manage.py plugin_sign --generate-key ~/keys/pyrun-2027.pem --key-id pyrun-2027
 
 # every release: dist/<slug>-<version>.zip with MANIFEST.sha256 and plugin.sig
 python manage.py plugin_doctor --path examples/brand_tracker

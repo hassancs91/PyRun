@@ -672,7 +672,8 @@ updates, signing and a store, and two-factor sign-in.
   installed signed, its updates must be signed by the same publisher. The new
   **Trust policy** on the Plugins page can switch to *Signed plugins only*. The
   doctor checks the files of a signed folder too, and `plugins.list` reports
-  each plugin's `trust`. Maintainers build signed zips with
+  each plugin's `trust`. PyRun trusts its own signing key (`pyrun-2026`) out
+  of the box. Maintainers build signed zips with
   `manage.py plugin_sign <folder> --key <path> --key-id <id>`. docs/plugins.md
   has the details.
 - **Plugin Store.** Plugins → **Store** lists the plugins of a signed store
