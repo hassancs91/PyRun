@@ -23,6 +23,7 @@ the console shows.
 import importlib
 import inspect
 import logging
+import traceback
 from pathlib import Path
 
 from django.conf import settings
@@ -143,12 +144,30 @@ def _load(slug) -> tuple:
                     continue
                 found.append(PluginAdapter(slug, adapter))
     except Exception as exc:
-        logger.exception("Plugin %r: loading triggers.py failed", slug)
+        _log_import_failure(slug, exc)
         _errors[slug] = f"{type(exc).__name__}: {exc}"
         found = []
     # The picker's order: by title, then key.
     _loaded[slug] = tuple(sorted(found, key=lambda a: (a.title.lower(), a.key)))
     return _loaded[slug]
+
+
+def _log_import_failure(slug, exc) -> None:
+    """Log a failed triggers.py import with its traceback, the plugin's secrets masked.
+
+    The message can hold a value the plugin read (``RuntimeError(f"token={token}")``):
+    masked like the plugin page's notice (``mask_plugin_output``). If the
+    secrets can't be read to mask it, only the exception type is logged.
+    """
+    trace = "".join(traceback.format_exception(exc)).rstrip()
+    try:
+        from core.services.plugin_updates import mask_plugin_output
+
+        trace = mask_plugin_output(slug, trace)
+    except Exception:
+        trace = (f"{type(exc).__name__} (the message is not logged: the plugin's "
+                 "secrets could not be read to mask it)")
+    logger.error("Plugin %r: loading triggers.py failed\n%s", slug, trace)
 
 
 def load_problem(slug) -> str:

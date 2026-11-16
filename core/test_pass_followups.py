@@ -331,6 +331,33 @@ class TriggersLoadNoticeTests(_Console):
         self.assertIn("Traceback", "\n".join(logs.output))
         self.assertNotContains(resp, "Traceback")
 
+    def test_the_server_log_masks_the_plugins_secrets(self):
+        # Run 7 (O5): the log line and its traceback, like the page's notice.
+        from core.models import Secret
+
+        secret = Secret(key="T52_TRIG", owner_plugin=SHOP_SLUG)
+        secret.set_value("trig-value-in-message")
+        secret.save()
+        with self.assertLogs("core.triggers.adapters.plugin", "ERROR") as logs:
+            resp = self._page(SHOP_TRIGGERS + "\nraise RuntimeError('token=trig-value-in-message')\n")
+        logged = "\n".join(logs.output)
+        self.assertIn("RuntimeError: token=[T52_TRIG:MASKED]", logged)
+        self.assertIn("Traceback", logged)
+        self.assertNotIn("trig-value-in-message", logged)
+        self.assertContains(resp, "[T52_TRIG:MASKED]")
+        self.assertNotContains(resp, "trig-value-in-message")
+
+    def test_the_log_keeps_only_the_type_when_secrets_cant_be_read(self):
+        with mock.patch.object(plugin_updates, "mask_plugin_output", side_effect=RuntimeError("db down")), \
+                self.assertLogs("core.triggers.adapters.plugin", "ERROR") as logs:
+            _PluginFolder(self, triggers=SHOP_TRIGGERS + "\nraise RuntimeError('unmasked-detail')\n")
+            from core.triggers.adapters.plugin import load_problem
+
+            self.assertIn("unmasked-detail", load_problem(SHOP_SLUG))
+        logged = "\n".join(logs.output)
+        self.assertIn("RuntimeError (the message is not logged", logged)
+        self.assertNotIn("unmasked-detail", logged)
+
     def test_a_triggers_py_that_fails_the_doctor_shows_the_notice(self):
         bad = SHOP_TRIGGERS.replace('title = "New order"', 'title = ""')
         with self.assertLogs("core.triggers.adapters.plugin", "WARNING"):
