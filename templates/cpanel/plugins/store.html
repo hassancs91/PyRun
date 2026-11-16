@@ -39,7 +39,7 @@
         {% icon "puzzle" class="w-7 h-7 text-info" %}
     </div>
     <h3 class="text-base font-semibold mb-1">No store index set</h3>
-    <p class="text-sm text-muted max-w-lg mx-auto">PyRun's official plugin index is not published yet. If you have the URL of a signed <span class="font-mono">index.json</span>, add it under Store settings below.</p>
+    <p class="text-sm text-muted max-w-lg mx-auto">If you have the URL of a signed <span class="font-mono">index.json</span>, add it under Store settings below.</p>
 </section>
 {% elif not state.index %}
 <section class="rounded-2xl border border-line bg-panel px-6 py-12 text-center">
@@ -133,7 +133,7 @@
 <form method="post" action="{% url 'cpanel:plugin_store_settings' %}" id="store-settings" class="rounded-2xl border border-line bg-panel p-6">
     {% csrf_token %}
     <h3 class="text-base font-semibold text-text mb-1">Store settings</h3>
-    <p class="text-sm text-muted mb-4">The signed <span class="font-mono">index.json</span> this PyRun reads. Leave it empty for PyRun's official index{% if not official_url %} (not published yet){% endif %}. A private index works too, as long as it is signed by a key this PyRun trusts.{% if state.row.checked_at %} Last checked {{ state.row.checked_at|timesince }} ago.{% endif %}</p>
+    <p class="text-sm text-muted mb-4">The signed <span class="font-mono">index.json</span> this PyRun reads. Leave it empty for PyRun's official index. A private index works too, as long as it is signed by a key this PyRun trusts.{% if state.row.checked_at %} Last checked {{ state.row.checked_at|timesince }} ago.{% endif %}</p>
     <div class="flex flex-wrap items-center gap-3">
         <input type="url" name="store_url" value="{{ configured_url }}" maxlength="500" placeholder="{{ official_url|default:'https://example.com/index.json' }}" aria-label="Store index URL" class="flex-1 min-w-[14rem] bg-ink border border-line rounded-lg px-3 py-2 text-sm font-mono text-text placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-ok/40">
         <button type="submit" class="text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">Save</button>

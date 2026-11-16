@@ -125,7 +125,8 @@ CHANGELOG = [
                     "Upload a newer version of an installed plugin to update it, and roll "
                     "back if you need to. Signed plugins show Verified, and PyRun's own "
                     "Verified · PyRun; a trust policy can allow signed plugins only. The "
-                    "Store tab installs and updates plugins from a signed index, and "
+                    "Store tab installs and updates plugins from PyRun's official signed "
+                    "index (or your own), and "
                     "Install from URL takes a zip link."
                 ),
             },

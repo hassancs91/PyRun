@@ -36,9 +36,9 @@ from core.services.plugin_service import PluginInstallError, PluginService
 
 logger = logging.getLogger(__name__)
 
-#: PyRun's own store index (the hassancs91/pyrun-plugins repo). Blank until that
-#: repo is published; until then the Store tab asks for an index URL.
-OFFICIAL_INDEX_URL = ""
+#: PyRun's own store index (the hassancs91/pyrun-plugins repo), read when the
+#: Store settings URL is blank. Signed with PyRun's key (core/plugins/trust/keys.py).
+OFFICIAL_INDEX_URL = "https://raw.githubusercontent.com/hassancs91/pyrun-plugins/main/index.json"
 
 INDEX_MAX_BYTES = 2 * 1024 * 1024
 #: The background task refreshes the index this often; older is "stale".

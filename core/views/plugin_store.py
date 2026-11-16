@@ -134,12 +134,13 @@ def plugin_store_settings_view(request: HttpRequest) -> HttpResponse:
     if not plugin_store.index_url():
         messages.success(request, "Store index URL cleared.")
         return redirect("cpanel:plugin_store")
+    saved = "Store index URL saved" if url else "Using PyRun's official store index"
     try:
         index = plugin_store.refresh()
     except plugin_store.StoreError as exc:
-        messages.warning(request, f"Store index URL saved. {exc}")
+        messages.warning(request, f"{saved}. {exc}")
     else:
-        messages.success(request, f"Store index URL saved: {len(index.entries)} plugins.")
+        messages.success(request, f"{saved}: {len(index.entries)} plugins.")
     return redirect("cpanel:plugin_store")
 
 

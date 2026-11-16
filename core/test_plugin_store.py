@@ -29,6 +29,7 @@ import threading
 from pathlib import Path
 from unittest import mock
 
+import requests
 from django.core.management import CommandError, call_command
 from django.test import SimpleTestCase, override_settings
 from django.urls import reverse
@@ -583,6 +584,113 @@ class ConsoleTests(_StoreBase):
                 resp = getattr(self.client, method)(reverse(name, kwargs=kwargs))
                 self.assertEqual(resp.status_code, 403)
         self.assertEqual(_Store.hits, [])
+
+
+# --------------------------------------------------------------------------- #
+# PyRun's official index (run 7): failures stay quiet and admin-only
+# --------------------------------------------------------------------------- #
+
+
+class OfficialIndexTests(_StoreBase):
+    """A blank Store settings URL reads PyRun's official index on GitHub.
+
+    The real URL is never fetched here: the HTTP session (and the guard's DNS
+    lookup) is faked, so each failure the official index can have (not
+    published yet, slow, unreachable, not JSON, not signed by a trusted key)
+    is replayed against the background refresh and the pages that show it.
+    """
+
+    def setUp(self):
+        super().setUp()
+        for target in (
+            "core.services.setup_service.SetupService.is_setup_needed",
+            "core.services.setup_service.SetupService.needs_admin_setup",
+        ):
+            patch = mock.patch(target, return_value=False)
+            patch.start()
+            self.addCleanup(patch.stop)
+        self.set_url("")
+        self.session = mock.MagicMock()
+        self.session.__enter__.return_value = self.session
+        for target, value in (
+            ("core.triggers.adapters._net._session", mock.Mock(return_value=self.session)),
+            ("core.triggers.adapters._net.check_url", mock.Mock(side_effect=lambda url: url)),
+        ):
+            patch = mock.patch(target, value)
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def answer(self, status=200, body=b""):
+        response = mock.MagicMock(status_code=status, headers={})
+        response.iter_content.return_value = [body]
+        self.session.get.side_effect = None
+        self.session.get.return_value = response
+
+    def test_the_official_index_is_pyruns_github_repo(self):
+        self.assertEqual(
+            plugin_store.OFFICIAL_INDEX_URL,
+            "https://raw.githubusercontent.com/hassancs91/pyrun-plugins/main/index.json",
+        )
+        self.assertEqual(plugin_store.index_url(), plugin_store.OFFICIAL_INDEX_URL)
+
+    def test_failures_are_recorded_once_and_pages_stay_quiet(self):
+        from core.tasks import refresh_plugin_store_task
+
+        member = User.objects.create(email="member@example.com")
+        cases = [
+            ("404", lambda: self.answer(404), "The source answered HTTP 404."),
+            ("timeout", lambda: setattr(self.session.get, "side_effect", requests.Timeout("read timed out")),
+             "didn't answer within 20 seconds"),
+            ("dns", lambda: setattr(self.session.get, "side_effect",
+                                    requests.ConnectionError("Failed to resolve 'raw.githubusercontent.com'")),
+             "could not be reached"),
+            ("bad json", lambda: self.answer(200, b"<html>not json</html>"), "not valid JSON"),
+            ("bad signature", lambda: self.answer(200, index_bytes([], key=STRANGER, key_id="stranger-1")),
+             "does not trust"),
+        ]
+        for label, arrange, fragment in cases:
+            with self.subTest(failure=label):
+                arrange()
+                self.session.get.reset_mock()
+                with self.assertLogs("core.services.plugin_store", "WARNING") as logs:
+                    result = refresh_plugin_store_task()
+                self.assertFalse(result["success"])
+                self.assertEqual(len(logs.records), 1)  # one line per real fetch
+                self.assertEqual(self.session.get.call_args.args[0], plugin_store.OFFICIAL_INDEX_URL)
+                error = PluginStoreIndex.objects.get().error
+                self.assertIn(fragment, error)
+                self.assertNotIn("Traceback", error)
+
+                # Pages read the recorded error; none of them fetches or logs again.
+                self.session.get.reset_mock()
+                self.client.force_login(self.admin)
+                with self.assertNoLogs("core.services.plugin_store", "WARNING"):
+                    store = self.client.get(reverse("cpanel:plugin_store"))
+                    listing = self.client.get(reverse("cpanel:plugin_list"))
+                    dashboard = self.client.get(reverse("cpanel:dashboard"))
+                    self.client.force_login(member)
+                    member_dashboard = self.client.get(reverse("cpanel:dashboard"))
+                self.assertContains(store, "Couldn&#x27;t load the store index")
+                self.assertContains(store, "The store index hasn't been loaded yet")
+                self.assertEqual((listing.status_code, dashboard.status_code), (200, 200))
+                self.assertNotContains(dashboard, "Plugin update available")
+                self.assertEqual(member_dashboard.status_code, 200)
+                for page in (dashboard, member_dashboard):
+                    self.assertNotContains(page, "load the store index")
+                    self.assertNotContains(page, "raw.githubusercontent.com")
+                self.session.get.assert_not_called()
+
+    def test_clearing_the_url_loads_the_official_index(self):
+        self.client.force_login(self.admin)
+        url = reverse("cpanel:plugin_store_settings")
+        self.answer(404)
+        resp = self.client.post(url, {"store_url": ""}, follow=True)
+        # Toasts carry the text JSON-escaped.
+        self.assertContains(resp, r"Using PyRun\u0027s official store index. Couldn\u0027t load the store index")
+        self.answer(200, index_bytes([]))
+        resp = self.client.post(url, {"store_url": ""}, follow=True)
+        self.assertContains(resp, r"Using PyRun\u0027s official store index: 0 plugins.")
+        self.assertEqual(GlobalSettings.get_settings().plugin_store_url, "")
 
 
 # --------------------------------------------------------------------------- #

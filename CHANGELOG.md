@@ -58,6 +58,12 @@ updates, signing and a store, and two-factor sign-in.
 - **Example plugins.** Brand Tracker and YouTube Comments AI now set their
   scripts to Skip a run while one is already running, instead of their own
   check.
+- **The Plugin Store reads PyRun's official index.** With **Store settings**
+  blank (the default), PyRun fetches
+  `https://raw.githubusercontent.com/hassancs91/pyrun-plugins/main/index.json`
+  every 12 hours and on **Refresh**, an outbound HTTPS request to GitHub. Name
+  another signed index under Plugins → Store → **Store settings** to read that
+  one instead.
 - Everything new starts off or empty: API writes, the two-factor requirement,
   the plugin trust policy stays *Allow unsigned*, and backups leave plugins out
   unless you tick **Include installed plugins**.
@@ -684,10 +690,11 @@ updates, signing and a store, and two-factor sign-in.
   **Refresh**) and only uses it when its signature checks out with a key it
   trusts. A download must match the size and sha256 the index gives, and then
   installs or updates exactly like an uploaded zip (signature, publisher pin
-  and trust policy included). PyRun's official index isn't published yet:
-  until it is, **Store settings** takes the URL of any index signed by a
-  trusted key. **Install from URL** on the Upload page installs or updates a
-  plugin from a zip link, with an optional sha256. Every download goes through
+  and trust policy included). With **Store settings** blank, the Store reads
+  PyRun's official index (the hassancs91/pyrun-plugins repository on GitHub);
+  it can also name any index signed by a trusted key. **Install from URL** on
+  the Upload page installs or updates a plugin from a zip link, with an
+  optional sha256. Every download goes through
   the SSRF guard, with a 2 MB cap for the index and 50 MB for a zip. Each
   plugin now has an update policy (only *Manual* for now) and its page says
   where it came from. Maintainers build the index with

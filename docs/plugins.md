@@ -1514,10 +1514,11 @@ category, open a plugin to see its description, what it creates (its
 version in the index are listed under **Updates available**; the Store tab
 shows how many, and superusers see a notice on the dashboard.
 
-**Which index.** Plugins → Store → **Store settings**. Empty means PyRun's
-official index. That index isn't published yet, so for now the Store asks for
-an index URL. A private index works too, as long as it is signed by a key this
-PyRun trusts (`core/plugins/trust/keys.py`). The URL is in backups.
+**Which index.** Plugins → Store → **Store settings**. Empty (the default)
+means PyRun's official index,
+`https://raw.githubusercontent.com/hassancs91/pyrun-plugins/main/index.json`,
+signed with PyRun's key. A private index works too, as long as it is signed by
+a key this PyRun trusts (`core/plugins/trust/keys.py`). The URL is in backups.
 
 **Fetching.** PyRun reads the index every 12 hours in the background (the
 `pyrunner-plugin-store` task, like the PyRun update check) and when you press
