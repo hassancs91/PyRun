@@ -29,8 +29,9 @@ from datetime import timedelta
 from types import SimpleNamespace
 from unittest import mock
 
+from django.core.exceptions import ImproperlyConfigured
 from django.db import OperationalError
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 from django_q.conf import Conf
 from django_q.models import OrmQ
@@ -242,6 +243,17 @@ class RunLoopTests(TestCase):
             ClusterHeartbeat(cluster, clock=Clock()).run(sleep=fake_sleep)
         self.assertEqual(len(calls), 1)
 
+    def test_a_cluster_stopped_while_starting_has_no_loop(self):
+        # django-q2 1.11: a SIGTERM during start() stops the cluster and clears its events.
+        cluster = fake_cluster()
+        cluster.sentinel.alive = False
+        cluster.start_event = cluster.stop_event = None
+        sleep = mock.Mock()
+        with mock.patch.object(worker_heartbeat, "write_heartbeat") as write:
+            ClusterHeartbeat(cluster, clock=Clock()).run(sleep=sleep)
+        sleep.assert_not_called()
+        write.assert_not_called()
+
     def test_a_stopped_cluster_ages_out_in_the_usual_window(self):
         gs = GlobalSettings.get_settings()
         self.assertEqual(GlobalSettings.WORKER_HEARTBEAT_TIMEOUT_SECONDS, 180)
@@ -271,6 +283,14 @@ class CommandTests(TestCase):
         cluster.start.assert_called_once_with()
         cluster.stop.assert_called_once_with()
         heartbeat.assert_not_called()
+
+    def test_no_cluster_starts_without_a_secret_key(self):
+        # As django-q2 1.11's own qcluster handle: tasks are signed with it.
+        with override_settings(SECRET_KEY=""), \
+                mock.patch("core.management.commands.pyrunner_qcluster.Cluster") as cluster, \
+                self.assertRaises(ImproperlyConfigured):
+            QClusterCommand._run_cluster({"run_once": False, "cluster_name": None})
+        cluster.assert_not_called()
 
     def test_handle_starts_the_cluster_this_way(self):
         command = QClusterCommand()

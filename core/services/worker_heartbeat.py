@@ -126,6 +126,8 @@ class ClusterHeartbeat:
     def run(self, sleep=time.sleep) -> None:
         """Tick until the cluster stops (its sentinel ends or a stop is signalled)."""
         sentinel, stop_event = self.cluster.sentinel, self.cluster.stop_event
+        if sentinel is None or stop_event is None:
+            return  # stopped while starting (django-q2 1.11 clears the events)
         while sentinel.is_alive() and not stop_event.is_set():
             self.tick()
             sleep(POLL_SECONDS)

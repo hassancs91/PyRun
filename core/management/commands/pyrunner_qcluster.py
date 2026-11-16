@@ -25,6 +25,7 @@ busy with long runs still read as running.
 import os
 
 import psutil
+from django.conf import settings
 from django.db import connections
 from django_q.cluster import Cluster
 from django_q.management.commands.qcluster import Command as QClusterCommand
@@ -77,8 +78,12 @@ class Command(QClusterCommand):
         After ``start()`` django-q's own command returns and the process just
         waits for the sentinel to exit; here it writes the heartbeat meanwhile.
         A SIGTERM/SIGINT still goes to ``Cluster.sig_handler`` (stop + join),
-        and the loop ends within half a second of it.
+        and the loop ends within half a second of it. Matches django-q2
+        1.11's handle (the version requirements.txt installs), including its
+        early ``settings.SECRET_KEY`` check.
         """
+        # django-q2 1.11: refuse to start without a SECRET_KEY (tasks are signed).
+        settings.SECRET_KEY  # noqa: B018
         cluster_name = options.get("cluster_name")
         if cluster_name:
             os.environ["Q_CLUSTER_NAME"] = cluster_name
