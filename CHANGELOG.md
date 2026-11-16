@@ -814,7 +814,16 @@ updates, signing and a store, and two-factor sign-in.
   the server log.
 - **Add a row names every mistake at once and keeps what you typed.** The
   Tables grid's form reported only the first bad column and came back empty;
-  now each bad column gets its message and the form reopens with the values.
+  now each bad column gets its message under its own field (linked to it for
+  screen readers) and the form reopens with the values. Editing a number or
+  date cell in the grid no longer saves a value the browser can't read as an
+  empty cell.
+- **CSV headers match a column whatever their case, spaces, dashes or
+  underscores.** "E-Mail" fills `email`, "Lead Score" and "lead-score" fill
+  `lead_score`, on the Import page and in `pyrunner_tables.import_csv`. Two
+  headers for one column, or one header for two columns, are no longer
+  guessed: without a mapping the import is refused naming them, and the
+  Import page's mapping step leaves them on Skip for you to choose.
 - **The restore message counts tables.** After a restore of a backup with
   Tables, the success message says how many tables and rows came back.
 - **The restore preview counts the watchers that come back.** A plugin's
@@ -836,6 +845,31 @@ updates, signing and a store, and two-factor sign-in.
 - **Faint text is easier to read.** The light grey used for help text,
   timestamps and labels is darker in the light theme and lighter in the dark
   one, at least 4.5:1 against the console's backgrounds.
+- **Busy workers no longer read as stopped.** The worker heartbeat was
+  written only by queued tasks, so when every worker was busy with a run
+  longer than 3 minutes the dashboard said the workers had stopped,
+  `system.health` reported them down, synchronous API calls and `?sync=1`
+  webhooks got 503 `workers_unavailable`, and chat channels answered "I'm
+  asleep right now". The worker process the image starts (`pyrunner_qcluster`) now writes
+  the heartbeat itself every 30 seconds while its cluster has a live worker,
+  whatever the workers are running; a stopped worker still reads as stopped
+  within 3 minutes. A plain `manage.py qcluster` keeps the task-based
+  heartbeat.
+- **Status colours meet the 4.5:1 contrast minimum in the light theme.** Green,
+  amber and red text (status pills, banners, the Beta badge, Delete buttons,
+  error lines) and the labels on green, amber and red buttons were 2.5 to
+  4.4:1. The dark theme is unchanged.
+- **`manage.py user disable-2fa` passes over a set-up that was never
+  confirmed.** For an account that had only started adding an authenticator it
+  recorded "two-factor sign-in turned off"; now that set-up is cleared quietly
+  and the command says the account doesn't use two-factor sign-in.
+- **A restore says when two-factor sign-in didn't come back.** An
+  authenticator encrypted with another `ENCRYPTION_KEY` is skipped; the
+  restore's warnings (the restore page and `manage.py restore_backup`) now say
+  how many accounts sign in with the password only, not just the server log.
+- **A plugin's `triggers.py` import error keeps its secrets out of the server
+  log.** The plugin's page already masked the plugin's secret values; the log
+  line and its traceback now do too.
 - **Docs:** the chat channels guide states the inbound callback's 60 requests a
   minute per address and that sends are at least once; the scheduling guide
   explains that integration watchers on one worker take turns and that a

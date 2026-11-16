@@ -162,6 +162,24 @@ CHANGELOG = [
                     "by 2.0 restore as before."
                 ),
             },
+            {
+                "tag": "Fixed",
+                "title": "Busy workers no longer read as stopped",
+                "body": (
+                    "When every worker was busy with a long run, the dashboard said the "
+                    "workers had stopped and synchronous calls were refused. The worker "
+                    "now reports every 30 seconds while it runs, whatever it is running."
+                ),
+            },
+            {
+                "tag": "Fixed",
+                "title": "Easier-to-read status colours in the light theme",
+                "body": (
+                    "Green, amber and red text and the labels on green, amber and red "
+                    "buttons now meet the 4.5:1 contrast minimum. The dark theme is "
+                    "unchanged."
+                ),
+            },
         ],
     },
     {
