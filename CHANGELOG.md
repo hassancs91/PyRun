@@ -745,6 +745,14 @@ updates, signing and a store, and two-factor sign-in.
   backups from SQLite and Postgres.
 
 ### Fixed
+- **Bulk install accepts requirements files pip accepts.** A line with an
+  environment marker written without a space (`numpy>=1.20; python_version >= "3.8"`)
+  was refused as an invalid package specification, and an uploaded
+  `requirements.txt` saved as UTF-16 (what `pip freeze > requirements.txt`
+  writes in Windows PowerShell 5.1) or as UTF-8 with a BOM was refused as
+  unreadable. Markers are now left for pip to evaluate, and uploads are decoded
+  by their BOM the way pip reads them. Option lines (`--index-url`, `-e`, `-r`)
+  are still refused.
 - **A schedule time listed twice no longer runs the script twice.** The
   schedule form accepted a repeated time in the daily, weekly and monthly
   modes (`09:00, 9:00`), and each one became its own cron, so the script ran

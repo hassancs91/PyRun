@@ -2,6 +2,7 @@
 Forms for the core app.
 """
 import calendar
+import codecs
 import json
 import math
 import re
@@ -1163,35 +1164,22 @@ class BulkInstallForm(forms.Form):
                 "Provide requirements text or upload a file."
             )
 
-        # If file provided, read its content
+        # If file provided, read its content. Decode by BOM the way pip does:
+        # Windows PowerShell 5.1 writes `pip freeze > requirements.txt` as
+        # UTF-16, and Notepad can prefix UTF-8 with a BOM.
         if file:
+            raw = file.read()
+            utf16 = raw[:2] in (codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)
             try:
-                content = file.read().decode("utf-8")
-                cleaned_data["requirements"] = content
+                cleaned_data["requirements"] = raw.decode("utf-16" if utf16 else "utf-8-sig")
             except UnicodeDecodeError:
                 raise forms.ValidationError(
                     "Could not read file. Ensure it's a valid text file."
                 )
 
-        # Validate each line
-        requirements_text = cleaned_data.get("requirements", "")
-        for line in requirements_text.splitlines():
-            line = line.strip()
-            # Skip empty lines and comments
-            if not line or line.startswith("#"):
-                continue
-            # Reject pip option lines (leading "-", e.g. --index-url /
-            # --extra-index-url): pip honours them inside a requirements file,
-            # so they can redirect installs to an attacker-controlled index
-            # (Vuln 6). Only comments and package specs are allowed.
-            if line.startswith("-"):
-                raise forms.ValidationError(
-                    f"Option lines (e.g. --index-url) are not allowed: {line}"
-                )
-            # Extract package spec (first word before any whitespace)
-            pkg_spec = line.split()[0] if line.split() else ""
-            if pkg_spec and not EnvironmentService.validate_package_spec(pkg_spec):
-                raise forms.ValidationError(f"Invalid package specification: {line}")
+        error = EnvironmentService.requirements_error(cleaned_data.get("requirements", ""))
+        if error:
+            raise forms.ValidationError(error)
 
         return cleaned_data
 

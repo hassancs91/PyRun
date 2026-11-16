@@ -250,6 +250,28 @@ class EnvironmentService:
         return True
 
     @classmethod
+    def requirements_error(cls, requirements: str) -> str:
+        """Why ``requirements`` can't be bulk-installed, or "" when it can.
+
+        Only comments and package specs are allowed. Option lines (leading
+        "-", e.g. --index-url / --extra-index-url) are rejected: pip honours
+        them inside a requirements file, so they could redirect installs to an
+        attacker-controlled index (Vuln 6). A spec may end in a PEP 508
+        environment marker (``numpy>=1.20; python_version >= "3.8"``): only the
+        part before the ``;`` is checked, pip evaluates the marker.
+        """
+        for line in requirements.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("-"):
+                return f"Option lines (e.g. --index-url) are not allowed: {line}"
+            spec = line.split(";", 1)[0].split()
+            if not spec or not cls.validate_package_spec(spec[0]):
+                return f"Invalid package specification: {line}"
+        return ""
+
+    @classmethod
     def create_environment(
         cls,
         python_path: str,
@@ -676,21 +698,11 @@ class EnvironmentService:
         if not os.path.isfile(pip_path):
             return False, "", f"pip not found at {pip_path}"
 
-        # Validate each line. Reject pip option lines (leading "-", e.g.
-        # --index-url / --extra-index-url): pip honours them inside a
-        # requirements file, so a skipped option line would let the body
-        # redirect installs to an attacker-controlled index (Vuln 6). Only
-        # comments and package specs are allowed.
-        for line in requirements.splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if line.startswith("-"):
-                return False, "", f"Option lines are not allowed in requirements: {line}"
-            # Extract package name (before any version specifier)
-            pkg_spec = line.split()[0] if line.split() else ""
-            if pkg_spec and not cls.validate_package_spec(pkg_spec):
-                return False, "", f"Invalid package specification: {line}"
+        # Re-checked here (not only in the form): restores queue the saved
+        # requirements straight from the backup.
+        error = cls.requirements_error(requirements)
+        if error:
+            return False, "", error
 
         # Write requirements to temp file
         try:
