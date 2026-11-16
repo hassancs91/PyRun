@@ -113,6 +113,11 @@ before you update. A Coolify Docker Compose resource also needs the 2.0
 `docker-compose.coolify.yml` pasted in: Redeploy keeps the compose file the
 resource was created with.
 
+To try an unreleased branch on Coolify, point a Git-based resource's Docker
+compose location at `docker-compose.coolify-build.yml`: it builds the image
+from the branch's Dockerfile instead of pulling the published image, and keeps
+the same volumes.
+
 ## Configuration
 
 Copy `.env.example` to `.env` and configure:

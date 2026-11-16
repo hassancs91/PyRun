@@ -1,0 +1,85 @@
+# Coolify, built from source: the same as docker-compose.coolify.yml, except that
+# Coolify builds the image from this repository's Dockerfile (the branch the
+# resource deploys) instead of pulling hasanaboulhasan/pyrun:latest. Use it to
+# try a branch before it is released. The service and volume names match the
+# stock file, so switching the resource's Docker compose location between the
+# two keeps its data. The build runs on the server and takes a few minutes.
+services:
+  pyrunner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    expose:
+      - "8000"
+    environment:
+      # Coolify auto-fills this with the public URL of the deployment.
+      # The bare token form (no '=value') signals Coolify to generate it.
+      - SERVICE_FQDN_PYRUNNER_8000
+
+      # Pin the container listening port so platform-injected PORT values
+      # (some PaaS set PORT=80) cannot override it. Coolify routes Traefik
+      # to this port via SERVICE_FQDN_PYRUNNER_8000.
+      - PORT=8000
+
+      # REQUIRED — container will fail to start if these are not set.
+      # SECRET_KEY: python -c "import secrets; print(secrets.token_urlsafe(50))"
+      # ENCRYPTION_KEY: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+      - SECRET_KEY=${SECRET_KEY}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+
+      # Django
+      - DEBUG=False
+      # Coolify's Traefik terminates TLS and forces HTTPS at the edge.
+      # Disabling Django's own SSL redirect avoids redundant 301s and
+      # prevents the in-container HTTP healthcheck from being redirected
+      # into HTTPS it cannot speak (which would mark the backend down).
+      - SECURE_SSL_REDIRECT=False
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1}
+      # Traefik is one proxy hop in front of PyRun. Login lockout and every
+      # per-IP rate limit read the client address it appends; without this
+      # they would see Traefik's address for every visitor. Use 2 if
+      # Cloudflare proxies the domain as well.
+      - RATELIMIT_TRUSTED_PROXY_DEPTH=${RATELIMIT_TRUSTED_PROXY_DEPTH:-1}
+
+      # Optional. Empty means unset (SQLite core DB, Databases feature off,
+      # console-entered URLs limited to public addresses).
+      - DATABASE_URL=${DATABASE_URL:-}
+      - PYRUNNER_DATA_DB_URL=${PYRUNNER_DATA_DB_URL:-}
+      - PYRUNNER_ALLOW_PRIVATE_NETWORK=${PYRUNNER_ALLOW_PRIVATE_NETWORK:-False}
+
+      # Email — defaults to console. Configure SMTP/Resend in the app
+      # (Settings -> Email) after first login so password-reset emails work.
+      - EMAIL_BACKEND=${EMAIL_BACKEND:-django.core.mail.backends.console.EmailBackend}
+      - DEFAULT_FROM_EMAIL=${DEFAULT_FROM_EMAIL:-noreply@pyrunner.local}
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - USE_RESEND=${USE_RESEND:-False}
+
+      # Workers
+      - Q_WORKERS=${Q_WORKERS:-2}
+      - GUNICORN_WORKERS=${GUNICORN_WORKERS:-2}
+      - GUNICORN_THREADS=${GUNICORN_THREADS:-4}
+      - GUNICORN_TIMEOUT=${GUNICORN_TIMEOUT:-120}
+    volumes:
+      - pyrunner_data:/app/data
+      # Uploaded plugins live here so they survive redeploys (stock image +
+      # injected plugins, no fork). Empty on a fresh install.
+      - pyrunner_plugins:/app/plugins
+    restart: unless-stopped
+    # Caps processes + threads for the whole container. Scripts run as root, and
+    # the kernel exempts root from the per-run process limit (Settings ->
+    # Isolation), so this is what stops a fork bomb from exhausting the host's
+    # PIDs and taking down everything else on the server. Raise it if your
+    # scripts legitimately start many processes (e.g. several headless browsers).
+    pids_limit: 2048
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  pyrunner_data:
+    driver: local
+  pyrunner_plugins:
+    driver: local
