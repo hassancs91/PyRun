@@ -94,7 +94,7 @@ class ReconcileAtWorkerStartTests(TestCase):
     def test_qcluster_reconciles_only_with_the_flag(self):
         run = self._running(_dead_pid())
         with mock.patch(
-            "django_q.management.commands.qcluster.Command.handle", return_value=None
+            "core.management.commands.pyrunner_qcluster.Command._run_cluster", return_value=None
         ), mock.patch(
             "core.management.commands.pyrunner_qcluster.apply_db_worker_settings",
             return_value={"workers": 1, "timeout": 1, "retry": 2, "queue_limit": 1},

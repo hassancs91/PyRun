@@ -418,7 +418,8 @@ once across the instance, together with the API's `scripts.run` calls with
 thread free for the console and for `respond()` itself. A call past either
 limit gets 202 with `"wait": "busy"`. When no worker has
 reported in the last 3 minutes, a synchronous call gets 503 at once instead of
-waiting out the budget.
+waiting out the budget. (The worker reports every 30 seconds while it runs, even
+when every worker process is busy with a long run.)
 
 **What a reply can hold.** `respond(status=200, body=None, headers=None)`:
 

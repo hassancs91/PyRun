@@ -16,14 +16,21 @@ production (entrypoint.sh) and the restart-workers flow use this command.
 first fails RUNNING runs whose script process is gone — see
 ``Run.reconcile_orphans_at_worker_start``. Workers started separately (split
 worker containers) leave the flag off and keep the deadline rule.
+
+Once the cluster is up, this process writes the worker heartbeat itself until
+the cluster stops (``core.services.worker_heartbeat``), so workers that are all
+busy with long runs still read as running.
 """
 
 import os
 
 import psutil
+from django.db import connections
+from django_q.cluster import Cluster
 from django_q.management.commands.qcluster import Command as QClusterCommand
 
 from core.services.worker_config import apply_db_worker_settings
+from core.services.worker_heartbeat import ClusterHeartbeat
 
 
 class Command(QClusterCommand):
@@ -61,7 +68,29 @@ class Command(QClusterCommand):
                 f"Could not apply DB worker settings ({e}); "
                 "starting with environment defaults."
             )
-        super().handle(*args, **options)
+        self._run_cluster(options)
+
+    @staticmethod
+    def _run_cluster(options):
+        """django-q's ``qcluster`` handle, plus the heartbeat while the cluster runs.
+
+        After ``start()`` django-q's own command returns and the process just
+        waits for the sentinel to exit; here it writes the heartbeat meanwhile.
+        A SIGTERM/SIGINT still goes to ``Cluster.sig_handler`` (stop + join),
+        and the loop ends within half a second of it.
+        """
+        cluster_name = options.get("cluster_name")
+        if cluster_name:
+            os.environ["Q_CLUSTER_NAME"] = cluster_name
+        # The sentinel is forked from this process: it must not inherit the
+        # connection used above (it closes its copy, which would end ours too).
+        connections.close_all()
+        cluster = Cluster()
+        cluster.start()
+        if options.get("run_once", False):
+            cluster.stop()
+            return
+        ClusterHeartbeat(cluster).run()
 
     @staticmethod
     def _lead_process_group():

@@ -459,11 +459,15 @@ class GlobalSettings(models.Model):
     # Seconds since the last worker heartbeat after which a worker counts as down.
     # ONE window, shared by worker_is_alive() (inbound-webhook fast-fail) and the
     # dashboard worker-status card (system_info_service), so they never disagree.
-    # The heartbeat task runs every minute → 3 min = two missed beats = genuinely down.
+    # The pyrunner_qcluster process writes the heartbeat every
+    # WORKER_HEARTBEAT_INTERVAL_SECONDS while its cluster works, busy workers
+    # included (core/services/worker_heartbeat.py); the minute heartbeat task and
+    # every task's end write it too. 3 min = six missed beats = genuinely down.
     WORKER_HEARTBEAT_TIMEOUT_SECONDS = 180
+    WORKER_HEARTBEAT_INTERVAL_SECONDS = 30
 
     def worker_is_alive(self, threshold_seconds: int | None = None) -> bool:
-        """Whether a django-q worker has heartbeat-ed recently.
+        """Whether a django-q cluster has written its heartbeat recently.
 
         Used by the inbound webhook to fast-fail with a friendly "asleep" reply
         instead of silently enqueuing a message no worker will ever process.

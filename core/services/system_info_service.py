@@ -202,8 +202,18 @@ class SystemInfoService:
         # Get configured worker count
         worker_count = settings.Q_CLUSTER.get("workers", 2)
 
+        # The cluster process beats every WORKER_HEARTBEAT_INTERVAL_SECONDS while
+        # it works, busy or not; a beat within two intervals outweighs a backlog
+        # (tasks wait in the queue when every worker is busy with a long run).
+        just_beat = heartbeat_at and heartbeat_at >= now - timedelta(
+            seconds=2 * GlobalSettings.WORKER_HEARTBEAT_INTERVAL_SECONDS
+        )
+
         # Determine status based on heartbeat and queue state
-        if stale_tasks > 0:
+        if just_beat:
+            status = "running"
+            status_text = "Running"
+        elif stale_tasks > 0:
             # Tasks stuck in queue = workers definitely not running
             status = "stopped"
             status_text = "Stopped"

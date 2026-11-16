@@ -200,8 +200,10 @@ While `is_finished` is false the answer also has `next`, saying to poll
 (`scripts-run`); `_catalog` marks the endpoint `rest_accepted`.
 
 A wait holds one of the server's web threads, so it is limited: it fails fast
-when no worker has reported in the last 3 minutes, and at most 4 calls wait at
-once across the instance, synchronous webhook calls included (see
+when no worker has reported in the last 3 minutes (the worker reports every 30
+seconds while it runs, even when every worker process is busy with a long run),
+and at most 4 calls wait at once across the instance, synchronous webhook
+calls included (see
 [run-context.md](run-context.md#synchronous-replies); set
 `PYRUNNER_SYNC_WAIT_SLOTS`; it is capped below
 `GUNICORN_WORKERS` × `GUNICORN_THREADS`, and 0 turns waiting off). One web

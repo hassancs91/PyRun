@@ -38,7 +38,7 @@ def _shell_function(name):
 
 
 class QClusterLeadsProcessGroupTests(SimpleTestCase):
-    @mock.patch.object(pyrunner_qcluster.QClusterCommand, "handle")
+    @mock.patch.object(pyrunner_qcluster.Command, "_run_cluster")
     @mock.patch.object(pyrunner_qcluster, "apply_db_worker_settings")
     def test_handle_makes_the_cluster_a_process_group_leader(self, apply, _super):
         apply.return_value = {"workers": 2, "timeout": 60, "retry": 120, "queue_limit": 4}
