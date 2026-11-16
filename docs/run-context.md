@@ -903,9 +903,13 @@ code `row_cap` and the table's page says so; past that size, or for joins and
 SQL, use a managed **Database** (`pyrunner_db`). A row can hold 256 KB.
 
 **CSV.** `import_csv(path, mapping=None, dry_run=False)` imports a CSV file
-whose first line names the columns: headers match column keys by name (ignoring
-case, spaces and dashes; `id`, `created_at` and `updated_at` are skipped), or
-pass `mapping={"CSV header": "column_key"}` (headers you leave out are skipped).
+whose first line names the columns: headers match column keys by name, ignoring
+case, spaces, dashes and underscores ("E-Mail" fills `email`; "Lead Score" and
+"lead-score" fill `lead_score`; `id`, `created_at` and `updated_at` are skipped),
+or pass `mapping={"CSV header": "column_key"}` (headers you leave out are
+skipped). A match that isn't one to one (two headers for one column, or one
+header for two columns) is never guessed: the import raises `TableError` naming
+them until a `mapping` says which is meant.
 An empty cell is no value, a JSON column's cell is parsed as JSON. Every line is
 checked before anything is written: if one fails, nothing is imported and the
 report lists the first 20 errors with their line numbers (the header is line 1).

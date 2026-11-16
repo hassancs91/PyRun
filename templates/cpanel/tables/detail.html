@@ -49,28 +49,32 @@
 </div>
 
 {% if not table.at_cap %}
-<details class="rounded-2xl border border-line bg-panel group" {% if add_open %}open{% endif %}>
+<details id="add-row" class="rounded-2xl border border-line bg-panel group" {% if add_open %}open{% endif %}>
     <summary class="px-4 sm:px-6 py-3 cursor-pointer text-sm font-medium text-text select-none">Add a row</summary>
     <form method="post" action="{{ grid.add_url }}" class="px-4 sm:px-6 pb-5 pt-1 space-y-3">
         {% csrf_token %}
+        {% if add_error_count %}<p class="text-sm text-fail" role="alert">The row wasn't added: fix the field{{ add_error_count|pluralize }} marked below.</p>{% endif %}
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {% for c in add_columns %}
-            <label class="flex flex-col gap-1 {% if c.type == 'json' %}sm:col-span-2{% endif %}">
-                <span class="text-xs text-muted"><span class="font-mono text-text">{{ c.key }}</span> · {{ c.label }}{% if c.required %} <span class="text-fail">*</span>{% endif %}</span>
+            {# A refused field: its message under it, tied by aria-describedby; a number or date the server refused is shown as typed (a text field), since a number/date field can't hold it. #}
+            <div class="flex flex-col gap-1 min-w-0 {% if c.type == 'json' %}sm:col-span-2{% endif %}">
+                <label for="add_c_{{ c.key }}" class="text-xs text-muted"><span class="font-mono text-text break-all">{{ c.key }}</span> · {{ c.label }}{% if c.required %} <span class="text-fail">*</span>{% endif %}</label>
                 {% if c.type == "boolean" %}
-                <select name="c_{{ c.key }}" class="px-2.5 py-1.5 bg-ink border border-line rounded-lg text-text text-sm focus:outline-none focus:ring-2 focus:ring-ok/30">
+                <select name="c_{{ c.key }}" id="add_c_{{ c.key }}"{% if c.error %} aria-invalid="true" aria-describedby="add_c_{{ c.key }}_error"{% endif %} class="px-2.5 py-1.5 bg-ink border border-line rounded-lg text-text text-sm focus:outline-none focus:ring-2 focus:ring-ok/30">
                     <option value="">—</option>
                     <option value="true" {% if c.value == "true" %}selected{% endif %}>Yes</option>
                     <option value="false" {% if c.value == "false" %}selected{% endif %}>No</option>
                 </select>
                 {% elif c.type == "json" %}
-                <textarea name="c_{{ c.key }}" rows="3" spellcheck="false" placeholder='{"any": "JSON"}' class="px-2.5 py-1.5 bg-ink border border-line rounded-lg text-text text-sm font-mono placeholder-faint/60 focus:outline-none focus:ring-2 focus:ring-ok/30">{{ c.value }}</textarea>
+                <textarea name="c_{{ c.key }}" id="add_c_{{ c.key }}"{% if c.error %} aria-invalid="true" aria-describedby="add_c_{{ c.key }}_error"{% endif %} rows="3" spellcheck="false" placeholder='{"any": "JSON"}' class="px-2.5 py-1.5 bg-ink border border-line rounded-lg text-text text-sm font-mono placeholder-faint/60 focus:outline-none focus:ring-2 focus:ring-ok/30">{{ c.value }}</textarea>
                 {% else %}
-                <input name="c_{{ c.key }}" {% if c.type == "number" %}type="number" step="any"{% elif c.type == "date" %}type="date"{% elif c.type == "link" %}type="url" placeholder="https://"{% elif c.type == "datetime" %}type="text" placeholder="2026-11-12T09:30:00Z"{% else %}type="text"{% endif %}
+                <input name="c_{{ c.key }}" id="add_c_{{ c.key }}"{% if c.error %} aria-invalid="true" aria-describedby="add_c_{{ c.key }}_error"{% endif %}
+                       {% if c.type == "number" and c.as_typed %}type="text" inputmode="decimal"{% elif c.type == "number" %}type="number" step="any"{% elif c.type == "date" and c.as_typed %}type="text" placeholder="YYYY-MM-DD"{% elif c.type == "date" %}type="date"{% elif c.type == "link" %}type="url" placeholder="https://"{% elif c.type == "datetime" %}type="text" placeholder="2026-11-12T09:30:00Z"{% else %}type="text"{% endif %}
                        {% if c.value != "" %}value="{{ c.value }}"{% endif %}
                        class="px-2.5 py-1.5 bg-ink border border-line rounded-lg text-text text-sm placeholder-faint/60 focus:outline-none focus:ring-2 focus:ring-ok/30">
                 {% endif %}
-            </label>
+                {% if c.error %}<p id="add_c_{{ c.key }}_error" class="text-xs text-fail break-words">{{ c.error }}</p>{% endif %}
+            </div>
             {% endfor %}
         </div>
         <div class="flex justify-end">

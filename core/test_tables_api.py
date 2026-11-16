@@ -361,8 +361,10 @@ def _csv(*lines):
 
 class CsvTests(_Console):
     def test_auto_mapping(self):
-        mapping = csv_io.auto_mapping(["ID", "E-mail", "Email", " score ", "created_at", "x"], COLUMNS)
-        self.assertEqual(mapping, [None, None, "email", "score", None, None])
+        # 2.5 rc (O10-3): "E-mail" and "Email" both match `email`, so neither is guessed.
+        mapping, conflicts = csv_io.match_header(["ID", "E-mail", "Email", " score ", "created_at", "x"], COLUMNS)
+        self.assertEqual(mapping, [None, None, None, "score", None, None])
+        self.assertEqual(conflicts, ['CSV columns "E-mail" and "Email" all match the column "email".'])
 
     def upload(self, text, as_json=False, **extra):
         data = {"file": SimpleUploadedFile("rows.csv", text.encode("utf-8"), content_type="text/csv"), **extra}

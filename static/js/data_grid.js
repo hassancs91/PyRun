@@ -137,6 +137,14 @@
         function commit() {
             if (done) return;
             done = true;
+            // A number/date field the browser can't read reports an empty value: never save
+            // that as "empty the cell"; say so and keep the cell as it was.
+            if (field.validity && field.validity.badInput) {
+                toast('"' + td.dataset.col + '": that isn\'t a ' + (type === 'date' ? 'date' : 'number') +
+                    '; the cell was not changed.');
+                finish(td, before);
+                return;
+            }
             var raw = field.value;
             var original = value === null || value === undefined ? '' : String(value);
             if (raw === original) {

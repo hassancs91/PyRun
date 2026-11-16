@@ -6,9 +6,13 @@ A CSV cell is text. ``cell_from_csv`` turns it into the value ``clean_row``
 checks for the column (an empty cell is no value; a JSON column's text is
 parsed as JSON); ``cell_to_csv`` writes a stored value back the same way, so
 an exported table imports again unchanged. The header names the columns; a
-mapping says which header goes to which column (``auto_mapping`` matches them
-by key, ignoring case, spaces and dashes, and skips ``id`` / ``created_at`` /
-``updated_at``, which every row gets anew).
+mapping says which header goes to which column. Without one, ``match_header``
+pairs a header with the column key that reads the same once case, spaces,
+dashes and underscores are ignored ("E-Mail" fills ``email``; "Lead Score" and
+"lead-score" fill ``lead_score``), and skips ``id`` / ``created_at`` /
+``updated_at``, which every row gets anew. A match that isn't one to one (two
+headers for one key, or one header for two keys) is never guessed: the import
+is refused until a mapping says which is meant.
 
 An import is all or nothing: the whole file is checked first (every row
 against its columns, the row cap), and rows are written only when nothing
@@ -36,25 +40,51 @@ MAX_ERRORS = 20
 # A JSON cell may be as big as a row (256 KB); csv's default field limit is 128 KB.
 FIELD_LIMIT = 1024 * 1024
 _BATCH = 500
-_NORMALIZE = re.compile(r"[\s\-]+")
+# What header matching ignores besides case: whitespace, dashes and underscores.
+# The Import page's mapping step (static/js/table_import.js) is given this same pattern.
+SEPARATORS = r"[\s\-_]+"
+_SEPARATORS = re.compile(SEPARATORS)
 
 
-def _norm(text: str) -> str:
-    return _NORMALIZE.sub("_", (text or "").strip()).lower()
+def normalize_name(text: str) -> str:
+    """A header cell or column key as matched: lower case, no spaces, dashes or underscores."""
+    return _SEPARATORS.sub("", text or "").lower()
 
 
-def auto_mapping(header: list, columns: list) -> list:
-    """For each header cell, the column key it fills, or None (skipped)."""
-    by_norm = {_norm(c["key"]): c["key"] for c in columns}
-    mapping, used = [], set()
+def match_header(header: list, columns: list) -> tuple:
+    """``(mapping, conflicts)``: for each header cell the column key it fills
+    (None: skipped), and one sentence per match that isn't one to one.
+
+    A header that reads as ``id`` / ``created_at`` / ``updated_at`` is skipped.
+    An ambiguous header is left unmapped and named in ``conflicts``: two headers
+    that match the same key, or one header that matches two keys.
+    """
+    system = {normalize_name(name) for name in SYSTEM_FIELDS}
+    keys_by_norm = {}
+    for column in columns:
+        keys_by_norm.setdefault(normalize_name(column["key"]), []).append(column["key"])
+    candidates = []
     for name in header:
-        key = by_norm.get(_norm(name))
-        if key is None or key in used or _norm(name) in SYSTEM_FIELDS:
+        norm = normalize_name(name)
+        candidates.append([] if norm in system else keys_by_norm.get(norm, []))
+    headers_by_key = {}
+    for name, keys in zip(header, candidates):
+        if len(keys) == 1:
+            headers_by_key.setdefault(keys[0], []).append(name)
+    mapping, conflicts, reported = [], [], set()
+    for name, keys in zip(header, candidates):
+        if len(keys) > 1:
             mapping.append(None)
+            conflicts.append(f'CSV column "{name}" matches more than one column ({", ".join(keys)}).')
+        elif keys and len(headers_by_key[keys[0]]) > 1:
+            mapping.append(None)
+            if keys[0] not in reported:
+                reported.add(keys[0])
+                names = " and ".join(f'"{h}"' for h in headers_by_key[keys[0]])
+                conflicts.append(f'CSV columns {names} all match the column "{keys[0]}".')
         else:
-            mapping.append(key)
-            used.add(key)
-    return mapping
+            mapping.append(keys[0] if keys else None)
+    return mapping, conflicts
 
 
 def check_mapping(mapping: list, header: list, columns: list) -> list:
@@ -229,11 +259,17 @@ def import_csv(table, text_file, *, mapping=None, dry_run=False, user=None) -> d
 
 def resolve_mapping(header, mapping, columns) -> list:
     """The checked mapping for ``header``: ``mapping`` as given (a list, one
-    key or None per header cell, or a ``{header: key}`` dict), else matched by name."""
+    key or None per header cell, or a ``{header: key}`` dict), else matched by
+    name (``match_header``); an ambiguous match is refused, never guessed."""
     if not isinstance(header, list) or not header or not all(isinstance(h, str) for h in header):
         raise TableError("header must be the CSV's first line: a list of names.", "invalid")
     if mapping is None:
-        mapping = auto_mapping(header, columns)
+        mapping, conflicts = match_header(header, columns)
+        if conflicts:
+            raise TableError(
+                " ".join(conflicts) + " Say which CSV column fills which table column with a column mapping.",
+                "invalid",
+            )
     elif isinstance(mapping, dict):
         unknown = sorted(str(k) for k in mapping if k not in header)
         if unknown:

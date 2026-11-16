@@ -32,9 +32,12 @@ Rows are dicts with ``id``, every column, ``created_at`` and ``updated_at``
 false). ``order`` is a field name, ``-field`` for descending, or a list.
 
 CSV: the first line names the columns. ``import_csv`` matches the header
-cells to column keys by name (ignoring case, spaces and dashes; ``id``,
-``created_at`` and ``updated_at`` are skipped) unless you pass ``mapping``
-(``{"CSV header": "column_key"}``; a header you leave out is skipped). An
+cells to column keys by name, ignoring case, spaces, dashes and underscores
+("E-Mail" fills ``email``, "Lead Score" fills ``lead_score``; ``id``,
+``created_at`` and ``updated_at`` are skipped), unless you pass ``mapping``
+(``{"CSV header": "column_key"}``; a header you leave out is skipped). Two
+headers that match one column, or one header that matches two, are never
+guessed: ``import_csv`` raises ``TableError`` until ``mapping`` says which. An
 empty cell is no value; a JSON column's cell is parsed as JSON. Every line is
 checked first; if any fails, nothing is written and the report lists the
 first errors with their line numbers. The lines are then written in batches

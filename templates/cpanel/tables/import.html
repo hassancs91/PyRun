@@ -1,4 +1,5 @@
 {% extends "cpanel/layout.html" %}
+{% load static %}
 
 {% block title %}Import CSV - {{ table.name }} - Tables - {{ instance_name }}{% endblock %}
 
@@ -12,7 +13,7 @@
 
 {% block page %}
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
-    <form method="post" enctype="multipart/form-data" id="csv-import" class="lg:col-span-2 max-w-3xl w-full rounded-2xl border border-line bg-panel p-6 space-y-5">
+    <form method="post" enctype="multipart/form-data" id="csv-import" data-columns="{{ columns_json }}" data-system="{{ system_json }}" data-separators="{{ separators }}" class="lg:col-span-2 max-w-3xl w-full rounded-2xl border border-line bg-panel p-6 space-y-5">
         {% csrf_token %}
         {% if error %}
         <div class="rounded-xl border border-fail/30 bg-fail/10 p-4" role="alert"><p class="text-sm text-text">{{ error }}</p></div>
@@ -50,118 +51,14 @@
 
     <div class="rounded-2xl border border-line bg-panel p-5 space-y-2">
         <h3 class="text-sm font-medium text-text">How it works</h3>
-        <p class="text-sm text-muted">CSV columns are matched to table columns by name (ignoring case, spaces and dashes); <code class="font-mono">id</code>, <code class="font-mono">created_at</code> and <code class="font-mono">updated_at</code> are skipped, since every row gets new ones. An empty cell is no value; a JSON column's cell is read as JSON.</p>
+        <p class="text-sm text-muted">CSV columns are matched to table columns by name, ignoring case, spaces, dashes and underscores (“E-Mail” fills <code class="font-mono">email</code>, “Lead Score” fills <code class="font-mono">lead_score</code>); <code class="font-mono">id</code>, <code class="font-mono">created_at</code> and <code class="font-mono">updated_at</code> are skipped, since every row gets new ones. When two CSV columns match one table column, or one matches two, nothing is guessed: choose under Columns once the file is picked. An empty cell is no value; a JSON column's cell is read as JSON.</p>
         <p class="text-sm text-muted">The whole file is checked first. If any line fails, nothing is written and the first errors are listed with their line numbers. A file exported from this page imports again unchanged.</p>
         <p class="text-sm text-muted">Columns: {% for c in table.columns %}<code class="font-mono text-text">{{ c.key }}</code>{% if c.required %} <span class="text-fail">*</span>{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}</p>
     </div>
 </div>
 
-<script>
-(function () {
-    var columns = JSON.parse("{{ columns_json|escapejs }}");
-    var form = document.getElementById("csv-import");
-    var file = document.getElementById("id_file");
-    var box = document.getElementById("csv-mapping");
-    var rows = document.getElementById("csv-mapping-rows");
-    var hidden = document.getElementById("id_mapping");
-    var report = document.getElementById("csv-report");
-    var header = [];
+{% endblock %}
 
-    function norm(s) { return (s || "").trim().replace(/[\s\-]+/g, "_").toLowerCase(); }
-
-    // The first record of a CSV text (quotes and doubled quotes handled).
-    function firstRecord(text) {
-        var cells = [], cell = "", quoted = false, i = 0;
-        if (text.charCodeAt(0) === 0xFEFF) { i = 1; }
-        for (; i < text.length; i++) {
-            var ch = text[i];
-            if (quoted) {
-                if (ch === '"' && text[i + 1] === '"') { cell += '"'; i++; }
-                else if (ch === '"') { quoted = false; }
-                else { cell += ch; }
-            } else if (ch === '"') { quoted = true; }
-            else if (ch === ",") { cells.push(cell); cell = ""; }
-            else if (ch === "\n" || ch === "\r") { break; }
-            else { cell += ch; }
-        }
-        cells.push(cell);
-        return cells;
-    }
-
-    // One column key (or null: skipped) per header cell, in order, so repeated header names stay apart.
-    function syncMapping() {
-        var mapping = [];
-        rows.querySelectorAll("select").forEach(function (sel) {
-            mapping.push(sel.value || null);
-        });
-        hidden.value = header.length ? JSON.stringify(mapping) : "";
-    }
-
-    function buildMapping() {
-        rows.textContent = "";
-        var used = {};
-        header.forEach(function (name) {
-            var match = "";
-            if (["id", "created_at", "updated_at"].indexOf(norm(name)) < 0) {
-                columns.forEach(function (key) { if (!match && !used[key] && norm(key) === norm(name)) { match = key; } });
-            }
-            if (match) { used[match] = true; }
-            var line = document.createElement("label");
-            line.className = "grid grid-cols-1 sm:grid-cols-2 gap-2 items-center";
-            var title = document.createElement("span");
-            title.className = "text-sm font-mono text-text truncate";
-            title.textContent = name || "(no name)";
-            var sel = document.createElement("select");
-            sel.className = "px-2.5 py-1.5 bg-ink border border-line rounded-lg text-text text-sm focus:outline-none focus:ring-2 focus:ring-ok/30";
-            var skip = document.createElement("option");
-            skip.value = ""; skip.textContent = "Skip";
-            sel.appendChild(skip);
-            columns.forEach(function (key) {
-                var opt = document.createElement("option");
-                opt.value = key; opt.textContent = key;
-                if (key === match) { opt.selected = true; }
-                sel.appendChild(opt);
-            });
-            sel.addEventListener("change", syncMapping);
-            line.appendChild(title);
-            line.appendChild(sel);
-            rows.appendChild(line);
-        });
-        box.hidden = !header.length;
-        syncMapping();
-    }
-
-    file.addEventListener("change", function () {
-        header = [];
-        report.textContent = "";
-        if (!file.files.length) { buildMapping(); return; }
-        var reader = new FileReader();
-        reader.onload = function () { header = firstRecord(String(reader.result)); buildMapping(); };
-        reader.readAsText(file.files[0].slice(0, 65536));
-    });
-
-    // A dry run answers in place, so the chosen file stays for the import.
-    form.addEventListener("submit", function (event) {
-        if (!document.getElementById("id_dry_run").checked || !window.fetch) { return; }
-        event.preventDefault();
-        report.textContent = "Checking…";
-        fetch(form.action || window.location.href, {
-            method: "POST", body: new FormData(form), headers: {"Accept": "application/json"}, credentials: "same-origin"
-        }).then(function (resp) { return resp.json(); }).then(function (data) {
-            report.textContent = "";
-            var p = document.createElement("p");
-            p.className = "text-sm text-text rounded-xl border border-line-soft bg-ink p-4";
-            if (data.error) {
-                p.textContent = data.error;
-            } else if (data.error_count) {
-                p.textContent = data.rows + " rows checked; " + data.error_count + " can't be imported. " +
-                    data.errors.map(function (e) { return (e.line ? "Line " + e.line + ": " : "") + e.message; }).join(" ");
-            } else {
-                p.textContent = data.rows + " rows would be imported. Untick Dry run and import.";
-            }
-            report.appendChild(p);
-        }).catch(function () { report.textContent = "The check failed. Try again."; });
-    });
-})();
-</script>
+{% block extra_scripts %}
+<script src="{% static 'js/table_import.js' %}"></script>
 {% endblock %}

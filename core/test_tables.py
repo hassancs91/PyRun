@@ -579,7 +579,8 @@ class ConsoleTests(_Console):
         self.assertEqual(added.data, {"email": "b@x", "active": False, "meta": {"x": 1}, "joined": "2026-05-06"})
         self.assertEqual(added.created_by, self.user)
         resp = self.client.post(reverse("cpanel:table_row_add", args=[self.table.pk]), {"c_score": "1"}, follow=True)
-        self.assertContains(resp, "Required column without a value: email")
+        self.assertContains(resp, '<p id="add_c_email_error" class="text-xs text-fail break-words">Required: give it a '
+                                  'value.</p>', html=False)
         resp = self.client.post(reverse("cpanel:table_row_delete", args=[self.table.pk, added.id]),
                                 {"next": "?sort=-score&page=2"})
         self.assertRedirects(resp, reverse("cpanel:table_detail", args=[self.table.pk]) + "?sort=-score&page=2",
@@ -595,11 +596,14 @@ class ConsoleTests(_Console):
             "c_email": "", "c_score": "lots", "c_site": "not a link", "c_meta": "{bad",
             "c_joined": "2026-05-06", "c_active": "false",
         }, follow=True)
-        errors = [str(m) for m in resp.context["messages"] if m.level_tag == "error"]
-        self.assertEqual(len(errors), 4, errors)
-        joined = " ".join(errors)
-        for needle in ('"score"', '"site"', '"meta": not valid JSON', "Required column without a value: email"):
-            self.assertIn(needle, joined)
+        # 2.5 rc (O6): each error under its own field, not one message (toast) per column.
+        self.assertEqual([m for m in resp.context["messages"] if m.level_tag == "error"], [])
+        errors = {c["key"]: c["error"] for c in resp.context["add_columns"] if c["error"]}
+        self.assertEqual(set(errors), {"email", "score", "site", "meta"})
+        self.assertIn('"score"', errors["score"])
+        self.assertIn('"site"', errors["site"])
+        self.assertTrue(errors["meta"].startswith("Not valid JSON ("), errors["meta"])
+        self.assertEqual(errors["email"], "Required: give it a value.")
         self.assertEqual(TableRow.objects.filter(table=self.table).count(), 1)
         body = resp.content.decode()
         self.assertIn('value="lots"', body)

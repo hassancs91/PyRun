@@ -23,7 +23,7 @@ from django.views.decorators.http import require_POST
 from core.grid import Grid, GridColumn, display_value, json_cell_value, next_querystring
 from core.models import Table
 from core.tables import csv_io
-from core.tables.columns import TYPE_LABELS, TYPES, coerce
+from core.tables.columns import SYSTEM_FIELDS, TYPE_LABELS, TYPES, coerce
 from core.tables.errors import TableError
 from core.tables.forms import TableForm
 from core.tables.service import TableService
@@ -145,8 +145,9 @@ def _filtered_rows(table, grid):
 @login_required
 def table_detail_view(request: HttpRequest, pk) -> HttpResponse:
     table = _table_or_404(request, pk)
-    # What was typed into a refused Add row form (table_row_add_view).
+    # What was typed into a refused Add row form, and each field's error (table_row_add_view).
     kept = request.session.pop(_kept_key(table), None)
+    add_errors = request.session.pop(_errors_key(table), None) or {}
     grid = Grid.from_request(
         request, _grid_columns(table), default_sort="id", editable=True,
         add_url=reverse("cpanel:table_row_add", kwargs={"pk": table.pk}), csrf_token=get_token(request),
@@ -165,28 +166,35 @@ def table_detail_view(request: HttpRequest, pk) -> HttpResponse:
     grid.set_rows(rows, total)
     query = request.GET.copy()
     query.pop("page", None)
+    add_columns = _add_columns(table, kept, add_errors)
     return render(request, "cpanel/tables/detail.html", {
         "table": table, "grid": grid,
         "export_url": reverse("cpanel:table_export", kwargs={"pk": table.pk})
         + (f"?{query.urlencode()}" if query else ""),
-        "add_columns": _add_columns(table, kept),
+        "add_columns": add_columns,
+        # Counted from the fields shown (a column removed since the submit has no field).
+        "add_error_count": sum(1 for c in add_columns if c["error"]),
         "add_open": not grid.total or kept is not None,
         "cap_percent": min(100, round(table.row_count * 100 / table.row_cap)) if table.row_cap else 0,
     })
 
 
-def _back(request, table, next_qs=None) -> HttpResponse:
+def _back(request, table, next_qs=None, anchor="") -> HttpResponse:
     next_qs = next_qs if next_qs is not None else request.POST.get("next", "")
-    return redirect(reverse("cpanel:table_detail", kwargs={"pk": table.pk}) + next_querystring(next_qs))
+    return redirect(reverse("cpanel:table_detail", kwargs={"pk": table.pk}) + next_querystring(next_qs) + anchor)
 
 
 def _kept_key(table) -> str:
     return f"pyrun_table_add_{table.pk}"
 
 
-def _add_columns(table, kept):
-    """The Add row form's fields, each with the value to show: what was typed
-    before a refused submit (``kept``), else the column's default."""
+def _errors_key(table) -> str:
+    return f"pyrun_table_add_errors_{table.pk}"
+
+
+def _add_columns(table, kept, errors):
+    """The Add row form's fields, each with the value to show (what was typed
+    before a refused submit, ``kept``, else the column's default) and its error."""
     columns = []
     for c in table.columns:
         if kept is not None:
@@ -197,8 +205,44 @@ def _add_columns(table, kept):
             value = "true" if c["default"] else "false"
         else:
             value = str(c["default"])
-        columns.append(dict(c, label=TYPE_LABELS[c["type"]], value=value))
+        error = errors.get(c["key"], "")
+        columns.append(dict(
+            c, label=TYPE_LABELS[c["type"]], value=value, error=error,
+            # A refused number or date goes back in a text field: a number/date field would show it empty.
+            as_typed=bool(error and value and c["type"] in ("number", "date")),
+        ))
     return columns
+
+
+def _add_row_errors(columns: list, post) -> tuple:
+    """``(typed, values, errors)`` for an Add row submit: what was typed per
+    column key, the values to insert, and ``{column key: message}`` for each
+    column the row can't take (a bad value, or a required column left empty)."""
+    typed, values, errors = {}, {}, {}
+    for column in columns:
+        key, name = column["key"], f"c_{column['key']}"
+        if name not in post:
+            continue
+        raw = typed[key] = post.get(name, "")
+        if column["type"] == "json" and raw.strip():
+            try:
+                raw = json.loads(raw)
+            except ValueError as exc:
+                errors[key] = f"Not valid JSON ({exc})."
+                continue
+        if raw == "":
+            continue
+        try:
+            coerce(column, raw)
+        except TableError as exc:
+            errors[key] = exc.message
+            continue
+        values[key] = raw
+    for column in columns:
+        key = column["key"]
+        if column.get("required") and column.get("default") is None and key not in values and key not in errors:
+            errors[key] = "Required: give it a value."
+    return typed, values, errors
 
 
 @login_required
@@ -206,49 +250,23 @@ def _add_columns(table, kept):
 def table_row_add_view(request: HttpRequest, pk) -> HttpResponse:
     """The grid's Add row form: one field ``c_<key>`` per column (empty = no value).
 
-    Every bad column is reported at once, and a refused row comes back with
-    what was typed (kept in the session for the next page view).
+    Every bad column is reported at once, each under its own field, and a
+    refused row comes back with what was typed (both kept in the session for
+    the next page view). An error that isn't one field's (the row limit) is a
+    message.
     """
     table = _table_or_404(request, pk)
-    typed, values, errors, bad = {}, {}, [], set()
-    for column in table.columns:
-        name = f"c_{column['key']}"
-        if name not in request.POST:
-            continue
-        raw = typed[column["key"]] = request.POST.get(name, "")
-        if column["type"] == "json" and raw.strip():
-            try:
-                raw = json.loads(raw)
-            except ValueError as exc:
-                errors.append(f'Column "{column["key"]}": not valid JSON ({exc}).')
-                bad.add(column["key"])
-                continue
-        if raw == "":
-            continue
-        try:
-            coerce(column, raw)
-        except TableError as exc:
-            errors.append(exc.message)
-            bad.add(column["key"])
-            continue
-        values[column["key"]] = raw
-    missing = [
-        c["key"] for c in table.columns
-        if c.get("required") and c.get("default") is None and c["key"] not in values
-        and c["key"] not in bad
-    ]
-    if missing:
-        errors.append(f"Required column{'s' if len(missing) > 1 else ''} without a value: {', '.join(missing)}.")
+    typed, values, errors = _add_row_errors(table.columns, request.POST)
+    row = None
     if not errors:
         try:
             row = TableService.insert(table, [values], user=request.user)[0]
         except TableError as exc:
-            errors.append(exc.message)
-    if errors:
-        for error in errors:
-            messages.error(request, error)
+            messages.error(request, exc.message)
+    if row is None:
         request.session[_kept_key(table)] = typed
-        return _back(request, table)
+        request.session[_errors_key(table)] = errors
+        return _back(request, table, anchor="#add-row")
     messages.success(request, f"Row {row.id} added.")
     return _back(request, table, "?sort=-id")
 
@@ -322,7 +340,9 @@ def table_import_view(request: HttpRequest, pk) -> HttpResponse:
     """
     table = _table_or_404(request, pk)
     context = {"table": table, "columns_json": json.dumps([c["key"] for c in table.columns]),
-               "max_mb": csv_io.MAX_IMPORT_BYTES // (1024 * 1024)}
+               "max_mb": csv_io.MAX_IMPORT_BYTES // (1024 * 1024),
+               # The mapping step's prefill matches names as csv_io.match_header does.
+               "separators": csv_io.SEPARATORS, "system_json": json.dumps(SYSTEM_FIELDS)}
     if request.method != "POST":
         return render(request, "cpanel/tables/import.html", context)
     wants_json = "application/json" in request.headers.get("Accept", "")
