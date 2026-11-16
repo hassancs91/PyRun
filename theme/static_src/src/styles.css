@@ -36,11 +36,21 @@
     --text: 16 21 28;
     --muted: 90 100 115;
     --faint: 103 112 126;
-    --ok: 22 163 87;
-    --warn: 193 124 18;
-    --fail: 216 64 70;
+    /* Status fills (buttons, dots, tints, borders): dark enough that a
+       button's text-ink label reads at 4.5:1. */
+    --ok: 18 130 70;
+    --warn: 157 101 15;
+    --fail: 204 60 66;
     --info: 41 102 226;
-    --accent: 22 163 87;
+    --accent: 18 130 70;
+    /* Status TEXT (text-ok / text-warn / text-fail / text-accent, see
+       tailwind.config.js textColor): darker again, so it reads at 4.5:1 on
+       ink, panel and panel-hi AND on its own /5-/20 tint over them (pills,
+       banners, hover). Light theme only; dark uses the fill values. */
+    --ok-text: 15 110 59;
+    --warn-text: 132 85 12;
+    --fail-text: 170 50 55;
+    --accent-text: 15 110 59;
 
     /* Legacy code-* tokens (light) */
     --code-bg: 255 255 255;
@@ -70,6 +80,10 @@
     --fail: 251 110 114;
     --info: 91 156 255;
     --accent: 52 211 153;
+    --ok-text: 52 211 153;
+    --warn-text: 245 181 68;
+    --fail-text: 251 110 114;
+    --accent-text: 52 211 153;
 
     /* Legacy code-* tokens (dark) — identical to the original values */
     --code-bg: 13 17 23;

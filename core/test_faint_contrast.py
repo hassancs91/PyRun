@@ -7,6 +7,12 @@ Test pass 9: the colour tokens hold bare RGB channels ("16 19 27"), so a
 template's own CSS must wrap them in ``rgb()``; a bare ``var(--panel)`` is an
 invalid colour and the browser drops it (the Restarting page lost its card,
 spinner and progress-bar colours that way).
+
+Run 7 (O3): in the light theme the status colours read at 4.5:1 too. Text
+(``text-ok`` / ``text-warn`` / ``text-fail`` / ``text-accent``) has its own
+darker ``--*-text`` tokens, checked on the backgrounds and on its own /5-/20
+tints over them (pills, banners, hover); the fills are dark enough that a
+button's ``text-ink`` label reads at 4.5:1. The dark theme keeps its values.
 """
 
 import re
@@ -18,7 +24,10 @@ from django.test import SimpleTestCase
 SOURCE = Path(settings.BASE_DIR) / "theme" / "static_src" / "src" / "styles.css"
 TEMPLATES = Path(settings.BASE_DIR) / "templates"
 BUILT = Path(settings.BASE_DIR) / "theme" / "static" / "css" / "dist" / "styles.css"
+TAILWIND = Path(settings.BASE_DIR) / "theme" / "static_src" / "tailwind.config.js"
 BACKGROUNDS = ("ink", "panel", "panel-hi")
+STATUSES = ("ok", "warn", "fail", "accent")
+TINTS = (0.05, 0.06, 0.10, 0.15, 0.20)  # bg-*/5 to hover:bg-*/20; .pyai-error uses .06
 
 
 def _tokens(css, selector):
@@ -40,6 +49,10 @@ def _ratio(a, b):
     return (high + 0.05) / (low + 0.05)
 
 
+def _over(colour, background, alpha):
+    return tuple(round(alpha * c + (1 - alpha) * b) for c, b in zip(colour, background))
+
+
 class FaintContrastTests(SimpleTestCase):
     def test_faint_text_is_at_least_4_5_to_1_in_both_themes(self):
         css = SOURCE.read_text(encoding="utf-8")
@@ -56,6 +69,56 @@ class FaintContrastTests(SimpleTestCase):
             faint = " ".join(str(c) for c in _tokens(source, selector)["faint"])
             with self.subTest(selector=selector):
                 self.assertIn(f"--faint:{faint}", built.replace(": ", ":"))
+
+
+class StatusContrastTests(SimpleTestCase):
+    def setUp(self):
+        css = SOURCE.read_text(encoding="utf-8")
+        self.light = _tokens(css, ":root")
+        self.dark = _tokens(css, ".dark")
+
+    def test_status_text_is_at_least_4_5_to_1_on_backgrounds_and_tints(self):
+        for theme, tokens in (("light", self.light), ("dark", self.dark)):
+            for status in STATUSES:
+                text, fill = tokens[f"{status}-text"], tokens[status]
+                for name in BACKGROUNDS:
+                    background = tokens[name]
+                    with self.subTest(theme=theme, status=status, background=name):
+                        self.assertGreaterEqual(_ratio(text, background), 4.5)
+                    for alpha in TINTS:
+                        with self.subTest(theme=theme, status=status, background=name, tint=alpha):
+                            self.assertGreaterEqual(_ratio(text, _over(fill, background, alpha)), 4.5)
+
+    def test_a_label_on_a_status_fill_is_at_least_4_5_to_1(self):
+        # Primary buttons and solid badges: bg-ok / bg-warn / bg-fail with text-ink.
+        for theme, tokens in (("light", self.light), ("dark", self.dark)):
+            for status in STATUSES:
+                with self.subTest(theme=theme, status=status):
+                    self.assertGreaterEqual(_ratio(tokens["ink"], tokens[status]), 4.5)
+
+    def test_the_dark_theme_text_uses_the_fill_colours(self):
+        for status in STATUSES:
+            with self.subTest(status=status):
+                self.assertEqual(self.dark[f"{status}-text"], self.dark[status])
+
+    def test_tailwind_text_utilities_use_the_text_tokens(self):
+        config = TAILWIND.read_text(encoding="utf-8")
+        block = re.search(r"textColor:\s*\{(.*?)\}", config, re.S).group(1)
+        for status in STATUSES:
+            with self.subTest(status=status):
+                self.assertRegex(block, rf"\b{status}:\s*v\('--{status}-text'\)")
+
+    def test_the_built_stylesheet_has_the_same_status_values(self):
+        source = SOURCE.read_text(encoding="utf-8")
+        built = BUILT.read_text(encoding="utf-8").replace(": ", ":")
+        for selector in (":root", ".dark"):
+            tokens = _tokens(source, selector)
+            for status in STATUSES:
+                for name in (status, f"{status}-text"):
+                    value = " ".join(str(c) for c in tokens[name])
+                    with self.subTest(selector=selector, token=name):
+                        self.assertIn(f"--{name}:{value}", built)
+        self.assertIn("rgb(var(--ok-text)", built)
 
 
 class TemplateColourTokenTests(SimpleTestCase):

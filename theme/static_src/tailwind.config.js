@@ -55,6 +55,15 @@ module.exports = {
                 'code-red': v('--code-red'),
                 'code-purple': v('--code-purple'),
             },
+            // Status text has its own, darker tokens in the light theme
+            // (4.5:1 on the console backgrounds and on its own tints); the
+            // bg-/border-/ring- utilities keep the fill tokens above.
+            textColor: {
+                ok: v('--ok-text'),
+                warn: v('--warn-text'),
+                fail: v('--fail-text'),
+                accent: v('--accent-text'),
+            },
             fontFamily: {
                 sans: ['Inter', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
                 mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Consolas', 'monospace'],
