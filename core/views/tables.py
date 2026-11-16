@@ -26,7 +26,7 @@ from core.tables import csv_io
 from core.tables.columns import SYSTEM_FIELDS, TYPE_LABELS, TYPES, coerce
 from core.tables.errors import TableError
 from core.tables.forms import TableForm
-from core.tables.service import TableService
+from core.tables.service import TableService, row_cap_error
 from core.views.ownership import owned_block_message, owned_delete_blocked
 
 
@@ -257,6 +257,11 @@ def table_row_add_view(request: HttpRequest, pk) -> HttpResponse:
     """
     table = _table_or_404(request, pk)
     typed, values, errors = _add_row_errors(table.columns, request.POST)
+    if errors and table.at_cap:
+        # A full table's page has no Add row form (detail.html), so errors kept
+        # for its fields would never be seen: the row limit is the reason to give.
+        messages.error(request, row_cap_error(table, table.row_count).message)
+        return _back(request, table)
     row = None
     if not errors:
         try:

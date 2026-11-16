@@ -34,7 +34,7 @@ from core.tables.errors import TableError
 from core.tables.service import TableService
 from core.test_tables import _Console, _HelperFixture
 from core.test_tables_api import _csv
-from core.views.tables import _add_row_errors
+from core.views.tables import _add_row_errors, _errors_key
 
 HEADER_COLUMNS = [
     {"key": "email", "type": "text"},
@@ -99,6 +99,20 @@ class AddRowFieldErrorTests(_Console):
         self.assertIn("fix the field marked below.", body)
         self.assertRegex(body, r'id="add_c_qty" aria-invalid="true" aria-describedby="add_c_qty_error"\s+'
                                r'type="number"')
+
+    def test_a_full_table_says_the_row_limit_instead_of_hidden_field_errors(self):
+        # Test pass 11: a full table's page has no Add row form, so a bad row sent
+        # from a page opened before the table filled up got no word back at all.
+        with self.settings(PYRUNNER_TABLE_ROW_CAP=1):
+            resp = self.client.post(self.url, {"c_email": "", "c_score": "12abc"}, follow=True)
+            self.assertEqual(
+                [str(m) for m in resp.context["messages"] if m.level_tag == "error"],
+                [f'Table "{self.table.name}" holds 1 of its 1-row limit, so 1 more row won\'t fit. '
+                 "For bigger data use a managed Database."],
+            )
+            self.assertNotIn(_errors_key(self.table), self.client.session)
+            self.assertNotIn('aria-invalid="true"', resp.content.decode())
+        self.assertEqual(TableRow.objects.filter(table=self.table).count(), 1)
 
     def test_an_error_that_is_not_a_fields_stays_a_message(self):
         with mock.patch.object(TableService, "insert", side_effect=TableError("The table is full.", "row_cap")):

@@ -66,6 +66,15 @@ def _check_size(data: dict) -> None:
         )
 
 
+def row_cap_error(table: Table, current: int, n: int = 1) -> TableError:
+    """The refusal for ``n`` more rows that don't fit next to the ``current`` ones."""
+    return TableError(
+        f'Table "{table.name}" holds {current:,} of its {settings.PYRUNNER_TABLE_ROW_CAP:,}-row limit, so {n:,} more '
+        f"row{'s' if n > 1 else ''} won't fit. For bigger data use a managed Database.",
+        "row_cap",
+    )
+
+
 def serialize_row(row: TableRow, columns: list) -> dict:
     """``{"id", <every column>, "created_at", "updated_at"}``; an empty cell is None."""
     out = {"id": row.id}
@@ -249,11 +258,7 @@ class TableService:
             )
             if not reserved:
                 current = Table.objects.filter(pk=table.pk).values_list("row_count", flat=True).first() or 0
-                raise TableError(
-                    f'Table "{table.name}" holds {current:,} of its {cap:,}-row limit, so {n:,} more '
-                    f"row{'s' if n > 1 else ''} won't fit. For bigger data use a managed Database.",
-                    "row_cap",
-                )
+                raise row_cap_error(table, current, n)
             created = TableRow.objects.bulk_create(objs, batch_size=_BATCH)
         table.row_count = (table.row_count or 0) + n
         return created
