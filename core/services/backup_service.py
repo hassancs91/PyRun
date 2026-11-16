@@ -1844,7 +1844,7 @@ class BackupService:
                 backup_data.get("workspaces", []), default_ws, current_user
             )
 
-            user_map = cls._import_users(backup_data.get("users", []), current_user)
+            user_map = cls._import_users(backup_data.get("users", []), current_user, warnings)
             env_map = cls._import_environments(backup_data.get("environments", []), user_map, current_user, ws_map, default_ws)
             # Secret providers first (external secrets relink to them by name).
             # Upsert, not full-replace: an older backup omits the key → no-op, and
@@ -2110,10 +2110,13 @@ class BackupService:
         return ws_map.get(workspace_id, default_ws)
 
     @classmethod
-    def _import_users(cls, users_data: List[dict], current_user) -> dict:
+    def _import_users(cls, users_data: List[dict], current_user, warnings: List[str] | None = None) -> dict:
         """
         Import users and create email->user mapping.
         Maps all to current user for simplicity.
+
+        Two-factor set-ups this server can't decrypt are skipped and counted in
+        one line added to ``warnings``.
 
         Returns:
             dict: {"email@example.com": User instance}
@@ -2133,6 +2136,7 @@ class BackupService:
         # Accounts are never created or changed by a restore, except one
         # preference: the sign-in alert opt-in (2.5 T45) goes back onto the
         # existing account with the same email. Older backups lack the key.
+        two_factor_skipped = 0
         for user_data in users_data:
             email = user_data.get("email")
             if email and "notify_on_login" in user_data:
@@ -2140,12 +2144,20 @@ class BackupService:
                     notify_on_login=bool(user_data["notify_on_login"])
                 )
             if email and isinstance(user_data.get("two_factor"), dict):
-                cls._import_two_factor(email, user_data["two_factor"])
+                if cls._import_two_factor(email, user_data["two_factor"]) == "undecryptable":
+                    two_factor_skipped += 1
+        if two_factor_skipped and warnings is not None:
+            accounts = "1 account" if two_factor_skipped == 1 else f"{two_factor_skipped} accounts"
+            they = "that account signs" if two_factor_skipped == 1 else "those accounts sign"
+            warnings.append(
+                f"Two-factor sign-in for {accounts} wasn't restored: the backup was made with another "
+                f"ENCRYPTION_KEY; {they} in with the password only."
+            )
 
         return user_map
 
     @classmethod
-    def _import_two_factor(cls, email: str, data: dict) -> None:
+    def _import_two_factor(cls, email: str, data: dict) -> str | None:
         """Put a backed-up authenticator back onto the same-email account (2.5 T46).
 
         Only onto an account with no confirmed authenticator of its own (a
@@ -2153,6 +2165,9 @@ class BackupService:
         decrypts with this server's ENCRYPTION_KEY; otherwise the account is
         left as it is. Older backups and users without two-factor carry no
         ``two_factor`` key and change nothing.
+
+        Returns "undecryptable" when the secret was skipped because it doesn't
+        decrypt here (the caller warns about those), otherwise None.
         """
         from core.models import RecoveryCode, UserTOTP
 
@@ -2166,7 +2181,7 @@ class BackupService:
             EncryptionService.decrypt(secret_encrypted)
         except EncryptionError:
             logger.warning("Restore: two-factor sign-in for %s not restored (the secret doesn't decrypt here)", email)
-            return
+            return "undecryptable"
         hashes = [
             h for h in data.get("recovery_code_hashes") or []
             if isinstance(h, str) and len(h) == 64

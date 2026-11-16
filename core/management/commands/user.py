@@ -238,9 +238,13 @@ class Command(BaseCommand):
 
     def _disable_2fa(self, options):
         user = self._get_user(options["email"])
-        if not two_factor.disable(user):
+        if not two_factor.is_enabled(user):
+            # A set-up that was started but never confirmed never guarded a
+            # sign-in: clear it quietly, without a security event.
+            two_factor.disable(user)
             self.stdout.write(f"{user.email} doesn't use two-factor sign-in.")
             return
+        two_factor.disable(user)
         security_events.record("2fa_disable", user=user, detail="manage.py user disable-2fa")
         logger.info("CLI: two-factor sign-in turned off for %s", user.email)
         self.stdout.write(self.style.SUCCESS(f"Two-factor sign-in is off for {user.email}."))

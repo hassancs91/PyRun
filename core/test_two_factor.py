@@ -648,6 +648,17 @@ class DisableCommandTests(TestCase):
         self.assertIn("doesn't use two-factor sign-in", out.getvalue())
         self.assertFalse(SecurityEvent.objects.exists())
 
+    def test_a_set_up_never_confirmed_counts_as_none_and_is_cleared_quietly(self):
+        # Run 7 O1: a pending row (the forced set-up page or "Set up" creates
+        # one) never guarded a sign-in, so there is nothing to turn off.
+        two_factor.begin_enrollment(self.user)
+        out = io.StringIO()
+        call_command("user", "disable-2fa", "c@example.com", stdout=out)
+        self.assertIn("c@example.com doesn't use two-factor sign-in.", out.getvalue())
+        self.assertNotIn("is off", out.getvalue())
+        self.assertFalse(UserTOTP.objects.filter(user=self.user).exists())
+        self.assertFalse(SecurityEvent.objects.filter(kind="2fa_disable").exists())
+
     def test_unknown_account(self):
         with self.assertRaises(CommandError):
             call_command("user", "disable-2fa", "ghost@example.com", stdout=io.StringIO())
@@ -668,7 +679,9 @@ class BackupTests(TestCase):
     def _restore(self, data):
         from core.services.backup_service import BackupService
 
-        BackupService.restore_backup(data, restore_runs=False, current_user=self.admin)
+        result = BackupService.restore_backup(data, restore_runs=False, current_user=self.admin)
+        self.assertTrue(result["success"], result)
+        return result
 
     def test_export_carries_the_encrypted_secret_and_code_hashes_only(self):
         secret, codes = _enroll(self.admin)
@@ -711,8 +724,45 @@ class BackupTests(TestCase):
         for user in data["users"]:
             if "two_factor" in user:
                 user["two_factor"]["secret_encrypted"] = "gAAAAA-not-a-token"
-        self._restore(data)
+        with self.assertLogs("core.services.backup_service", "WARNING") as logs:
+            result = self._restore(data)
         self.assertFalse(two_factor.is_enabled(self.admin))
+        # Run 7 O2: the restore's warnings say so too, not only the server log.
+        self.assertIn(
+            "Two-factor sign-in for 1 account wasn't restored: the backup was made with another "
+            "ENCRYPTION_KEY; that account signs in with the password only.",
+            result["warnings"],
+        )
+        self.assertIn("not restored (the secret doesn't decrypt here)", " ".join(logs.output))
+
+    def test_the_warning_counts_every_account_another_key_encrypted(self):
+        from cryptography.fernet import Fernet
+
+        other = User.objects.create_user(username="b@example.com", email="b@example.com", password=PASSWORD)
+        _enroll(self.admin)
+        _enroll(other)
+        data = self._backup()
+        two_factor.disable(self.admin)
+        two_factor.disable(other)
+        foreign = Fernet(Fernet.generate_key())
+        for user in data["users"]:
+            if "two_factor" in user:
+                user["two_factor"]["secret_encrypted"] = foreign.encrypt(b"JBSWY3DPEHPK3PXP").decode()
+        result = self._restore(data)
+        self.assertFalse(two_factor.is_enabled(self.admin) or two_factor.is_enabled(other))
+        lines = [w for w in result["warnings"] if w.startswith("Two-factor sign-in")]
+        self.assertEqual(lines, [
+            "Two-factor sign-in for 2 accounts wasn't restored: the backup was made with another "
+            "ENCRYPTION_KEY; those accounts sign in with the password only."
+        ])
+
+    def test_a_restore_with_the_same_key_adds_no_two_factor_warning(self):
+        _enroll(self.admin)
+        data = self._backup()
+        two_factor.disable(self.admin)
+        result = self._restore(data)
+        self.assertTrue(two_factor.is_enabled(self.admin))
+        self.assertFalse([w for w in result["warnings"] if "Two-factor" in w], result["warnings"])
 
     def test_an_older_backup_changes_nothing(self):
         _enroll(self.admin)
