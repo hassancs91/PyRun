@@ -58,6 +58,13 @@ On the connection's page, tick what it may access, then either:
 
 To ask for more access later, tick it and press **Reconnect**.
 
+A page with a Connect or Reconnect button lets its form go on to that
+provider's sign-in site (its Content-Security-Policy `form-action` names the
+site's origin, for example `https://accounts.google.com`); every other page
+allows only PyRun itself. If a proxy in front of PyRun sets its own
+`form-action 'self'`, Connect is blocked in the browser: drop that directive or
+add the providers' sign-in sites to it.
+
 ## Google
 
 Google needs a Google Cloud project with the APIs turned on, a consent screen,

@@ -36,6 +36,7 @@ import uuid
 from datetime import timedelta
 from unittest import mock, skipUnless
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core import signing
 from django.db import connection as db_connection
@@ -254,6 +255,19 @@ class OAuthPresetTests(SimpleTestCase):
                 self.assertEqual(len(keys), len(set(keys)))
                 self.assertLessEqual(set(preset.oauth.default_scope_sets), set(keys))
         self.assertTrue(get_preset("google").oauth.pkce)
+
+    def test_an_apps_fields_never_change_the_sign_in_origin(self):
+        # The connect pages allow oauth.authorize_origin(preset) (defaults filled in) as a
+        # form target; the real redirect fills the app's values, which must stay in the path.
+        for key in OAUTH_KEYS:
+            preset = get_preset(key)
+            origin = oauth.authorize_origin(preset)
+            with self.subTest(preset=key):
+                self.assertTrue(origin.startswith("https://"))
+                values = {f.name: "tenant-x" for f in preset.oauth.client_fields}
+                self.assertEqual(_origin(preset.oauth.urls(values)[0]), origin)
+                self.assertNotIn("{", urllib.parse.urlsplit(preset.oauth.authorize_url).netloc)
+        self.assertEqual(oauth.authorize_origin(get_preset("airtable")), "")
         self.assertIn(("access_type", "offline"), get_preset("google").oauth.authorize_params)
 
     def test_scopes_and_the_microsoft_tenant(self):
@@ -427,6 +441,104 @@ class ConnectFlowTests(_ProviderMixin, _Fixture, TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, "Add a Google OAuth app first")
         self.assertContains(resp, reverse("cpanel:oauth_app_create"))
+
+
+def _form_action(resp) -> list:
+    """The sources of the response's CSP form-action directive."""
+    for directive in resp["Content-Security-Policy"].split(";"):
+        name, *sources = directive.split()
+        if name == "form-action":
+            return sources
+    raise AssertionError("no form-action in " + resp["Content-Security-Policy"])
+
+
+def _origin(url) -> str:
+    parts = urllib.parse.urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}"
+
+
+class ConnectCspTests(_Fixture, TestCase):
+    """Run 7 B2: Connect POSTs, then 302s to the provider, and browsers check form-action
+    on that redirect too, so every page with a Connect button allows its provider's
+    sign-in origin (taken from the real presets) and no other page allows anything but 'self'.
+    No provider is called: rendering the page and starting the flow stay on this server."""
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_login(self.user)
+
+    def _app(self, provider, **config):
+        app = OAuthClient(workspace=self.ws, provider=provider, client_id=CLIENT_ID, config=config)
+        app.set_secret(CLIENT_SECRET)
+        app.save()
+        return app
+
+    def test_each_providers_connect_page_allows_its_sign_in_origin_only(self):
+        for key in OAUTH_KEYS:
+            preset = get_preset(key)
+            expected = _origin(preset.oauth.authorize_url.format(tenant="common"))
+            self.assertTrue(expected.startswith("https://") and "{" not in expected)
+            self._app(key)
+            resp = self.client.get(reverse("cpanel:connection_create") + "?provider=" + key)
+            with self.subTest(provider=key):
+                self.assertContains(resp, f"Connect with {preset.label}")
+                self.assertEqual(_form_action(resp), ["'self'", expected])
+                # The rest of the policy is the console's, unchanged.
+                rest = resp["Content-Security-Policy"].replace(" " + expected, "")
+                self.assertEqual(rest, settings.CONTENT_SECURITY_POLICY)
+
+    def test_the_connect_post_still_redirects_to_an_origin_its_page_allowed(self):
+        self._app("github")
+        url = reverse("cpanel:connection_create")
+        page = self.client.get(url + "?provider=github")
+        resp = self.client.post(url, {"provider": "github", "auth_kind": OAUTH2, "name": "gh",
+                                      "scope_sets": ["repo"], "extra_scopes": "", "action": "connect"})
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(resp["Location"].startswith("https://github.com/login/oauth/authorize?"))
+        self.assertIn(_origin(resp["Location"]), _form_action(page))
+        # A form that fails validation is shown again, Connect button and allowance included.
+        again = self.client.post(url, {"provider": "github", "auth_kind": OAUTH2, "name": "",
+                                       "extra_scopes": "", "action": "connect"})
+        self.assertEqual(again.status_code, 200)
+        self.assertIn("https://github.com", _form_action(again))
+
+    def test_reconnect_on_the_edit_page_allows_the_tenant_independent_origin(self):
+        # A workspace's tenant only fills the path; even one forced into the row past the
+        # form's check can't change the origin the page allows.
+        self._app("microsoft", tenant="evil.example")
+        c = self._connection(name="ms", provider="microsoft", auth_kind=OAUTH2,
+                             credentials={"access_token": "at-ms"}, config={"scope_sets": ["mail"]})
+        edit = reverse("cpanel:connection_edit", kwargs={"pk": c.pk})
+        page = self.client.get(edit)
+        self.assertContains(page, "Reconnect with Microsoft 365")
+        self.assertEqual(_form_action(page), ["'self'", "https://login.microsoftonline.com"])
+        resp = self.client.post(edit, {"name": "ms", "scope_sets": ["mail"], "extra_scopes": "", "action": "connect"})
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(_origin(resp["Location"]), "https://login.microsoftonline.com")
+
+    def test_pages_without_a_connect_button_keep_form_action_self(self):
+        # No app yet: the OAuth form has no Connect button, so nothing is allowed.
+        resp = self.client.get(reverse("cpanel:connection_create") + "?provider=google")
+        self.assertContains(resp, "No Google OAuth app yet")
+        self.assertEqual(resp["Content-Security-Policy"], settings.CONTENT_SECURITY_POLICY)
+        self._app("google")
+        api_key = self._connection()
+        for url in (reverse("cpanel:connection_list"), reverse("cpanel:connection_create"),
+                    reverse("cpanel:connection_create") + "?provider=airtable",
+                    reverse("cpanel:connection_edit", kwargs={"pk": api_key.pk}),
+                    reverse("cpanel:oauth_app_list"), reverse("cpanel:dashboard")):
+            with self.subTest(url=url):
+                self.assertEqual(self.client.get(url)["Content-Security-Policy"], settings.CONTENT_SECURITY_POLICY)
+
+    def test_a_preset_without_an_https_sign_in_page_allows_nothing(self):
+        github = get_preset("github")
+        plain = dataclasses.replace(github, oauth=dataclasses.replace(
+            github.oauth, authorize_url="http://github.example/authorize"))
+        self._app("github")
+        with mock.patch.object(presets_module, "presets", return_value={**REAL_PRESETS, "github": plain}):
+            resp = self.client.get(reverse("cpanel:connection_create") + "?provider=github")
+        self.assertContains(resp, "Connect with GitHub")
+        self.assertEqual(resp["Content-Security-Policy"], settings.CONTENT_SECURITY_POLICY)
 
 
 # --------------------------------------------------------------------------- #

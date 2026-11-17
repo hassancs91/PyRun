@@ -5,6 +5,7 @@ Include it from a plugin page with the SDK's states:
     {% include "cpanel/plugins/_connections.html" with requirements=connection_requirements next=request.get_full_path %}
 where connection_requirements = ConnectionAPI(OWNER).requirements(). `next` is where the buttons come back to.
 {% endcomment %}
+{% load oauth_tags %}
 {% if requirements %}
 <section class="rounded-2xl border border-line bg-panel p-6" data-plugin-connections>
     <h2 class="text-sm font-semibold text-text mb-1">Connections this plugin needs</h2>
@@ -30,6 +31,8 @@ where connection_requirements = ConnectionAPI(OWNER).requirements(). `next` is w
             <div class="flex flex-wrap items-center gap-2 mt-3">
                 {% if st.is_oauth %}
                     {% if st.has_oauth_app %}
+                    {# Connect's POST redirects to the provider: this page's CSP form-action must allow it #}
+                    {% allow_oauth_connect st.requirement.preset %}
                     <form method="post" action="{% url 'cpanel:plugin_connection_connect' st.slug st.key %}" class="inline">
                         {% csrf_token %}<input type="hidden" name="next" value="{{ next }}">
                         <button type="submit" class="text-[13px] px-3 py-1.5 rounded-lg bg-ok text-ink font-medium hover:opacity-90 transition">{% if st.connection %}Reconnect{% else %}Connect {{ st.provider_label }}{% endif %}</button>

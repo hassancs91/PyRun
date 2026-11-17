@@ -361,6 +361,26 @@ class PluginPageTests(_ProviderMixin, _PluginFixture, TestCase):
         self.client.get(reverse("oauth_callback"), self.st.consent(resp["Location"])[0])
         self.assertEqual(Connection.objects.get().pk, c.pk)
 
+    def test_the_plugin_page_allows_the_providers_sign_in_page_as_a_form_target(self):
+        # Run 7 B2: the card's Connect POST redirects to Google, which the page's CSP
+        # form-action must allow; with the real Google preset (no provider is called).
+        from django.conf import settings
+
+        from core.integrations import presets as presets_module
+        from core.test_connections_oauth import REAL_PRESETS, _form_action
+
+        with mock.patch.object(presets_module, "presets", return_value=REAL_PRESETS):
+            # No app: no Connect button, the page keeps the console's policy.
+            self.assertEqual(self.client.get(self.page)["Content-Security-Policy"], settings.CONTENT_SECURITY_POLICY)
+            self._app()
+            page = self.client.get(self.page)
+            self.assertContains(page, "Connect Google", count=2)
+            # Two Google cards, one origin; the airtable card adds nothing.
+            self.assertEqual(_form_action(page), ["'self'", "https://accounts.google.com"])
+            resp = self._post("connect", "sheet")
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(resp["Location"].startswith("https://accounts.google.com/o/oauth2/v2/auth?"))
+
     def test_connect_for_a_held_connection_asks_for_the_requirements_scopes_too(self):
         self._app()
         c = self._oauth(name="picked", owner_plugin=SLUG, owner_key="mail")

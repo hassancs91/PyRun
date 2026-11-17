@@ -1,4 +1,5 @@
 {% extends "cpanel/layout.html" %}
+{% load oauth_tags %}
 
 {% block title %}{% if connection %}{{ connection.name }}{% else %}Add Connection{% endif %} - {{ instance_name }}{% endblock %}
 
@@ -40,6 +41,8 @@
         <div class="pt-4 border-t border-line-soft space-y-3">
             <h3 class="text-sm font-semibold">{% if connection %}Reconnect{% else %}Connect{% endif %} with {{ preset.label }}</h3>
             {% if oauth_client %}
+            {# Connect's POST redirects to the provider: this page's CSP form-action must allow it #}
+            {% allow_oauth_connect preset %}
             <p class="text-xs text-faint">Opens {{ preset.label }}'s consent screen and comes back to <span class="font-mono">{{ callback_url }}</span>, using the {% if oauth_client.workspace_id %}workspace's{% else %}instance default{% endif %} {{ preset.label }} OAuth app.</p>
             <button type="submit" name="action" value="connect" class="text-[13px] font-medium px-3.5 py-2 rounded-lg bg-ok text-ink hover:opacity-90 transition">{% if connection %}Reconnect{% else %}Connect{% endif %} with {{ preset.label }}</button>
             {% else %}
