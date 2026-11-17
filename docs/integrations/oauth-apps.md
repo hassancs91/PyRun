@@ -22,6 +22,11 @@ connection remembers the app that issued its tokens and keeps refreshing with
 it, even if the workspace adds its own app later. Deleting an app stops its
 connections from refreshing; reconnect them with another app.
 
+The Client ID is shown on the OAuth apps page, so PyRun refuses a client
+secret pasted into it: the same value in both boxes, a Google `GOCSPX-...`
+secret, a Microsoft secret value, or anything that isn't shaped like the
+provider's client ID.
+
 ### The redirect URI
 
 Every provider app registers one redirect (callback) URI, shown on the OAuth

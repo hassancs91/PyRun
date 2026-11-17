@@ -58,7 +58,7 @@ from core.test_connections import _ai_off, _Fixture, _setup_wizard_off
 
 User = get_user_model()
 
-CLIENT_ID = "client-t24.apps.example"
+CLIENT_ID = "client-t24.apps.googleusercontent.com"
 CLIENT_SECRET = "t24-client-secret-0001"
 REFRESH = "rt-t24-pasted-refresh-0002"
 SHEETS = "https://www.googleapis.com/auth/spreadsheets"
@@ -929,15 +929,15 @@ class OAuthAppTests(_ProviderMixin, _Fixture, TestCase):
         self.assertNotIn(CLIENT_SECRET, page)
         self.assertIn("http://testserver/oauth/callback/", page)
         self.client.post(reverse("cpanel:oauth_app_edit", kwargs={"pk": app.pk}),
-                         {"client_id": "renamed-id", "client_secret": ""})
+                         {"client_id": "renamed-t24.apps.googleusercontent.com", "client_secret": ""})
         app.refresh_from_db()
-        self.assertEqual((app.client_id, app.get_secret()), ("renamed-id", CLIENT_SECRET))  # blank keeps
+        self.assertEqual((app.client_id, app.get_secret()), ("renamed-t24.apps.googleusercontent.com", CLIENT_SECRET))  # blank keeps
         self.assertContains(self._add(), "already has a Google app")
 
     def test_the_instance_default_is_a_superusers_and_the_workspace_app_wins(self):
         admin = User.objects.create_superuser(username="t24admin", email="a@t24.test", password="pw")
         self.client.force_login(admin)
-        self._add(instance_default="on", client_id="default-id")
+        self._add(instance_default="on", client_id="default-t24.apps.googleusercontent.com")
         default = OAuthClient.objects.get(workspace__isnull=True)
         self.assertEqual(oauth.client_for(self.ws, "google"), default)
         self.client.force_login(self.user)
@@ -951,6 +951,80 @@ class OAuthAppTests(_ProviderMixin, _Fixture, TestCase):
         self.assertEqual(oauth.client_for(self.ws, "google").workspace, self.ws)
         self.assertEqual(oauth.client_for(self.other_ws, "google"), default)
         self.assertContains(self.client.get(reverse("cpanel:oauth_app_list")), "not used here")
+
+    def test_a_client_secret_pasted_as_the_client_id_is_refused(self):
+        # Run 7 B2: Hasan pasted Google's GOCSPX- secret and a Microsoft "~" secret value into
+        # Client ID; Connect failed oddly and the OAuth apps page showed the secret.
+        guid = "1ef363fc-2b6a-4c55-9e1d-0a6b7c8d9e0f"
+        accepted = {
+            "google": ("guard-t24.apps.googleusercontent.com",),
+            "microsoft": (guid, guid.upper()),
+            "github": ("Ov23liABCdef1234567890", "Iv1.0123456789abcdef", "0123456789abcdef0123"),
+            "slack": ("1234567890123.9876543210987",),
+            "notion": (guid, "1ef363fc2b6a4c559e1d0a6b7c8d9e0f"),
+        }
+        refused = {
+            "google": (("GOCSPX-t24-not-a-real-secret", "This looks like the client secret. "
+                        "The Client ID ends in .apps.googleusercontent.com."),
+                       ("123456789012-abc123def456", "This doesn't look like a client ID. "
+                        "The Client ID ends in .apps.googleusercontent.com.")),
+            "microsoft": (("Abc8Q~dEfGhIjKlMnOpQrStUvWxYz0123456789a", "This doesn't look like a client ID; "
+                           "check it isn't the secret."),
+                          ("not-a-guid-at-all", "Use the Application (client) ID from the app's Overview page")),
+        }
+        generic = "This doesn't look like a client ID; check it isn't the secret."
+        for key in OAUTH_KEYS:
+            for value in accepted[key]:
+                with self.subTest(provider=key, value=value):
+                    self.assertEqual(get_preset(key).oauth.client_id_problem(value), "")
+            for value, message in refused.get(key, ()):
+                with self.subTest(provider=key, value=value):
+                    self.assertIn(message, get_preset(key).oauth.client_id_problem(value))
+            for value in ("Abc8Q~dEf123", "two words"):
+                with self.subTest(provider=key, value=value):
+                    self.assertEqual(get_preset(key).oauth.client_id_problem(value), generic)
+
+        # Through the form: refused, never echoed, the Client ID box comes back empty, nothing saved.
+        for provider, value in (("google", "GOCSPX-t24-not-a-real-secret"),
+                                ("microsoft", "Abc8Q~dEfGhIjKlMnOpQrStUvWxYz0123456789a"),
+                                ("github", "gh secret value")):
+            with self.subTest(form=provider):
+                resp = self._add(provider=provider, client_id=value)
+                self.assertEqual(resp.status_code, 200)
+                self.assertNotContains(resp, value)
+                self.assertNotContains(resp, CLIENT_SECRET)
+                self.assertContains(resp, 'name="client_id"')
+                self.assertNotContains(resp, 'name="client_id" value=')
+                self.assertTrue(resp.context["form"].errors["client_id"])
+        self.assertFalse(OAuthClient.objects.exists())
+
+    def test_the_same_value_in_both_boxes_is_refused(self):
+        # GitHub has no format rule: the same-value check still catches the swap.
+        value = "0123456789abcdef0123456789abcdef01234567"
+        resp = self._add(provider="github", client_id=value, client_secret=value)
+        self.assertContains(resp, "The Client ID and the client secret are the same")
+        self.assertNotContains(resp, value)
+        self.assertFalse(OAuthClient.objects.exists())
+
+    def test_an_edit_with_the_secret_left_blank_still_checks_the_id(self):
+        self._add()
+        app = OAuthClient.objects.get()
+        edit = reverse("cpanel:oauth_app_edit", kwargs={"pk": app.pk})
+        for value in ("GOCSPX-t24-not-a-real-secret", CLIENT_SECRET):
+            with self.subTest(value=value):
+                resp = self.client.post(edit, {"client_id": value, "client_secret": ""})
+                self.assertEqual(resp.status_code, 200)
+                self.assertNotContains(resp, value)
+                self.assertTrue(resp.context["form"].errors["client_id"])
+        self.assertContains(self.client.post(edit, {"client_id": CLIENT_SECRET, "client_secret": ""}),
+                            "The Client ID and the client secret are the same")
+        app.refresh_from_db()
+        self.assertEqual((app.client_id, app.get_secret()), (CLIENT_ID, CLIENT_SECRET))
+        good = "edited-t24.apps.googleusercontent.com"
+        self.assertRedirects(self.client.post(edit, {"client_id": good, "client_secret": ""}),
+                             reverse("cpanel:oauth_app_list"))
+        app.refresh_from_db()
+        self.assertEqual(app.client_id, good)
 
     def test_a_tenant_is_a_plain_identifier(self):
         resp = self.client.post(reverse("cpanel:oauth_app_create"), {

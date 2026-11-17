@@ -27,6 +27,9 @@ OAUTH = OAuth(
         ("include_granted_scopes", "true"),
     ),
     console_url="https://console.cloud.google.com/apis/credentials",
+    client_id_pattern=r"\S+\.apps\.googleusercontent\.com",
+    client_id_hint="The Client ID ends in .apps.googleusercontent.com.",
+    secret_prefixes=("GOCSPX-",),
     paste_help=(
         "No public callback? Get a refresh token for your own OAuth client from the "
         "OAuth 2.0 Playground (developers.google.com/oauthplayground, settings: use your "

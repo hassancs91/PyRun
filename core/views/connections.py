@@ -32,7 +32,7 @@ from core import netguard
 from core.forms import CHECK_CLASS, INPUT_CLASS
 from core.integrations.presets import OAUTH2, PASTE_FIELDS, SMTP, get_preset, presets
 from core.models import Connection, ConnectionGrant, OAuthClient, Script, Workspace
-from core.services import EncryptionService
+from core.services import EncryptionError, EncryptionService
 from core.services import connections as svc
 from core.services import oauth
 from core.views.decorators import ENCRYPTION_MISSING_MESSAGE, operator_message
@@ -565,12 +565,36 @@ class OAuthClientForm(forms.Form):
             # Filled into the provider's URLs, so a plain identifier only.
             if value and not svc.NAME_RE.match(value):
                 self.add_error(field.name, "Letters, digits, '.', '_' and '-' only.")
+        self._check_client_id(data)
         if self.instance is None:
             target = None if data.get("instance_default") else self.workspace
             if OAuthClient.objects.filter(workspace=target, provider=self.preset.key).exists():
                 where = "The instance default" if target is None else "This workspace"
                 self.add_error(None, f"{where} already has a {self.preset.label} app: edit it instead.")
         return data
+
+    def _check_client_id(self, data):
+        """Refuse a client secret pasted as the Client ID: the OAuth apps page shows the ID.
+
+        The error never repeats the value, and the box comes back empty.
+        """
+        client_id = str(data.get("client_id") or "").strip()
+        if not client_id:
+            return
+        secret = str(data.get("client_secret") or "").strip()
+        if not secret and self.instance is not None:  # blank on edit keeps the saved one
+            try:
+                secret = self.instance.get_secret()
+            except EncryptionError:
+                logger.warning("OAuth app %s: saved client secret can't be decrypted", self.instance.pk)
+        if secret and secret == client_id:
+            problem = "The Client ID and the client secret are the same: paste the app's Client ID here."
+        else:
+            problem = self.preset.oauth.client_id_problem(client_id)
+        if problem:
+            self.add_error("client_id", problem)
+            self.data = self.data.copy()
+            self.data["client_id"] = ""
 
     def save(self, user):
         client = self.instance or OAuthClient(

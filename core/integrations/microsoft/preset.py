@@ -23,6 +23,12 @@ OAUTH = OAuth(
         ),
     ),
     console_url="https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+    # The Application (client) ID is a GUID; a secret's value is not (it has a "~").
+    client_id_pattern=r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+    client_id_hint=(
+        "Use the Application (client) ID from the app's Overview page (an ID like "
+        "1ef363fc-...), not the secret value."
+    ),
 )
 
 PRESET = Preset(

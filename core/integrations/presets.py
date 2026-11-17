@@ -15,6 +15,7 @@ sends (``auth_material``) and what output must mask (``mask_values``).
 import base64
 import functools
 import importlib
+import re
 from dataclasses import dataclass, field
 
 # Every provider with a preset. Explicit (not a directory scan) so the set is
@@ -96,6 +97,27 @@ class OAuth:
     # Where the app is made, and what to say about pasting a token.
     console_url: str = ""
     paste_help: str = ""
+    # What the provider's client IDs look like (a regex the whole ID matches; ""
+    # = no rule), what to say when one doesn't, and how its client secrets
+    # start: people paste the secret into Client ID, and that page shows it.
+    client_id_pattern: str = ""
+    client_id_hint: str = ""
+    secret_prefixes: tuple = ()
+
+    def client_id_problem(self, client_id) -> str:
+        """Why ``client_id`` can't be this provider's client ID ("" when it can be).
+
+        Never repeats the value: it may be the secret.
+        """
+        value = str(client_id or "").strip()
+        if any(c.isspace() for c in value) or "~" in value:
+            # A Microsoft secret value has a "~"; no provider's client ID has either.
+            return "This doesn't look like a client ID; check it isn't the secret."
+        if self.secret_prefixes and value.startswith(self.secret_prefixes):
+            return " ".join(filter(None, ("This looks like the client secret.", self.client_id_hint)))
+        if self.client_id_pattern and not re.fullmatch(self.client_id_pattern, value):
+            return " ".join(filter(None, ("This doesn't look like a client ID.", self.client_id_hint)))
+        return ""
 
     def urls(self, client_config) -> tuple:
         """(authorize URL, token URL) with the app's ``client_fields`` filled in."""
