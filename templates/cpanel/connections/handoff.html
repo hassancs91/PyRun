@@ -1,0 +1,28 @@
+{% load static %}{% comment %}
+OAuth Connect / Reconnect hands the browser to the provider's sign-in page from
+here (core.views.connections.provider_handoff). Answering the form's POST with a
+redirect would make the browser check the console's CSP form-action 'self' on the
+provider's URL and on every hop after it (Notion's sign-in redirects to another
+host), so the POST answers with this same-origin page instead, and the meta
+refresh (or the button, for a browser that ignores it) is a plain navigation that
+form-action doesn't cover. No script: the theme is the console's default (dark).
+{% endcomment %}<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="refresh" content="0;url={{ authorize_url }}">
+    <title>Opening {{ provider_label }} - {{ instance_name }}</title>
+    <link rel="icon" type="image/x-icon" href="{% static 'fav.ico' %}">
+    <link rel="stylesheet" href="{% static 'css/dist/styles.css' %}">
+</head>
+<body class="bg-ink text-text font-sans antialiased min-h-screen flex flex-col">
+    <main class="flex-1 flex items-center justify-center px-4 py-12">
+        <div class="w-full max-w-md text-center">
+            <h1 class="text-2xl font-semibold text-text mb-4">Opening {{ provider_label }}…</h1>
+            <p class="text-muted mb-8">{{ provider_label }} asks you to sign in and allow access, then sends you back here.</p>
+            <a href="{{ authorize_url }}" data-oauth-handoff class="inline-block py-3 px-6 bg-ok text-ink font-semibold rounded-lg hover:opacity-90 transition focus:outline-none focus:ring-2 focus:ring-ok/40 focus:ring-offset-2 focus:ring-offset-ink">Continue to {{ provider_label }}</a>
+        </div>
+    </main>
+</body>
+</html>

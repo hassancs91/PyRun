@@ -280,52 +280,6 @@ class ContentSecurityPolicyTests(TestCase):
         self.assertNotIn("script-src", csp)
         self.assertNotIn("style-src", csp)
 
-    def test_a_page_widens_only_its_own_form_action_to_https_origins(self):
-        # Run 7 B2: OAuth Connect redirects a form POST to the provider; the page with the
-        # button adds that origin (pyrunner.middleware.allow_form_target), nothing else does.
-        from django.conf import settings
-        from django.http import HttpResponse
-        from django.test import RequestFactory
-
-        from pyrunner.middleware import (
-            ContentSecurityPolicyMiddleware,
-            allow_form_target,
-            https_origin,
-            with_form_targets,
-        )
-
-        self.assertEqual(https_origin("https://Login.Example.com/x/authorize?a=1#f"), "https://login.example.com")
-        self.assertEqual(https_origin("https://a.example:8443/p"), "https://a.example:8443")
-        self.assertEqual(https_origin("https://a.example:443/p"), "https://a.example")
-        for bad in ("http://a.example/", "javascript:alert(1)", "//a.example/", "https://u:p@a.example/",
-                    "https://a.example; script-src *", "https://{tenant}.example/", "https://*.example/",
-                    "https://a.example:99999/", "https:///x", "data:text/html,x", "", None):
-            with self.subTest(url=bad):
-                self.assertEqual(https_origin(bad), "")
-
-        def page(request, *urls):
-            def view(_request):
-                for url in urls:
-                    allow_form_target(request, url)
-                return HttpResponse("<p>x</p>", content_type="text/html")
-            return ContentSecurityPolicyMiddleware(view)(request)
-
-        rf = RequestFactory()
-        plain = page(rf.get("/"))
-        self.assertEqual(plain["Content-Security-Policy"], settings.CONTENT_SECURITY_POLICY)
-        widened = page(rf.get("/"), "https://b.example/auth?x=1", "https://a.example/o", "https://a.example/again",
-                       "http://evil.example/", "https://evil.example; script-src *")
-        self.assertEqual(
-            widened["Content-Security-Policy"],
-            settings.CONTENT_SECURITY_POLICY.replace(
-                "form-action 'self'", "form-action 'self' https://a.example https://b.example"),
-        )
-        self.assertEqual(page(rf.get("/"), "http://evil.example/")["Content-Security-Policy"],
-                         settings.CONTENT_SECURITY_POLICY)
-        # 'none' stays alone, and a policy without form-action isn't narrowed by adding one.
-        self.assertEqual(with_form_targets("form-action 'none'", {"https://a.example"}), "form-action 'none'")
-        self.assertEqual(with_form_targets("object-src 'none'", {"https://a.example"}), "object-src 'none'")
-
     def test_json_api_response_has_no_csp(self):
         self.client.force_login(self.superuser)
         resp = self.client.get(reverse("cpanel:logs_api"))

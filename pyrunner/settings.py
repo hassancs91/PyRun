@@ -708,9 +708,7 @@ CSRF_FAILURE_VIEW = "core.views.auth.csrf_failure"
 # <script> blocks and inline event handlers (onclick/onsubmit/...). Dropping
 # 'unsafe-inline' from script-src is the real XSS backstop but requires migrating
 # every inline script to a per-request nonce and rewiring inline handlers to
-# addEventListener first — tracked as a separate hardening task. A page with an
-# OAuth Connect button adds its provider's sign-in origin to its own form-action
-# (pyrunner.middleware.allow_form_target); every other page keeps 'self'.
+# addEventListener first — tracked as a separate hardening task.
 CONTENT_SECURITY_POLICY = (
     "base-uri 'none'; "
     "object-src 'none'; "

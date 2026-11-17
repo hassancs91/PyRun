@@ -766,7 +766,7 @@ connection**, tick what it may access and either:
   to, paste a refresh token you got for the same OAuth app elsewhere (for
   Google, the OAuth 2.0 Playground with your own client), or a token that
   doesn't expire (a GitHub personal access token, a Slack bot token, a Notion
-  internal integration secret). PyRun checks it with the provider before it
+  "API token" connection's secret). PyRun checks it with the provider before it
   saves it.
 
 Setting up each provider's app, and Google's consent screen in particular, is

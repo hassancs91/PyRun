@@ -1318,8 +1318,10 @@ class ConnectionCardPageTests(TestCase):
             reverse("cpanel:plugin_connection_connect", args=[prov.OWNER, prov.CONNECTION_KEY]),
             {"next": "/plugins/yt_comments/"},
         )
-        self.assertEqual(resp.status_code, 302)
-        query = parse_qs(urlparse(resp["Location"]).query)
+        # Connect answers with a page of its own that hands off to Google (no redirect).
+        from core.test_connections_oauth import handoff_url
+
+        query = parse_qs(urlparse(handoff_url(resp)).query)
         self.assertIn(YOUTUBE_SCOPE, query["scope"][0].split())
         self.assertEqual(query["client_id"], ["t25.apps.googleusercontent.com"])
 

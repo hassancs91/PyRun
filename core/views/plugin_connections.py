@@ -22,7 +22,7 @@ from core.integrations.presets import OAUTH2
 from core.models import Connection, Plugin
 from core.services import EncryptionService, oauth
 from core.services import plugin_connections as pc
-from core.views.connections import local_url
+from core.views.connections import local_url, provider_handoff
 from core.views.decorators import ENCRYPTION_MISSING_MESSAGE, operator_message
 
 logger = logging.getLogger(__name__)
@@ -118,7 +118,7 @@ def plugin_connection_connect_view(request: HttpRequest, slug, key) -> HttpRespo
         owner=(slug, key),
         next_url=next_url if local_url(request, next_url) else "",
     )
-    return redirect(url)
+    return provider_handoff(request, url, preset.label)
 
 
 @login_required

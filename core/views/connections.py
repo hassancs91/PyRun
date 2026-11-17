@@ -24,6 +24,7 @@ from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.cache import add_never_cache_headers
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
@@ -298,7 +299,25 @@ def _start_connect(request, form, connection=None):
         connection=connection,
         grant_all_scripts=form.cleaned_data.get("grant_all_scripts", False),
     )
-    return redirect(url)
+    return provider_handoff(request, url, form.preset.label)
+
+
+def provider_handoff(request, authorize_url, provider_label) -> HttpResponse:
+    """Send the browser on to the provider's sign-in page from a page of our own.
+
+    Every Connect / Reconnect answers its POST with this page, not a redirect:
+    browsers check the console's CSP ``form-action 'self'`` on each redirect
+    that follows a form submission, the provider's own hops included (Notion's
+    sign-in moves to another host), so a redirect never reaches the provider.
+    The page's meta refresh, or its button, is a plain navigation. The URL
+    carries the signed state and the PKCE challenge only, never a secret.
+    """
+    response = render(request, "cpanel/connections/handoff.html", {
+        "authorize_url": authorize_url,
+        "provider_label": provider_label,
+    })
+    add_never_cache_headers(response)
+    return response
 
 
 def _connection(request, pk):

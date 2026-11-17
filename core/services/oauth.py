@@ -49,7 +49,6 @@ from django.utils import timezone
 
 from core.integrations.presets import OAUTH2, auth_material, get_preset
 from core.models import Connection, OAuthClient
-from pyrunner.middleware import allow_form_target, https_origin
 
 logger = logging.getLogger(__name__)
 
@@ -109,31 +108,6 @@ def client_for(workspace, provider):
 def callback_url(request) -> str:
     """The one redirect URI every provider app registers."""
     return request.build_absolute_uri(reverse("oauth_callback"))
-
-
-def authorize_origin(preset) -> str:
-    """The origin (https://host) of ``preset``'s sign-in page, or "" when it has none.
-
-    Taken from the preset with its app fields' defaults: an app's own values
-    (Microsoft's tenant) only fill the URL's path, so nothing a workspace saves
-    changes it (OAuthPresetTests holds every preset to that).
-    """
-    if preset is None or preset.oauth is None:
-        return ""
-    return https_origin(preset.oauth.urls({})[0])
-
-
-def allow_connect(request, preset) -> None:
-    """Let the page being rendered send a Connect form to ``preset``'s sign-in page.
-
-    Connect answers its POST with a redirect to the provider, and the console's
-    CSP ``form-action 'self'`` covers that redirect too, so every page with a
-    Connect or Reconnect button adds the provider's origin to its own policy
-    (``{% allow_oauth_connect preset %}`` in the template).
-    """
-    origin = authorize_origin(preset)
-    if origin:
-        allow_form_target(request, origin)
 
 
 # --------------------------------------------------------------------------- #

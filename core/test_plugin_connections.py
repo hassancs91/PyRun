@@ -38,7 +38,7 @@ from core.services.backup_service import BackupService
 from core.services.plugin_doctor import FAIL, PASS, WARN, run_doctor
 from core.services.plugin_service import PluginService
 from core.test_connections import AIRTABLE_KEY, _Fixture
-from core.test_connections_oauth import CLIENT_SECRET, REFRESH, SHEETS, _ProviderMixin
+from core.test_connections_oauth import CLIENT_SECRET, REFRESH, SHEETS, _ProviderMixin, handoff_url
 from core.test_plugin_doctor import _Builder
 
 User = get_user_model()
@@ -345,10 +345,9 @@ class PluginPageTests(_ProviderMixin, _PluginFixture, TestCase):
 
     def test_connect_makes_the_plugins_connection_and_comes_back(self):
         self._app()
-        resp = self._post("connect", "sheet")
-        self.assertEqual(resp.status_code, 302)
-        self.assertTrue(resp["Location"].startswith(self.base + "/authorize?"))
-        callback, query = self.st.consent(resp["Location"])
+        url = handoff_url(self._post("connect", "sheet"))
+        self.assertTrue(url.startswith(self.base + "/authorize?"))
+        callback, query = self.st.consent(url)
         self.assertEqual(query["scope"].split(" "), ["openid", "email", SHEETS])
         resp = self.client.get(reverse("oauth_callback"), callback)
         self.assertRedirects(resp, self.page, fetch_redirect_response=False)
@@ -358,34 +357,32 @@ class PluginPageTests(_ProviderMixin, _PluginFixture, TestCase):
         self.assertTrue(self.api.require("google", ["sheets"], key="sheet").ok)
         # Reconnect updates the same row; a requirement asking for more widens its config.
         resp = self._post("connect", "sheet")
-        self.client.get(reverse("oauth_callback"), self.st.consent(resp["Location"])[0])
+        self.client.get(reverse("oauth_callback"), self.st.consent(handoff_url(resp))[0])
         self.assertEqual(Connection.objects.get().pk, c.pk)
 
-    def test_the_plugin_page_allows_the_providers_sign_in_page_as_a_form_target(self):
-        # Run 7 B2: the card's Connect POST redirects to Google, which the page's CSP
-        # form-action must allow; with the real Google preset (no provider is called).
+    def test_the_cards_connect_hands_off_to_the_real_provider_and_keeps_form_action_self(self):
+        # Run 7 B2 fix 2: the card's Connect answers with the hand-off page, not a redirect
+        # that form-action 'self' would block; with the real Google preset (no provider is called).
         from django.conf import settings
 
         from core.integrations import presets as presets_module
-        from core.test_connections_oauth import REAL_PRESETS, _form_action
+        from core.test_connections_oauth import REAL_PRESETS
 
         with mock.patch.object(presets_module, "presets", return_value=REAL_PRESETS):
-            # No app: no Connect button, the page keeps the console's policy.
-            self.assertEqual(self.client.get(self.page)["Content-Security-Policy"], settings.CONTENT_SECURITY_POLICY)
             self._app()
             page = self.client.get(self.page)
             self.assertContains(page, "Connect Google", count=2)
-            # Two Google cards, one origin; the airtable card adds nothing.
-            self.assertEqual(_form_action(page), ["'self'", "https://accounts.google.com"])
+            self.assertEqual(page["Content-Security-Policy"], settings.CONTENT_SECURITY_POLICY)
             resp = self._post("connect", "sheet")
-        self.assertEqual(resp.status_code, 302)
-        self.assertTrue(resp["Location"].startswith("https://accounts.google.com/o/oauth2/v2/auth?"))
+        self.assertTrue(handoff_url(resp).startswith("https://accounts.google.com/o/oauth2/v2/auth?"))
+        self.assertContains(resp, "Opening Google")
+        self.assertEqual(resp["Content-Security-Policy"], settings.CONTENT_SECURITY_POLICY)
 
     def test_connect_for_a_held_connection_asks_for_the_requirements_scopes_too(self):
         self._app()
         c = self._oauth(name="picked", owner_plugin=SLUG, owner_key="mail")
         resp = self._post("connect", "mail")
-        _callback, query = self.st.consent(resp["Location"])
+        _callback, query = self.st.consent(handoff_url(resp))
         self.assertEqual(query["scope"].split(" "), ["openid", "email", SHEETS, GMAIL_MODIFY, YOUTUBE])
         c.refresh_from_db()
         self.assertEqual(c.config, {"scope_sets": ["sheets", "gmail_modify"], "extra_scopes": YOUTUBE})
@@ -394,7 +391,7 @@ class PluginPageTests(_ProviderMixin, _PluginFixture, TestCase):
         self._app()
         self._connection(name=f"{SLUG}-sheet")
         resp = self._post("connect", "sheet")
-        self.client.get(reverse("oauth_callback"), self.st.consent(resp["Location"])[0])
+        self.client.get(reverse("oauth_callback"), self.st.consent(handoff_url(resp))[0])
         self.assertEqual(Connection.objects.get(owner_plugin=SLUG).name, f"{SLUG}-sheet-2")
 
     def test_connect_refusals(self):
@@ -413,7 +410,7 @@ class PluginPageTests(_ProviderMixin, _PluginFixture, TestCase):
         self.assertRedirects(resp, reverse("cpanel:connection_list"), fetch_redirect_response=False)
         self._app()
         resp = self._post("connect", "sheet", next="//evil.example/x")
-        resp = self.client.get(reverse("oauth_callback"), self.st.consent(resp["Location"])[0])
+        resp = self.client.get(reverse("oauth_callback"), self.st.consent(handoff_url(resp))[0])
         c = Connection.objects.get()
         self.assertRedirects(resp, reverse("cpanel:connection_edit", kwargs={"pk": c.pk}),
                              fetch_redirect_response=False)

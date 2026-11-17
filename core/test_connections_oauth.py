@@ -26,8 +26,10 @@ and the whoami, and the presets are the real ones with its URLs swapped in.
 import base64
 import dataclasses
 import hashlib
+import html
 import http.server
 import json
+import re
 import sys
 import threading
 import time
@@ -62,6 +64,26 @@ REFRESH = "rt-t24-pasted-refresh-0002"
 SHEETS = "https://www.googleapis.com/auth/spreadsheets"
 REAL_PRESETS = dict(presets_module.presets())
 OAUTH_KEYS = ("google", "microsoft", "github", "slack", "notion")
+
+
+def handoff_url(resp) -> str:
+    """The provider URL a Connect / Reconnect POST sends the browser to.
+
+    Run 7 B2 fix 2: the POST answers 200 with a page of its own, not a redirect
+    (browsers check form-action 'self' on every redirect after a form POST, the
+    provider's own hops included). Its meta refresh and its fallback link both
+    hold the exact authorize URL the oauth service built, and it's never cached.
+    """
+    assert resp.status_code == 200, resp.status_code
+    assert not resp.has_header("Location")
+    page = resp.content.decode()
+    refresh = re.search(r'<meta http-equiv="refresh" content="0;url=([^"<>]*)">', page)
+    link = re.search(r'<a href="([^"<>]*)" data-oauth-handoff', page)
+    assert refresh and link, page
+    url = html.unescape(refresh.group(1))
+    assert html.unescape(link.group(1)) == url == resp.context["authorize_url"]
+    assert "no-store" in resp["Cache-Control"], resp["Cache-Control"]
+    return url
 
 
 # --------------------------------------------------------------------------- #
@@ -255,19 +277,6 @@ class OAuthPresetTests(SimpleTestCase):
                 self.assertEqual(len(keys), len(set(keys)))
                 self.assertLessEqual(set(preset.oauth.default_scope_sets), set(keys))
         self.assertTrue(get_preset("google").oauth.pkce)
-
-    def test_an_apps_fields_never_change_the_sign_in_origin(self):
-        # The connect pages allow oauth.authorize_origin(preset) (defaults filled in) as a
-        # form target; the real redirect fills the app's values, which must stay in the path.
-        for key in OAUTH_KEYS:
-            preset = get_preset(key)
-            origin = oauth.authorize_origin(preset)
-            with self.subTest(preset=key):
-                self.assertTrue(origin.startswith("https://"))
-                values = {f.name: "tenant-x" for f in preset.oauth.client_fields}
-                self.assertEqual(_origin(preset.oauth.urls(values)[0]), origin)
-                self.assertNotIn("{", urllib.parse.urlsplit(preset.oauth.authorize_url).netloc)
-        self.assertEqual(oauth.authorize_origin(get_preset("airtable")), "")
         self.assertIn(("access_type", "offline"), get_preset("google").oauth.authorize_params)
 
     def test_scopes_and_the_microsoft_tenant(self):
@@ -343,10 +352,9 @@ class ConnectFlowTests(_ProviderMixin, _Fixture, TestCase):
         return self.client.post(reverse("cpanel:connection_create"), data)
 
     def test_connect_redirects_to_the_provider_with_pkce_and_a_signed_state(self):
-        resp = self._connect()
-        self.assertEqual(resp.status_code, 302)
-        query = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(resp["Location"]).query))
-        self.assertTrue(resp["Location"].startswith(self.base + "/authorize?"))
+        url = handoff_url(self._connect())
+        query = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(url).query))
+        self.assertTrue(url.startswith(self.base + "/authorize?"))
         self.assertEqual(query["client_id"], CLIENT_ID)
         self.assertEqual(query["redirect_uri"], "http://testserver/oauth/callback/")
         self.assertEqual(query["response_type"], "code")
@@ -355,13 +363,13 @@ class ConnectFlowTests(_ProviderMixin, _Fixture, TestCase):
                          ("S256", "offline", "consent"))
         state = oauth.read_state(query["state"])
         self.assertEqual((state["w"], state["u"], state["p"]), (str(self.ws.pk), str(self.user.pk), "google"))
-        self.assertNotIn(CLIENT_SECRET, resp["Location"])
+        self.assertNotIn(CLIENT_SECRET, url)
         flow = self.client.session[oauth.SESSION_KEY][state["n"]]
-        self.assertNotIn(flow["verifier"], resp["Location"])  # the verifier never leaves the server
+        self.assertNotIn(flow["verifier"], url)  # the verifier never leaves the server
         self.assertFalse(Connection.objects.exists())  # nothing saved before the provider answers
 
     def test_the_whole_flow_saves_an_ok_connection(self):
-        callback, _query = self.st.consent(self._connect(grant_all_scripts="on")["Location"])
+        callback, _query = self.st.consent(handoff_url(self._connect(grant_all_scripts="on")))
         resp = self.client.get(reverse("oauth_callback"), callback)
         c = Connection.objects.get(name="sheets")
         self.assertRedirects(resp, reverse("cpanel:connection_edit", kwargs={"pk": c.pk}))
@@ -378,14 +386,14 @@ class ConnectFlowTests(_ProviderMixin, _Fixture, TestCase):
         self.assertTrue(form["code_verifier"])  # and the provider checked it against the challenge
 
     def test_a_replayed_reply_is_refused(self):
-        callback, _query = self.st.consent(self._connect()["Location"])
+        callback, _query = self.st.consent(handoff_url(self._connect()))
         self.client.get(reverse("oauth_callback"), callback)
         resp = self.client.get(reverse("oauth_callback"), callback, follow=True)
         self.assertContains(resp, "already used")
         self.assertEqual(Connection.objects.count(), 1)
 
     def test_a_tampered_or_expired_state_saves_nothing(self):
-        callback, _query = self.st.consent(self._connect()["Location"])
+        callback, _query = self.st.consent(handoff_url(self._connect()))
         forged = {**callback, "state": callback["state"][:-3] + "abc"}
         self.assertContains(self.client.get(reverse("oauth_callback"), forged, follow=True), "was changed")
         later = time.time() + oauth.STATE_MAX_AGE + 5
@@ -396,7 +404,7 @@ class ConnectFlowTests(_ProviderMixin, _Fixture, TestCase):
         self.assertEqual(self.st.token_requests, [])  # the code was never exchanged
 
     def test_a_reply_in_another_browser_or_for_another_user_is_refused(self):
-        callback, _query = self.st.consent(self._connect()["Location"])
+        callback, _query = self.st.consent(handoff_url(self._connect()))
         other = self.client_class()
         other.force_login(self.user)  # same user, another session: no flow
         self.assertContains(other.get(reverse("oauth_callback"), callback, follow=True), "this browser session")
@@ -414,7 +422,7 @@ class ConnectFlowTests(_ProviderMixin, _Fixture, TestCase):
         self.assertFalse(Connection.objects.exists())
 
     def test_the_provider_saying_no_saves_nothing_and_shows_no_forged_text(self):
-        _callback, query = self.st.consent(self._connect()["Location"])
+        _callback, query = self.st.consent(handoff_url(self._connect()))
         resp = self.client.get(reverse("oauth_callback"), {
             "error": "access_denied", "error_description": "Call +1-555 to restore your account", "state": query["state"],
         }, follow=True)
@@ -427,7 +435,7 @@ class ConnectFlowTests(_ProviderMixin, _Fixture, TestCase):
         resp = self.client.post(reverse("cpanel:connection_edit", kwargs={"pk": c.pk}), {
             "name": "google", "scope_sets": ["sheets", "calendar"], "extra_scopes": "", "action": "connect",
         })
-        callback, query = self.st.consent(resp["Location"])
+        callback, query = self.st.consent(handoff_url(resp))
         self.assertIn("auth/calendar", query["scope"])
         self.client.get(reverse("oauth_callback"), callback)
         c.refresh_from_db()
@@ -443,102 +451,107 @@ class ConnectFlowTests(_ProviderMixin, _Fixture, TestCase):
         self.assertContains(resp, reverse("cpanel:oauth_app_create"))
 
 
-def _form_action(resp) -> list:
-    """The sources of the response's CSP form-action directive."""
-    for directive in resp["Content-Security-Policy"].split(";"):
-        name, *sources = directive.split()
-        if name == "form-action":
-            return sources
-    raise AssertionError("no form-action in " + resp["Content-Security-Policy"])
+class ConnectHandoffTests(_Fixture, TestCase):
+    """Run 7 B2 fix 2: Connect and Reconnect hand off to the provider from a page of their own.
 
-
-def _origin(url) -> str:
-    parts = urllib.parse.urlsplit(url)
-    return f"{parts.scheme}://{parts.netloc}"
-
-
-class ConnectCspTests(_Fixture, TestCase):
-    """Run 7 B2: Connect POSTs, then 302s to the provider, and browsers check form-action
-    on that redirect too, so every page with a Connect button allows its provider's
-    sign-in origin (taken from the real presets) and no other page allows anything but 'self'.
-    No provider is called: rendering the page and starting the flow stay on this server."""
+    Notion's authorize URL redirects from api.notion.com to app.notion.com, and a
+    browser checks form-action on every redirect after a form POST, so a 302 from
+    the POST never reached it (fix 1 allowed only the first host). With the real
+    presets (no provider is called): the POST answers 200 with a page whose meta
+    refresh and link lead to the authorize URL, and every page, this one and the
+    Connect pages included, keeps exactly the console's form-action 'self'.
+    """
 
     def setUp(self):
         super().setUp()
         self.client.force_login(self.user)
 
-    def _app(self, provider, **config):
-        app = OAuthClient(workspace=self.ws, provider=provider, client_id=CLIENT_ID, config=config)
+    def _app(self, provider):
+        app = OAuthClient(workspace=self.ws, provider=provider, client_id=CLIENT_ID)
         app.set_secret(CLIENT_SECRET)
         app.save()
         return app
 
-    def test_each_providers_connect_page_allows_its_sign_in_origin_only(self):
+    def _connect(self, key, **extra):
+        preset = get_preset(key)
+        data = {"provider": key, "auth_kind": OAUTH2, "name": f"{key}-c", "extra_scopes": "",
+                "scope_sets": list(preset.oauth.default_scope_sets), "action": "connect", **extra}
+        return self.client.post(reverse("cpanel:connection_create"), data)
+
+    def test_each_providers_connect_hands_off_to_its_authorize_url(self):
         for key in OAUTH_KEYS:
             preset = get_preset(key)
-            expected = _origin(preset.oauth.authorize_url.format(tenant="common"))
-            self.assertTrue(expected.startswith("https://") and "{" not in expected)
             self._app(key)
-            resp = self.client.get(reverse("cpanel:connection_create") + "?provider=" + key)
             with self.subTest(provider=key):
-                self.assertContains(resp, f"Connect with {preset.label}")
-                self.assertEqual(_form_action(resp), ["'self'", expected])
-                # The rest of the policy is the console's, unchanged.
-                rest = resp["Content-Security-Policy"].replace(" " + expected, "")
-                self.assertEqual(rest, settings.CONTENT_SECURITY_POLICY)
+                page = self.client.get(reverse("cpanel:connection_create") + "?provider=" + key)
+                self.assertContains(page, f"Connect with {preset.label}")
+                self.assertEqual(page["Content-Security-Policy"], settings.CONTENT_SECURITY_POLICY)
+                resp = self._connect(key)
+                url = handoff_url(resp)
+                self.assertTrue(url.startswith(preset.oauth.urls({})[0] + "?"), url)
+                self.assertContains(resp, f"Opening {preset.label}")
+                self.assertContains(resp, f"Continue to {preset.label}")
+                self.assertEqual(resp["Content-Security-Policy"], settings.CONTENT_SECURITY_POLICY)
+                # The flow waits in the session as before; nothing is saved yet.
+                query = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(url).query))
+                state = oauth.read_state(query["state"])
+                self.assertEqual(state["p"], key)
+                self.assertIn(state["n"], self.client.session[oauth.SESSION_KEY])
+                self.assertNotIn(CLIENT_SECRET, url)
+        self.assertFalse(Connection.objects.exists())
 
-    def test_the_connect_post_still_redirects_to_an_origin_its_page_allowed(self):
-        self._app("github")
-        url = reverse("cpanel:connection_create")
-        page = self.client.get(url + "?provider=github")
-        resp = self.client.post(url, {"provider": "github", "auth_kind": OAUTH2, "name": "gh",
-                                      "scope_sets": ["repo"], "extra_scopes": "", "action": "connect"})
-        self.assertEqual(resp.status_code, 302)
-        self.assertTrue(resp["Location"].startswith("https://github.com/login/oauth/authorize?"))
-        self.assertIn(_origin(resp["Location"]), _form_action(page))
-        # A form that fails validation is shown again, Connect button and allowance included.
-        again = self.client.post(url, {"provider": "github", "auth_kind": OAUTH2, "name": "",
-                                       "extra_scopes": "", "action": "connect"})
-        self.assertEqual(again.status_code, 200)
-        self.assertIn("https://github.com", _form_action(again))
-
-    def test_reconnect_on_the_edit_page_allows_the_tenant_independent_origin(self):
-        # A workspace's tenant only fills the path; even one forced into the row past the
-        # form's check can't change the origin the page allows.
-        self._app("microsoft", tenant="evil.example")
+    def test_reconnect_on_the_edit_page_hands_off_too(self):
+        self._app("microsoft")
         c = self._connection(name="ms", provider="microsoft", auth_kind=OAUTH2,
                              credentials={"access_token": "at-ms"}, config={"scope_sets": ["mail"]})
         edit = reverse("cpanel:connection_edit", kwargs={"pk": c.pk})
         page = self.client.get(edit)
         self.assertContains(page, "Reconnect with Microsoft 365")
-        self.assertEqual(_form_action(page), ["'self'", "https://login.microsoftonline.com"])
+        self.assertEqual(page["Content-Security-Policy"], settings.CONTENT_SECURITY_POLICY)
         resp = self.client.post(edit, {"name": "ms", "scope_sets": ["mail"], "extra_scopes": "", "action": "connect"})
-        self.assertEqual(resp.status_code, 302)
-        self.assertEqual(_origin(resp["Location"]), "https://login.microsoftonline.com")
-
-    def test_pages_without_a_connect_button_keep_form_action_self(self):
-        # No app yet: the OAuth form has no Connect button, so nothing is allowed.
-        resp = self.client.get(reverse("cpanel:connection_create") + "?provider=google")
-        self.assertContains(resp, "No Google OAuth app yet")
+        url = handoff_url(resp)
+        self.assertTrue(url.startswith("https://login.microsoftonline.com/common/oauth2/v2.0/authorize?"), url)
         self.assertEqual(resp["Content-Security-Policy"], settings.CONTENT_SECURITY_POLICY)
-        self._app("google")
-        api_key = self._connection()
-        for url in (reverse("cpanel:connection_list"), reverse("cpanel:connection_create"),
-                    reverse("cpanel:connection_create") + "?provider=airtable",
-                    reverse("cpanel:connection_edit", kwargs={"pk": api_key.pk}),
-                    reverse("cpanel:oauth_app_list"), reverse("cpanel:dashboard")):
-            with self.subTest(url=url):
-                self.assertEqual(self.client.get(url)["Content-Security-Policy"], settings.CONTENT_SECURITY_POLICY)
 
-    def test_a_preset_without_an_https_sign_in_page_allows_nothing(self):
-        github = get_preset("github")
-        plain = dataclasses.replace(github, oauth=dataclasses.replace(
-            github.oauth, authorize_url="http://github.example/authorize"))
+    def test_a_form_with_errors_is_shown_again_without_a_handoff(self):
         self._app("github")
-        with mock.patch.object(presets_module, "presets", return_value={**REAL_PRESETS, "github": plain}):
-            resp = self.client.get(reverse("cpanel:connection_create") + "?provider=github")
+        resp = self._connect("github", name="")
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotContains(resp, "data-oauth-handoff")
+        self.assertNotContains(resp, 'http-equiv="refresh"')
         self.assertContains(resp, "Connect with GitHub")
-        self.assertEqual(resp["Content-Security-Policy"], settings.CONTENT_SECURITY_POLICY)
+        self.assertContains(resp, "This field is required")
+        self.assertFalse(self.client.session.get(oauth.SESSION_KEY))
+
+    def test_the_url_is_escaped_in_the_page(self):
+        # The authorize URL is an attribute value: a quote or a tag in it can't end the attribute.
+        self._app("github")
+        nasty = 'https://p.example/auth?a=1&b="><script>alert(1)</script>&c=\'x\'&d=<i>'
+        with mock.patch("core.views.connections.oauth.start", return_value=nasty):
+            resp = self._connect("github")
+        self.assertEqual(handoff_url(resp), nasty)
+        page = resp.content.decode()
+        self.assertNotIn("<script>alert", page)
+        self.assertNotIn("<i>", page)
+        self.assertIn("a=1&amp;b=&quot;&gt;&lt;script&gt;", page)
+
+    def test_every_page_keeps_form_action_self(self):
+        for key in OAUTH_KEYS:
+            self._app(key)
+        api_key = self._connection()
+        oauth_row = self._connection(name="g", provider="google", auth_kind=OAUTH2, credentials={"access_token": "at"})
+        urls = [reverse("cpanel:connection_create") + "?provider=" + key for key in (*OAUTH_KEYS, "airtable")]
+        urls += [reverse("cpanel:connection_list"), reverse("cpanel:connection_create"),
+                 reverse("cpanel:connection_edit", kwargs={"pk": api_key.pk}),
+                 reverse("cpanel:connection_edit", kwargs={"pk": oauth_row.pk}),
+                 reverse("cpanel:oauth_app_list"), reverse("cpanel:dashboard")]
+        for url in urls:
+            with self.subTest(url=url):
+                resp = self.client.get(url)
+                self.assertEqual(resp.status_code, 200)
+                self.assertEqual(resp["Content-Security-Policy"], settings.CONTENT_SECURITY_POLICY)
+        self.assertIn("form-action 'self'", settings.CONTENT_SECURITY_POLICY)
+        self.assertNotIn("https:", settings.CONTENT_SECURITY_POLICY)
 
 
 # --------------------------------------------------------------------------- #

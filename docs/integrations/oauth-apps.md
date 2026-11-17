@@ -47,23 +47,17 @@ that works, use **Paste a token** on the connection instead.
 
 On the connection's page, tick what it may access, then either:
 
-- **Connect with <provider>**: PyRun sends you to the provider's consent screen
-  and saves the connection when you come back. The sign-in has 10 minutes and
-  must finish in the browser that started it; PyRun uses PKCE where the
-  provider supports it.
+- **Connect with <provider>**: PyRun shows a short "Opening <provider>..."
+  page that takes you on to the provider's consent screen (press **Continue
+  to <provider>** if it stays there), and saves the connection when you come
+  back. The sign-in has 10 minutes and must finish in the browser that started
+  it; PyRun uses PKCE where the provider supports it.
 - **Paste a token**: a **refresh token** issued to the same OAuth app (PyRun
   refreshes it right away to check it), or an **access token** that doesn't
   expire. PyRun calls the provider's user info with it before saving, and names
   the account.
 
 To ask for more access later, tick it and press **Reconnect**.
-
-A page with a Connect or Reconnect button lets its form go on to that
-provider's sign-in site (its Content-Security-Policy `form-action` names the
-site's origin, for example `https://accounts.google.com`); every other page
-allows only PyRun itself. If a proxy in front of PyRun sets its own
-`form-action 'self'`, Connect is blocked in the browser: drop that directive or
-add the providers' sign-in sites to it.
 
 ## Google
 
@@ -172,15 +166,19 @@ refresh token) so PyRun can refresh it.
 
 ## Notion
 
-- **Public integration (Connect).** At
-  [notion.so/profile/integrations](https://www.notion.so/profile/integrations),
-  create a **public** integration with PyRun's redirect URI, and copy its OAuth
-  client ID and secret into PyRun (**OAuth apps → Notion**). On Connect, Notion
-  asks which pages the integration may use.
-- **Internal integration (paste).** Create an **internal** integration, copy
-  its secret (`ntn_...`) and paste it as the connection's **Access token**; no
-  OAuth app is needed. Then share each page or database with the integration in
-  Notion (the page's menu → **Connections**).
+Notion keeps its integrations at
+[app.notion.com/developers/connections](https://app.notion.com/developers/connections)
+(**Developer tools → Developer connections**). **New connection** asks for a
+name and an **Authentication method**:
 
-What the integration may do (read, update, insert content) is set on the
-integration in Notion, not on the connection.
+- **OAuth (Connect).** A user-scoped connection (formerly a "public
+  integration"). In the connection's OAuth settings, add PyRun's redirect URI
+  and copy its OAuth client ID and secret into PyRun (**OAuth apps →
+  Notion**). On Connect, Notion asks which pages the connection may use.
+- **API token (paste).** A workspace-scoped static token (formerly an
+  "internal integration"). Copy its secret (`ntn_...`) and paste it as the
+  PyRun connection's **Access token**; no OAuth app is needed. Then share each
+  page or database with it in Notion (the page's menu → **Connections**).
+
+What it may do (read, update, insert content) is set on the Notion
+connection in Notion, not on the PyRun connection.

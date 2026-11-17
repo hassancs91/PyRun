@@ -858,12 +858,6 @@ def index(request):
 {% include "cpanel/plugins/_connections.html" with requirements=connection_requirements next=request.get_full_path %}
 ```
 
-Use the include rather than a Connect form of your own: Connect's POST
-redirects to the provider's sign-in page, and the console's CSP
-(`form-action 'self'`) blocks that unless the page allows the provider's
-origin, which the card does for you. A hand-made Connect form needs
-`{% load oauth_tags %}{% allow_oauth_connect preset %}` next to it.
-
 In code:
 
 ```python

@@ -1,4 +1,4 @@
-"""Notion: a public integration's OAuth token, or an internal integration's secret."""
+"""Notion: an OAuth connection's token, or an API-token connection's secret (Notion's Developer connections)."""
 
 from core.integrations.presets import OAUTH2, OAuth, Preset, Whoami, oauth_fields
 
@@ -11,10 +11,10 @@ OAUTH = OAuth(
     pkce=False,
     client_auth="basic",
     token_format="json",
-    console_url="https://www.notion.so/profile/integrations",
+    console_url="https://app.notion.com/developers/connections",
     paste_help=(
-        "An internal integration's secret (ntn_...) doesn't expire: paste it as the access "
-        "token, and share the pages it needs with the integration in Notion."
+        "An \"API token\" connection's secret (ntn_...) doesn't expire: paste it as the access "
+        "token, and share the pages it needs with that connection in Notion."
     ),
 )
 
